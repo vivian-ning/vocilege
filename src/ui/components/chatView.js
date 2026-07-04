@@ -12,6 +12,10 @@ import {
   retryLastReply
 } from '../../state/store.js';
 import { usesMock } from '../../services/aiService.js';
+import { countEnabledGlobalPrompts } from '../../services/promptBuilder.js';
+import { applyAvatar } from '../avatar.js';
+import { navigate } from '../router.js';
+import { setSettingsTab } from './settingsPage.js';
 
 export function renderChatView(container, state) {
   container.textContent = '';
@@ -32,8 +36,8 @@ export function renderChatView(container, state) {
   const header = document.createElement('div');
   header.className = 'chat-header';
   const avatar = document.createElement('span');
-  avatar.className = 'chat-header-avatar';
-  avatar.textContent = character.avatar ? character.avatar.value : '🙂';
+  avatar.className = 'chat-header-avatar avatar';
+  applyAvatar(avatar, character.avatar);
   const titleWrap = document.createElement('span');
   titleWrap.className = 'chat-header-titlewrap';
   const title = document.createElement('span');
@@ -53,6 +57,18 @@ export function renderChatView(container, state) {
   header.appendChild(titleWrap);
   container.appendChild(header);
 
+  // 全域 Prompt 生效提示（V2 任務三）：點擊導向設定頁的 Prompt 存放區。
+  const gpCount = countEnabledGlobalPrompts(state.globalPrompts);
+  if (gpCount > 0) {
+    const gpBar = document.createElement('button');
+    gpBar.type = 'button';
+    gpBar.className = 'global-prompt-indicator';
+    gpBar.textContent = `目前有 ${gpCount} 個全域 Prompt 生效 ›`;
+    gpBar.title = '前往「設定 → Prompt 存放區」管理';
+    gpBar.addEventListener('click', () => { setSettingsTab('prompts'); navigate('/settings'); });
+    container.appendChild(gpBar);
+  }
+
   // 訊息列表
   const list = document.createElement('div');
   list.className = 'chat-messages';
@@ -60,7 +76,9 @@ export function renderChatView(container, state) {
   const messages = getCurrentMessages();
   const ctx = {
     player: state.player,
+    playerAvatar: state.player ? state.player.avatar : null,
     characterName: character.name,
+    characterAvatar: character.avatar,
     settings: state.settings
   };
 

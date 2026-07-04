@@ -15,6 +15,7 @@
 // 屆時依 context.settings.messageDisplayMode 分支即可。
 
 import { formatTime } from '../../utils/time.js';
+import { createAvatarEl } from '../avatar.js';
 
 export function renderMessage(message, context) {
   const wrap = document.createElement('div');
@@ -63,6 +64,12 @@ export function renderMessagePart(part, message, context) {
   const row = document.createElement('div');
   row.className = `bubble-row ${isPlayer ? 'from-player' : 'from-character'}`;
 
+  // 頭貼（V2）：玩家靠右、角色靠左，各放一個小頭貼。
+  const avatarSource = isPlayer
+    ? (context && context.playerAvatar)
+    : (context && context.characterAvatar);
+  const avatarEl = createAvatarEl(avatarSource, 'bubble-avatar');
+
   const bubble = document.createElement('div');
   bubble.className = `bubble ${isPlayer ? 'bubble-player' : 'bubble-character'}`;
 
@@ -84,6 +91,13 @@ export function renderMessagePart(part, message, context) {
   timeEl.textContent = formatTime(message.createdAt);
   bubble.appendChild(timeEl);
 
-  row.appendChild(bubble);
+  // 玩家：泡泡在左、頭貼在右；角色：頭貼在左、泡泡在右。
+  if (isPlayer) {
+    row.appendChild(bubble);
+    row.appendChild(avatarEl);
+  } else {
+    row.appendChild(avatarEl);
+    row.appendChild(bubble);
+  }
   return row;
 }

@@ -2,14 +2,14 @@
 // 匯入資料前的結構驗證（第十三節）。回傳 { ok, errors }。
 // 不修改輸入，只做檢查。
 
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
 
 function isObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
 // 驗證匯出檔（backup）整體結構。
-// 預期形狀：{ exportedAt, state, messages }
+// 預期形狀：{ exportedAt, state, messages, avatarAssets? }
 export function validateBackup(data) {
   const errors = [];
 
@@ -35,7 +35,7 @@ export function validateBackup(data) {
 
     const arrayFields = [
       'characters', 'conversations', 'memories', 'worldbooks',
-      'journals', 'posts', 'heartVoices', 'relationshipData',
+      'journals', 'globalPrompts', 'posts', 'heartVoices', 'relationshipData',
       'wishlists', 'notifications'
     ];
     for (const f of arrayFields) {
@@ -69,6 +69,12 @@ export function validateBackup(data) {
         }
       });
     }
+  }
+
+  // avatarAssets 為 V2 新增的頂層區塊（選填）；若存在必須是陣列。
+  // 缺 avatarAssets 或個別 asset 缺漏不算結構錯誤（匯入時 fallback 回 emoji）。
+  if ('avatarAssets' in data && !Array.isArray(data.avatarAssets)) {
+    errors.push('avatarAssets 應為陣列');
   }
 
   // messages 基本欄位型別

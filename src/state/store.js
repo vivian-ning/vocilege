@@ -25,8 +25,31 @@ import { createDefaultState, normalizeState } from './schema.js';
 import { migrateState } from './migrations.js';
 import { buildPrompt } from '../services/promptBuilder.js';
 import { generateReply } from '../services/aiService.js';
+import { deleteAvatarAsset } from '../services/assetService.js';
+import { invalidateStats } from '../services/statsService.js';
 import { generateId } from '../utils/id.js';
 import { now } from '../utils/time.js';
+
+// avatar 輸入正規化：接受字串（emoji）、{type:'emoji',value} 或 {type:'image',assetId}。
+function normalizeAvatarInput(input, fallback) {
+  if (input && typeof input === 'object') {
+    if (input.type === 'image' && input.assetId) {
+      return { type: 'image', assetId: input.assetId };
+    }
+    if (input.value) return { type: 'emoji', value: String(input.value) };
+  }
+  if (typeof input === 'string' && input.trim()) {
+    return { type: 'emoji', value: input.trim() };
+  }
+  return fallback || { type: 'emoji', value: '🙂' };
+}
+
+// 若舊頭貼是 image 且被新頭貼取代（換圖或改回 emoji），刪除舊 asset 避免孤兒 blob。
+async function cleanupReplacedAvatar(oldAvatar, newAvatar) {
+  if (!oldAvatar || oldAvatar.type !== 'image' || !oldAvatar.assetId) return;
+  if (newAvatar && newAvatar.type === 'image' && newAvatar.assetId === oldAvatar.assetId) return;
+  await deleteAvatarAsset(oldAvatar.assetId);
+}
 
 let state = null;
 let messages = [];        // 目前對話的訊息（按需載入）
@@ -144,10 +167,7 @@ export async function createCharacter(data) {
     systemPrompt: data.systemPrompt || '',
     firstMessage: data.firstMessage || '',
     speechStyle: data.speechStyle || '',
-    avatar: {
-      type: 'emoji',
-      value: (data.avatar && data.avatar.value) || data.avatar || '🙂'
-    },
+    avatar: normalizeAvatarInput(data.avatar),
     createdAt: ts,
     updatedAt: ts
   };
@@ -183,6 +203,7 @@ export async function createCharacter(data) {
     conversation.lastMessageAt = firstMsg.createdAt;
   }
 
+  invalidateStats();
   await saveCurrentState();
   notify();
   return character;
@@ -192,14 +213,19 @@ export async function updateCharacter(characterId, patch) {
   const character = state.characters.find((c) => c.id === characterId);
   if (!character) return;
 
+  const oldAvatar = character.avatar;
+  const nextAvatar = 'avatar' in patch
+    ? normalizeAvatarInput(patch.avatar, oldAvatar)
+    : oldAvatar;
+
   Object.assign(character, {
     ...patch,
-    // avatar 允許傳字串或物件。
-    avatar: patch.avatar
-      ? { type: 'emoji', value: (patch.avatar.value || patch.avatar) }
-      : character.avatar,
+    avatar: nextAvatar,
     updatedAt: now()
   });
+
+  // 頭貼被取代時清除舊 asset（避免孤兒 blob）。
+  await cleanupReplacedAvatar(oldAvatar, nextAvatar);
 
   // conversation title 是派生的，改名不需同步 conversation。
   await saveCurrentState();
@@ -209,6 +235,7 @@ export async function updateCharacter(characterId, patch) {
 // 刪除角色的連鎖規則（第七節）。confirm 由 UI 層負責，這裡只執行連鎖刪除。
 export async function deleteCharacter(characterId) {
   const conversation = findConversationByCharacter(characterId);
+  const character = state.characters.find((c) => c.id === characterId);
 
   // 1) 刪除該 conversation 的全部 messages
   if (conversation) {
@@ -217,7 +244,13 @@ export async function deleteCharacter(characterId) {
     state.conversations = state.conversations.filter((c) => c.id !== conversation.id);
   }
 
-  // 3) 刪除 character
+  // 訊息已異動，使首頁統計快取失效。
+  invalidateStats();
+
+  // 3) 刪除 character，並一併刪除其 image 頭貼 asset（避免孤兒 blob）。
+  if (character && character.avatar && character.avatar.type === 'image') {
+    await deleteAvatarAsset(character.avatar.assetId);
+  }
   state.characters = state.characters.filter((c) => c.id !== characterId);
 
   // 4) 修復指標：若指向被刪除對象，自動選取剩餘第一個角色；若已無角色則清空。
@@ -287,6 +320,7 @@ export async function sendPlayerMessage(text) {
   await addMessage(playerMsg);
   messages.push(playerMsg);
   conversation.lastMessageAt = playerMsg.createdAt;
+  invalidateStats(); // 最後訊息摘要改變。
   await saveCurrentState();
 
   // 3~7) 產生回覆流程。
@@ -331,6 +365,7 @@ async function runGeneration(conversation, character, userText) {
       messages,
       memories: state.memories,
       worldEntries: state.worldbooks,
+      globalPrompts: state.globalPrompts,
       mode: state.settings.messageDisplayMode
     });
 
@@ -361,6 +396,9 @@ async function runGeneration(conversation, character, userText) {
     await addMessage(replyMsg);
     messages.push(replyMsg);
 
+    // 新回覆（可能帶 usage）→ 首頁統計快取失效。
+    invalidateStats();
+
     // 6) 更新 lastMessageAt 並保存
     conversation.lastMessageAt = replyMsg.createdAt;
     conversation.updatedAt = replyMsg.createdAt;
@@ -385,13 +423,127 @@ function partsToPlainText(parts) {
 }
 
 export async function updatePlayer(patch) {
+  const oldAvatar = state.player.avatar;
+  const nextAvatar = 'avatar' in patch
+    ? normalizeAvatarInput(patch.avatar, oldAvatar)
+    : oldAvatar;
+
   state.player = {
     ...state.player,
     ...patch,
-    avatar: patch.avatar
-      ? { type: 'emoji', value: (patch.avatar.value || patch.avatar) }
-      : state.player.avatar
+    avatar: nextAvatar
   };
+  await cleanupReplacedAvatar(oldAvatar, nextAvatar);
+  await saveCurrentState();
+  notify();
+}
+
+// ---- 對話選取（供 hash router 使用）----
+// 由 conversationId 反查對應角色並走唯一的 selectCharacter，維持指標不變式。
+export async function selectConversation(conversationId) {
+  const conv = state.conversations.find((c) => c.id === conversationId);
+  if (!conv) return;
+  await selectCharacter(conv.primaryCharacterId);
+}
+
+// ---- 個人日記（V2 任務 2.3）----
+export async function addJournal({ content, mood }) {
+  const text = (content || '').trim();
+  if (!text) return;
+  const ts = now();
+  state.journals.push({
+    id: generateId('jrnl'),
+    ownerType: 'player',
+    ownerId: 'player',
+    content: text,
+    mood: (mood || '').trim(),
+    createdAt: ts,
+    updatedAt: ts
+  });
+  await saveCurrentState();
+  notify();
+}
+
+export async function updateJournal(id, patch) {
+  const j = state.journals.find((x) => x.id === id);
+  if (!j) return;
+  if ('content' in patch) j.content = (patch.content || '').trim();
+  if ('mood' in patch) j.mood = (patch.mood || '').trim();
+  j.updatedAt = now();
+  await saveCurrentState();
+  notify();
+}
+
+export async function deleteJournal(id) {
+  state.journals = state.journals.filter((x) => x.id !== id);
+  await saveCurrentState();
+  notify();
+}
+
+// ---- 全域 Prompt 存放區（V2 任務三）----
+export async function addGlobalPrompt(data) {
+  const ts = now();
+  const maxOrder = state.globalPrompts.reduce((m, g) => Math.max(m, g.order || 0), -1);
+  state.globalPrompts.push({
+    id: generateId('gp'),
+    title: (data && data.title ? String(data.title) : '') || '未命名 Prompt',
+    content: (data && data.content) ? String(data.content) : '',
+    enabled: data && typeof data.enabled === 'boolean' ? data.enabled : true,
+    order: maxOrder + 1,
+    createdAt: ts,
+    updatedAt: ts
+  });
+  await saveCurrentState();
+  notify();
+}
+
+export async function updateGlobalPrompt(id, patch) {
+  const g = state.globalPrompts.find((x) => x.id === id);
+  if (!g) return;
+  if ('title' in patch) g.title = String(patch.title || '');
+  if ('content' in patch) g.content = String(patch.content || '');
+  if ('enabled' in patch) g.enabled = !!patch.enabled;
+  g.updatedAt = now();
+  await saveCurrentState();
+  notify();
+}
+
+export async function deleteGlobalPrompt(id) {
+  state.globalPrompts = state.globalPrompts.filter((x) => x.id !== id);
+  normalizeGlobalPromptOrder();
+  await saveCurrentState();
+  notify();
+}
+
+// 上移 / 下移：dir = -1 上移、+1 下移。以目前 order 排序後交換相鄰兩塊的 order。
+export async function moveGlobalPrompt(id, dir) {
+  const sorted = state.globalPrompts.slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+  const idx = sorted.findIndex((g) => g.id === id);
+  if (idx < 0) return;
+  const swapIdx = idx + (dir < 0 ? -1 : 1);
+  if (swapIdx < 0 || swapIdx >= sorted.length) return;
+  const a = sorted[idx];
+  const b = sorted[swapIdx];
+  const tmp = a.order;
+  a.order = b.order;
+  b.order = tmp;
+  a.updatedAt = now();
+  b.updatedAt = now();
+  await saveCurrentState();
+  notify();
+}
+
+// 重新編號 order 為 0..n-1（刪除後保持連續，避免縫隙）。
+function normalizeGlobalPromptOrder() {
+  state.globalPrompts
+    .slice()
+    .sort((a, b) => (a.order || 0) - (b.order || 0))
+    .forEach((g, i) => { g.order = i; });
+}
+
+// ---- 備份時間戳（V2 任務 2.4）----
+export async function markBackupDone() {
+  state.lastBackupAt = now();
   await saveCurrentState();
   notify();
 }
@@ -449,6 +601,7 @@ function makeMessage({ conversationId, senderType, senderId, parts, usage }) {
 // 供 backupService 在清空 / 匯入後重設 store 記憶體狀態使用。
 export async function resetToState(newState) {
   state = newState;
+  invalidateStats(); // 匯入 / 清空後訊息與角色皆變，統計重算。
   await reloadCurrentMessages();
   notify();
 }

@@ -1,19 +1,24 @@
 // src/db/indexeddb.js
 //
-// IndexedDB 存取層（第六節）。使用兩個 object store：
+// IndexedDB 存取層（第六節）。使用三個 object store：
 //   - "state"    ：單一 record（固定 key "app"），保存除 messages 以外的全部狀態
 //   - "messages" ：keyPath "id"，另建 "conversationId" 索引
+//   - "assets"   ：keyPath "id"，保存頭貼等二進位 Blob（V2 新增）
 //
 // 拆開的原因：messages 是唯一會無限成長的資料。若塞進單一 state blob，每送一則
 // 訊息都要全量序列化重寫整包 state，聊天紀錄一多效能就會劣化。從 V0 就拆開，
-// 未來才能做分頁載入。
+// 未來才能做分頁載入。assets 同理：頭貼 Blob 不該塞進 state blob。
 //
 // 所有函式一律回傳 Promise 並處理錯誤。
+//
+// V2：DB version 1 → 2，新增 assets store。onupgradeneeded 以「存在才略過」方式
+// 建立各 store，因此舊使用者升級時既有 state / messages 完好，只新增 assets。
 
 const DB_NAME = 'local-character-chat';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STATE_STORE = 'state';
 const MESSAGES_STORE = 'messages';
+const ASSETS_STORE = 'assets';
 const STATE_KEY = 'app';
 
 let dbPromise = null;
@@ -34,6 +39,11 @@ function openDB() {
       if (!db.objectStoreNames.contains(MESSAGES_STORE)) {
         const msgStore = db.createObjectStore(MESSAGES_STORE, { keyPath: 'id' });
         msgStore.createIndex('conversationId', 'conversationId', { unique: false });
+      }
+
+      // assets store（V2 新增）：keyPath = id，保存 { id, kind, blob, mime, createdAt }。
+      if (!db.objectStoreNames.contains(ASSETS_STORE)) {
+        db.createObjectStore(ASSETS_STORE, { keyPath: 'id' });
       }
     };
 
@@ -147,12 +157,49 @@ export async function bulkAddMessages(messages) {
   await txDone(transaction);
 }
 
+// ---- assets（V2）----
+//
+// asset record 形狀：{ id, kind: "avatar", blob: Blob, mime: "image/webp", createdAt }
+// 二進位 Blob 直接存入 IndexedDB（原生支援 Blob），不做 base64，省空間也省編碼成本。
+
+export async function putAsset(asset) {
+  const transaction = await tx(ASSETS_STORE, 'readwrite');
+  const store = transaction.objectStore(ASSETS_STORE);
+  store.put(asset);
+  await txDone(transaction);
+  return asset;
+}
+
+export async function getAsset(id) {
+  if (!id) return null;
+  const transaction = await tx(ASSETS_STORE, 'readonly');
+  const store = transaction.objectStore(ASSETS_STORE);
+  const result = await reqToPromise(store.get(id));
+  return result == null ? null : result;
+}
+
+export async function deleteAsset(id) {
+  if (!id) return;
+  const transaction = await tx(ASSETS_STORE, 'readwrite');
+  const store = transaction.objectStore(ASSETS_STORE);
+  store.delete(id);
+  await txDone(transaction);
+}
+
+export async function getAllAssets() {
+  const transaction = await tx(ASSETS_STORE, 'readonly');
+  const store = transaction.objectStore(ASSETS_STORE);
+  const result = await reqToPromise(store.getAll());
+  return Array.isArray(result) ? result : [];
+}
+
 // ---- 清空 ----
 
 export async function clearAll() {
-  const transaction = await tx([STATE_STORE, MESSAGES_STORE], 'readwrite');
+  const transaction = await tx([STATE_STORE, MESSAGES_STORE, ASSETS_STORE], 'readwrite');
   transaction.objectStore(STATE_STORE).clear();
   transaction.objectStore(MESSAGES_STORE).clear();
+  transaction.objectStore(ASSETS_STORE).clear();
   await txDone(transaction);
 }
 

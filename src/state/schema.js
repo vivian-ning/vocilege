@@ -6,8 +6,32 @@
 // 分工（第九節）：migrations 管版本升級，schema.normalizeState 管欄位補齊，
 // 兩者不重疊。
 
-// state record 完整結構（第六節）。V0 只實作 characters、conversations、messages、
-// player、settings、apiSettings 的基礎保存，其餘陣列保留為空供未來擴充。
+import { generateId } from '../utils/id.js';
+
+// V2 範例全域 Prompt：首次升級（migration）與全新安裝（createDefaultState）都放入一個
+// enabled=false 的示範區塊，讓使用者一眼看懂「全域 Prompt 存放區」怎麼用。
+// 以 factory 產生（每次呼叫給新 id / 時間戳），migrations 與 schema 共用同一份定義。
+export function createExampleGlobalPrompt() {
+  const ts = Date.now();
+  return {
+    id: generateId('gp'),
+    title: '範例：通用回覆守則',
+    content: [
+      '（這是範例，預設關閉。你可以編輯或刪除它。）',
+      '',
+      '1. 回覆長度適中，一次聚焦一個重點，避免長篇大論。',
+      '2. 旁白（動作、神態、場景）請以全形星號包裹，例如：＊他輕輕闔上筆記本。＊',
+      '3. 始終保持角色口吻，不要跳出角色說明自己是 AI。',
+      '4. 尊重使用者設定的世界觀與情境，不擅自更動既定事實。'
+    ].join('\n'),
+    enabled: false,
+    order: 0,
+    createdAt: ts,
+    updatedAt: ts
+  };
+}
+
+// state record 完整結構（第六節）。
 export function createDefaultState(config) {
   const defaultPlayer = (config && config.defaultPlayer) || {
     id: 'player',
@@ -33,15 +57,18 @@ export function createDefaultState(config) {
     },
     characters: [],
     conversations: [],
-    // 以下陣列 V0 保留為空，供未來擴充（日記 / 貼文 / 心聲 / 世界書 / 記憶等）。
+    // 以下陣列供未來擴充；V2 起 journals / globalPrompts 正式啟用。
     memories: [],
     worldbooks: [],
     journals: [],
+    globalPrompts: [createExampleGlobalPrompt()],
     posts: [],
     heartVoices: [],
     relationshipData: [],
     wishlists: [],
     notifications: [],
+    // V2 新增：上次成功匯出備份的時間戳（0 = 從未備份），供首頁備份提醒使用。
+    lastBackupAt: 0,
     settings: {
       theme: defaultSettings.theme || 'cream',
       messageDisplayMode: defaultSettings.messageDisplayMode || 'mixed'
@@ -59,9 +86,15 @@ export function createDefaultState(config) {
   };
 }
 
+// avatar 支援兩型（V2）：
+//   { type: "emoji", value: "🙂" }
+//   { type: "image", assetId: "asset_xxx" }
 function cloneAvatar(avatar) {
   if (avatar && typeof avatar === 'object') {
-    return { type: avatar.type || 'emoji', value: avatar.value || '🙂' };
+    if (avatar.type === 'image' && avatar.assetId) {
+      return { type: 'image', assetId: avatar.assetId };
+    }
+    return { type: 'emoji', value: avatar.value || '🙂' };
   }
   return { type: 'emoji', value: '🙂' };
 }
@@ -89,12 +122,20 @@ export function normalizeState(state) {
   // 確保所有陣列欄位存在且為陣列。
   const arrayFields = [
     'characters', 'conversations', 'memories', 'worldbooks',
-    'journals', 'posts', 'heartVoices', 'relationshipData',
+    'journals', 'globalPrompts', 'posts', 'heartVoices', 'relationshipData',
     'wishlists', 'notifications'
   ];
   for (const f of arrayFields) {
     if (!Array.isArray(merged[f])) merged[f] = [];
   }
+
+  // 角色頭貼型別修正（image / emoji 兩型）。
+  merged.characters = merged.characters.map((c) => {
+    if (!c || typeof c !== 'object') return c;
+    return { ...c, avatar: cloneAvatar(c.avatar) };
+  });
+
+  if (typeof merged.lastBackupAt !== 'number') merged.lastBackupAt = 0;
 
   if (typeof merged.currentConversationId !== 'string') merged.currentConversationId = '';
   if (typeof merged.currentCharacterId !== 'string') merged.currentCharacterId = '';

@@ -5,7 +5,9 @@
 // 看起來就是角色列表；未來加入群聊時，同一個元件可直接渲染 group conversation，
 // 不需重寫左欄（group 顯示 conversation.title 與成員頭像）。
 
-import { selectCharacter, deleteCharacter } from '../../state/store.js';
+import { deleteCharacter } from '../../state/store.js';
+import { applyAvatar } from '../avatar.js';
+import { navigate } from '../router.js';
 
 export function renderConversationList(container, state, handlers) {
   container.textContent = '';
@@ -41,8 +43,8 @@ function renderItem(conv, state, handlers) {
   const character = state.characters.find((c) => c.id === conv.primaryCharacterId);
 
   const avatar = document.createElement('div');
-  avatar.className = 'conv-avatar';
-  avatar.textContent = character && character.avatar ? character.avatar.value : '🙂';
+  avatar.className = 'conv-avatar avatar';
+  applyAvatar(avatar, character ? character.avatar : null);
 
   const meta = document.createElement('div');
   meta.className = 'conv-meta';
@@ -75,8 +77,9 @@ function renderItem(conv, state, handlers) {
     }
   });
 
+  // 點擊導向 #/chat/:conversationId（指標同步由聊天頁 render 走 selectConversation）。
   item.addEventListener('click', () => {
-    if (character) selectCharacter(character.id);
+    navigate(`/chat/${conv.id}`);
   });
 
   item.appendChild(avatar);

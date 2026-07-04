@@ -32,6 +32,7 @@ export function buildPrompt({
   messages,
   memories,        // 未來記憶系統使用
   worldEntries,    // 未來世界書使用
+  globalPrompts,   // V2：全域 Prompt 存放區（套用到全部角色）
   mode
 }) {
   const character = activeCharacter || {};
@@ -55,7 +56,14 @@ export function buildPrompt({
   // 4) 輸出格式要求（固定；供 parseReplyToParts 還原 message / narration）。
   systemParts.push(OUTPUT_FORMAT_INSTRUCTION);
 
-  const systemPrompt = systemParts.join('\n');
+  // 5) 全域 Prompt（V2）：取 enabled 的區塊、依 order 排序、以空行相連，放在 system 的
+  //    「最前面」（在角色 systemPrompt / personality 等之前）。全域管通則、角色管個性。
+  const globalBlocks = collectGlobalPromptText(globalPrompts);
+
+  const characterSystem = systemParts.join('\n');
+  const systemPrompt = globalBlocks
+    ? `${globalBlocks}\n\n${characterSystem}`
+    : characterSystem;
 
   // 5) 最近聊天紀錄 → 依 message.role 轉為 { role, content } 序列。
   //    role 映射在 store.makeMessage 已完成（player→user、character→assistant）；
@@ -81,6 +89,21 @@ export function buildPrompt({
       playerName
     }
   };
+}
+
+// 取 enabled 的全域 Prompt 區塊，依 order 升冪排序，內容以空行相連為單一字串。
+// 全部關閉 / 無區塊時回傳空字串（system 不變）。
+export function collectGlobalPromptText(globalPrompts) {
+  const list = (globalPrompts || [])
+    .filter((g) => g && g.enabled && g.content && String(g.content).trim())
+    .slice()
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+  return list.map((g) => String(g.content).trim()).join('\n\n');
+}
+
+// 目前生效（enabled）的全域 Prompt 數量，供聊天頁 / 角色設定顯示提示。
+export function countEnabledGlobalPrompts(globalPrompts) {
+  return (globalPrompts || []).filter((g) => g && g.enabled).length;
 }
 
 function describeMode(mode) {

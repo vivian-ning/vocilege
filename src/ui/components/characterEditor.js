@@ -1,17 +1,17 @@
 // src/ui/components/characterEditor.js
 //
 // 角色編輯：
-//   - openCharacterCreator()：新增角色的彈出表單（左欄「+ 新增角色」使用）
-//   - renderCharacterEditor(container, state)：右欄「角色設定」分頁，編輯目前角色
+//   - openCharacterCreator()：新增角色的彈出表單（首頁 / 左欄「+ 新增角色」使用）
+//   - renderCharacterEditor(container, state)：聊天頁右欄「角色設定」分頁，編輯目前角色
 //
-// 兩者共用同一組欄位定義，因此建立表單與編輯表單欄位完全一致（第八節）。
+// 兩者共用同一組欄位定義與頭貼上傳控制項（第八節 + V2 任務 4.2）。
 
 import { createCharacter, updateCharacter } from '../../state/store.js';
+import { buildAvatarInput } from '../avatarInput.js';
 
-// 欄位定義（依第七節建立表單）。
+// 文字欄位定義（頭貼改用 buildAvatarInput，不在此列）。
 const FIELDS = [
   { key: 'name', label: '名稱', type: 'input', placeholder: '角色名稱' },
-  { key: 'avatar', label: '頭像 emoji', type: 'input', placeholder: '🙂' },
   { key: 'description', label: '簡介', type: 'textarea', placeholder: '一句話描述' },
   { key: 'personality', label: '個性', type: 'textarea', placeholder: '個性設定' },
   { key: 'scenario', label: '情境', type: 'textarea', placeholder: '故事 / 場景背景' },
@@ -22,7 +22,6 @@ const FIELDS = [
 
 function readValue(source, key) {
   if (!source) return '';
-  if (key === 'avatar') return source.avatar ? source.avatar.value : '';
   return source[key] != null ? source[key] : '';
 }
 
@@ -52,16 +51,12 @@ function buildField(field, initial) {
   return { fieldEl, getValue: () => control.value };
 }
 
-function collect(getters) {
+function collect(getters, avatarInput) {
   const data = {};
   for (const key in getters) {
-    if (key === 'avatar') {
-      const v = getters[key]().trim();
-      data.avatar = { type: 'emoji', value: v || '🙂' };
-    } else {
-      data[key] = getters[key]();
-    }
+    data[key] = getters[key]();
   }
+  data.avatar = avatarInput.getValue();
   return data;
 }
 
@@ -81,6 +76,9 @@ export function openCharacterCreator() {
   const form = document.createElement('form');
   form.className = 'char-form';
 
+  const avatarInput = buildAvatarInput({ type: 'emoji', value: '🙂' });
+  form.appendChild(avatarInput.el);
+
   const getters = {};
   for (const field of FIELDS) {
     const { fieldEl, getValue } = buildField(field, '');
@@ -95,7 +93,7 @@ export function openCharacterCreator() {
   cancel.type = 'button';
   cancel.className = 'btn';
   cancel.textContent = '取消';
-  cancel.addEventListener('click', () => close());
+  cancel.addEventListener('click', () => close({ discard: true }));
 
   const submit = document.createElement('button');
   submit.type = 'submit';
@@ -108,32 +106,34 @@ export function openCharacterCreator() {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const data = collect(getters);
+    const data = collect(getters, avatarInput);
     if (!data.name || !data.name.trim()) {
       window.alert('請輸入角色名稱');
       return;
     }
     submit.disabled = true;
     await createCharacter(data);
-    close();
+    avatarInput.commit(); // 頭貼已提交，勿刪。
+    close({ discard: false });
   });
 
-  function close() {
-    document.body.removeChild(overlay);
+  function close({ discard }) {
+    if (discard) avatarInput.discard(); // 清掉未提交的上傳。
+    if (overlay.parentNode) document.body.removeChild(overlay);
   }
   overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) close();
+    if (e.target === overlay) close({ discard: true });
   });
 
   modal.appendChild(form);
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
-  const first = form.querySelector('.form-control');
+  const first = form.querySelector('.avatar-emoji-input');
   if (first) first.focus();
 }
 
-// ---- 右欄「角色設定」分頁：編輯目前角色 ----
+// ---- 聊天頁右欄「角色設定」分頁：編輯目前角色 ----
 export function renderCharacterEditor(container, state) {
   container.textContent = '';
 
@@ -148,6 +148,9 @@ export function renderCharacterEditor(container, state) {
 
   const form = document.createElement('form');
   form.className = 'char-form';
+
+  const avatarInput = buildAvatarInput(character.avatar);
+  form.appendChild(avatarInput.el);
 
   const getters = {};
   for (const field of FIELDS) {
@@ -173,12 +176,13 @@ export function renderCharacterEditor(container, state) {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const data = collect(getters);
+    const data = collect(getters, avatarInput);
     if (!data.name || !data.name.trim()) {
       window.alert('請輸入角色名稱');
       return;
     }
     await updateCharacter(character.id, data);
+    avatarInput.commit();
     flash(save, '已儲存 ✓');
   });
 

@@ -1,25 +1,21 @@
 // src/ui/tabs.js
 //
-// 右欄分頁：角色設定 / 玩家設定 / 資料（第八節）。
+// 聊天頁右欄側邊面板（V2 導航改版後的分工）：只保留「角色設定」「玩家設定」——
+// 聊天當下會用到的東西。「API 設定」「資料」「Prompt 存放區」已移到設定頁（settingsPage.js）。
 //
-// active tab 屬於「UI 狀態」而非「資料狀態」，因此保存在本模組的模組變數，不進入
-// 全域 state / IndexedDB。切換分頁時只重繪右欄。
+// active tab 屬於「UI 狀態」而非「資料狀態」，保存在本模組的模組變數，不進入全域 state。
 
 import { renderCharacterEditor } from './components/characterEditor.js';
 import { renderPlayerEditor } from './components/playerEditor.js';
-import { renderBackupPanel } from './components/backupPanel.js';
-import { renderApiSettingsEditor } from './components/apiSettingsEditor.js';
 
 const TABS = [
   { key: 'character', label: '角色設定' },
-  { key: 'player', label: '玩家設定' },
-  { key: 'api', label: 'API 設定' },
-  { key: 'data', label: '資料' }
+  { key: 'player', label: '玩家設定' }
 ];
 
 let activeTab = 'character';
 
-export function renderSettingsPanel(container, state) {
+export function renderChatSidePanel(container, state) {
   container.textContent = '';
 
   // 分頁列
@@ -32,7 +28,7 @@ export function renderSettingsPanel(container, state) {
     btn.textContent = tab.label;
     btn.addEventListener('click', () => {
       activeTab = tab.key;
-      renderSettingsPanel(container, state); // 只重繪右欄
+      renderChatSidePanel(container, state); // 只重繪右欄
     });
     header.appendChild(btn);
   }
@@ -43,13 +39,9 @@ export function renderSettingsPanel(container, state) {
   body.className = 'tab-body';
   container.appendChild(body);
 
-  if (activeTab === 'character') {
-    renderCharacterEditor(body, state);
-  } else if (activeTab === 'player') {
+  if (activeTab === 'player') {
     renderPlayerEditor(body, state);
-  } else if (activeTab === 'api') {
-    renderApiSettingsEditor(body, state);
   } else {
-    renderBackupPanel(body);
+    renderCharacterEditor(body, state);
   }
 }

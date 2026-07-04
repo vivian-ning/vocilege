@@ -66,21 +66,83 @@ body {
 }
 .boot-error h2 { color: var(--danger); }
 
-/* ---- 三欄版面 ---- */
-/* V0 為桌面固定三欄；未來改手機優先 PWA 時，於此加 @media 切換為單欄堆疊即可。 */
+/* ---- 外層骨架（V2）：頂部導航 + 內容容器 ---- */
+.app-root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.page-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;   /* home / settings 頁自然捲動；chat 頁的 app-layout 撐滿不捲 */
+}
+
+/* ---- 頂部導航列 ---- */
+.top-nav {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 0 20px;
+  height: 56px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.nav-logo {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 4px 0;
+  font-family: inherit;
+  color: var(--text);
+}
+.nav-logo-main { font-size: 16px; font-weight: 700; letter-spacing: .3px; }
+.nav-logo-latin { font-size: 11px; color: var(--muted); letter-spacing: 1px; }
+.nav-links { display: flex; gap: 4px; }
+.nav-link {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 8px 14px;
+  border-radius: 8px;
+}
+.nav-link:hover { background: var(--surface-2); color: var(--text); }
+.nav-link.active { color: var(--primary); background: var(--surface-2); }
+
+/* ---- 三欄版面（聊天頁）---- */
 .app-layout {
   display: grid;
   grid-template-columns: 280px 1fr 340px;
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
 }
 
 .col {
-  height: 100vh;
+  height: 100%;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
 }
+
+/* ---- 通用頭貼（emoji / image 兩型）---- */
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
+}
+.avatar.avatar-image { background-color: var(--surface-2); }
 
 .col-left {
   background: var(--surface);
@@ -195,7 +257,14 @@ body {
   border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
-.chat-header-avatar { font-size: 22px; }
+.chat-header-avatar {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 50%;
+  background-color: var(--surface-2);
+  font-size: 20px;
+}
 .chat-header-titlewrap { display: flex; flex-direction: column; }
 .chat-header-title { font-weight: 700; font-size: 15px; }
 .chat-header-mock {
@@ -216,9 +285,19 @@ body {
 
 .msg-group { display: flex; flex-direction: column; gap: 6px; }
 
-.bubble-row { display: flex; }
+.bubble-row { display: flex; align-items: flex-end; gap: 8px; }
 .bubble-row.from-player { justify-content: flex-end; }
 .bubble-row.from-character { justify-content: flex-start; }
+
+/* 泡泡旁的小頭貼 */
+.bubble-avatar {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 50%;
+  background-color: var(--surface-2);
+  font-size: 16px;
+}
 
 .bubble {
   max-width: 70%;
@@ -473,3 +552,256 @@ select.form-control { cursor: pointer; }
   box-shadow: 0 10px 40px rgba(0,0,0,.25);
 }
 .modal-title { margin: 0 0 14px; font-size: 17px; }
+
+/* =====================================================================
+   V2 新增樣式：頁面標題、首頁主控台、設定頁、Prompt 存放區、頭貼上傳
+   ===================================================================== */
+
+/* ---- 頁面通用 ---- */
+.page-title { margin: 0 0 12px; font-size: 20px; font-weight: 700; }
+.section-title {
+  margin: 26px 0 12px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+
+/* ---- 全域 Prompt 生效提示（聊天頁）---- */
+.global-prompt-indicator {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+  color: var(--primary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 20px;
+  cursor: pointer;
+}
+.global-prompt-indicator:hover { background: color-mix(in srgb, var(--primary) 14%, var(--surface)); }
+
+/* ---- 首頁主控台 ---- */
+.home-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px 24px 60px;
+}
+
+/* 備份提醒 */
+.backup-reminder {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  border: 1px solid var(--danger);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  font-size: 13px;
+}
+.backup-reminder span { flex: 1; }
+
+/* 角色卡片牆 */
+.card-wall {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+}
+.char-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.char-card-main {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  cursor: pointer;
+  flex: 1;
+}
+.char-card-main:hover { background: var(--surface-2); }
+.card-avatar {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: 50%;
+  background-color: var(--surface-2);
+  font-size: 26px;
+}
+.char-card-info { min-width: 0; flex: 1; }
+.char-card-name { font-weight: 700; font-size: 14px; }
+.char-card-desc {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.char-card-meta { font-size: 11px; color: var(--muted); margin-top: 6px; }
+.char-card-snippet {
+  font-size: 12px;
+  color: var(--text);
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: .85;
+}
+.char-card-record {
+  border: none;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 8px;
+  cursor: not-allowed;
+}
+.add-card {
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 96px;
+  border-radius: 14px;
+}
+.add-card:hover { border-color: var(--primary); color: var(--primary); }
+
+/* Token 統計 */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  text-align: center;
+}
+.stat-label { font-size: 12px; color: var(--muted); }
+.stat-value { font-size: 24px; font-weight: 700; margin: 4px 0; }
+.stat-detail { font-size: 11px; color: var(--muted); }
+.stats-subtitle { font-size: 13px; font-weight: 700; margin: 16px 0 8px; }
+.stats-per-character { display: flex; flex-direction: column; gap: 4px; }
+.stats-per-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  padding: 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.stats-per-name { font-weight: 600; }
+.stats-per-val { color: var(--muted); }
+
+/* 個人日記 */
+.journal-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.journal-input-row { display: flex; gap: 8px; }
+.journal-mood { max-width: 200px; }
+.journal-list { display: flex; flex-direction: column; gap: 10px; }
+.journal-entry {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.journal-entry-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.journal-date { font-size: 12px; color: var(--muted); }
+.journal-actions { display: flex; gap: 4px; }
+.journal-content { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+
+/* ---- 設定頁 ---- */
+.settings-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 24px 60px;
+}
+.settings-body { padding: 20px 0; }
+
+/* ---- Prompt 存放區 ---- */
+.gp-editor { display: flex; flex-direction: column; gap: 14px; }
+.gp-desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  background: var(--surface-2);
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+.gp-list { display: flex; flex-direction: column; gap: 12px; }
+.gp-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gp-block.gp-disabled { opacity: .6; }
+.gp-block-head { display: flex; align-items: center; gap: 8px; }
+.gp-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.gp-spacer { flex: 1; }
+.gp-icon-btn {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 8px;
+  font-family: inherit;
+}
+.gp-icon-btn:hover:not(:disabled) { filter: brightness(.96); }
+.gp-icon-btn:disabled { opacity: .35; cursor: default; }
+.gp-title { font-weight: 700; }
+.gp-content { resize: vertical; }
+
+/* ---- 頭貼上傳控制項 ---- */
+.avatar-input { gap: 8px; }
+.avatar-input-row { display: flex; align-items: center; gap: 12px; }
+.avatar-preview {
+  width: 56px;
+  height: 56px;
+  flex: 0 0 56px;
+  border-radius: 50%;
+  background-color: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 30px;
+}
+.avatar-emoji-input { flex: 1; }
+.avatar-input-buttons { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.avatar-input-status { font-size: 12px; color: var(--muted); }
+
+/* ---- 手機 / 窄螢幕：三欄改單欄堆疊（基本 RWD）---- */
+@media (max-width: 760px) {
+  .app-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    overflow-y: auto;
+  }
+  .col-right { display: none; }
+  .stats-grid { grid-template-columns: 1fr; }
+}

@@ -1,21 +1,35 @@
 // src/services/backupService.js
 //
-// 備份 / 匯入 / 清空（第十三節）。
+// 備份 / 匯入 / 清空（第十三節 + V2 任務 4.3 頭貼備份相容）。
 
 import {
   getAllMessages,
   clearAll,
   saveState,
-  bulkAddMessages
+  bulkAddMessages,
+  getAsset,
+  putAsset
 } from '../db/indexeddb.js';
 import { createDefaultState, normalizeState } from '../state/schema.js';
 import { migrateState, CURRENT_SCHEMA_VERSION } from '../state/migrations.js';
 import { validateBackup } from '../utils/validation.js';
-import { getState, getConfig, saveCurrentState, resetToState } from '../state/store.js';
+import { getState, getConfig, saveCurrentState, resetToState, markBackupDone } from '../state/store.js';
+import { blobToBase64, base64ToBlob } from './assetService.js';
 import { dateStamp } from '../utils/time.js';
 
+// 收集 state 內所有 image 型頭貼引用到的 assetId（角色 + 玩家）。
+function collectAvatarAssetIds(state) {
+  const ids = new Set();
+  const add = (avatar) => {
+    if (avatar && avatar.type === 'image' && avatar.assetId) ids.add(avatar.assetId);
+  };
+  for (const c of (state.characters || [])) add(c && c.avatar);
+  add(state.player && state.player.avatar);
+  return [...ids];
+}
+
 // ---- 匯出 ----
-// 收集 state + 全部 messages 打包成一個 JSON 下載並觸發下載。
+// 收集 state + 全部 messages + 頭貼 asset（base64 內嵌）打包成一個 JSON 並觸發下載。
 export async function exportData() {
   const state = getState();
   const allMessages = await getAllMessages();
@@ -29,12 +43,28 @@ export async function exportData() {
     }
   };
 
+  // 頭貼 asset 很小（256×256 WebP 約 10–30KB），直接 base64 內嵌，維持單一 JSON 檔。
+  const avatarAssets = [];
+  for (const id of collectAvatarAssetIds(state)) {
+    const asset = await getAsset(id);
+    if (asset && asset.blob) {
+      avatarAssets.push({
+        id: asset.id,
+        kind: asset.kind || 'avatar',
+        mime: asset.mime || 'image/webp',
+        createdAt: asset.createdAt || Date.now(),
+        dataBase64: await blobToBase64(asset.blob)
+      });
+    }
+  }
+
   const payload = {
     app: 'local-character-chat',
     exportedAt: Date.now(),
     schemaVersion: exportState.schemaVersion, // 保留 schemaVersion
     state: exportState,
-    messages: allMessages
+    messages: allMessages,
+    avatarAssets
   };
 
   const json = JSON.stringify(payload, null, 2);
@@ -47,6 +77,9 @@ export async function exportData() {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+
+  // 匯出成功 → 更新 lastBackupAt（供首頁備份提醒）。
+  await markBackupDone();
 
   return { ok: true };
 }
@@ -97,12 +130,48 @@ export async function importData(rawText) {
     rememberApiKey: localState.apiSettings.rememberApiKey
   };
 
+  // 6) 頭貼相容（V2 任務 4.3）：
+  //    - 缺 avatarAssets 或個別 asset 缺漏「不得整筆失敗」：對應 image 頭貼 fallback 回 emoji。
+  //    - 舊備份（v1 / v2）沒有 avatarAssets 與 image 型頭貼，這裡自然不動任何東西。
+  const avatarAssets = Array.isArray(data.avatarAssets) ? data.avatarAssets : [];
+  const presentIds = new Set(avatarAssets.map((a) => a && a.id).filter(Boolean));
+  const fallbackMissingAvatar = (avatar) => {
+    if (avatar && avatar.type === 'image' && !presentIds.has(avatar.assetId)) {
+      return { type: 'emoji', value: '🙂' };
+    }
+    return avatar;
+  };
+  nextState.characters = (nextState.characters || []).map((c) => (
+    c ? { ...c, avatar: fallbackMissingAvatar(c.avatar) } : c
+  ));
+  if (nextState.player) {
+    nextState.player = { ...nextState.player, avatar: fallbackMissingAvatar(nextState.player.avatar) };
+  }
+
   const nextMessages = Array.isArray(data.messages) ? data.messages : [];
 
   // ---- 到這裡所有驗證 / migration 都成功，才開始動 IndexedDB ----
   await clearAll();
   await saveState(nextState);
   await bulkAddMessages(nextMessages);
+
+  // 還原頭貼 asset（base64 → Blob → assets store）。個別 asset 解碼失敗只略過該張，
+  // 不影響其餘匯入（對應角色的 fallback 已在上面處理）。
+  for (const a of avatarAssets) {
+    if (!a || !a.id || !a.dataBase64) continue;
+    try {
+      const blob = base64ToBlob(a.dataBase64, a.mime);
+      await putAsset({
+        id: a.id,
+        kind: a.kind || 'avatar',
+        blob,
+        mime: a.mime || 'image/webp',
+        createdAt: a.createdAt || Date.now()
+      });
+    } catch (e) {
+      // 略過壞掉的 asset；渲染時 fallback emoji。
+    }
+  }
 
   // 更新 store 記憶體狀態並重新渲染。
   await resetToState(nextState);
@@ -111,7 +180,7 @@ export async function importData(rawText) {
 }
 
 // ---- 清空 ----
-// confirm 由 UI 層負責。這裡清空兩個 store、重建 default state 並渲染。
+// confirm 由 UI 層負責。這裡清空所有 store、重建 default state 並渲染。
 export async function clearData() {
   await clearAll();
   const fresh = createDefaultState(getConfig());

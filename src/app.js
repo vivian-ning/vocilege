@@ -9,6 +9,7 @@
 import { initDB } from './db/indexeddb.js';
 import { initStore, subscribe, getState } from './state/store.js';
 import { mountLayout, render, setAppName } from './ui/render.js';
+import { onRouteChange, ensureRoute } from './ui/router.js';
 
 async function loadConfig() {
   // 相對路徑：相對於 index.html 所在位置。
@@ -33,11 +34,18 @@ async function boot() {
     await initDB();
     const state = await initStore(config);
 
-    // 掛載三欄骨架（一次），之後每次 render 只更新內容。
+    // 掛載外層骨架（頂部導航 + 內容容器），之後每次 render 只更新內容。
     mountLayout(root, state);
 
-    // 註冊唯一的渲染訂閱者：任何 action 完成後由 store 統一通知。
+    // 註冊唯一的資料訂閱者：任何 action 完成後由 store 統一通知重繪。
     subscribe((s) => render(s));
+
+    // 路由變更（hashchange）也觸發重繪。
+    onRouteChange(() => render(getState()));
+
+    // 應用啟動預設落在 #/home（未知 / 空 hash 也導向此處）。
+    // 若 ensureRoute 調整了 hash，會觸發一次 hashchange → render；此處仍先渲染一次。
+    ensureRoute();
 
     // 首次渲染。
     render(getState());

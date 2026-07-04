@@ -5,15 +5,12 @@
 //
 // 分工：migrations 管版本，schema.normalizeState 管欄位補齊，兩者不重疊。
 //
-// 未來加版本的方式（範例）：
-//   const migrators = {
-//     1: (s) => { ...從 v1 升到 v2 的結構轉換...; s.schemaVersion = 2; return s; },
-//     2: (s) => { ...從 v2 升到 v3...;              s.schemaVersion = 3; return s; },
-//   };
 // 逐版套用直到 schemaVersion === CURRENT_SCHEMA_VERSION，確保任何舊備份都能一步步
 // 升級上來，而非只支援「上一版」。
 
-export const CURRENT_SCHEMA_VERSION = 2;
+import { createExampleGlobalPrompt } from './schema.js';
+
+export const CURRENT_SCHEMA_VERSION = 3;
 
 // 逐版升級函式表。key = 來源版本，value = 把該版 state 升到「下一版」的函式。
 const migrators = {
@@ -25,6 +22,21 @@ const migrators = {
     if (typeof api.maxTokens !== 'number') api.maxTokens = 1024;
     s.apiSettings = api;
     s.schemaVersion = 2;
+    return s;
+  },
+
+  // v2 -> v3（V2 導航改版）：
+  //   - 啟用 globalPrompts，並自動建立一個 enabled=false 的範例區塊
+  //   - 新增 lastBackupAt（0 = 從未備份）
+  //   - journals 正式啟用（結構已存在，補空陣列即可）
+  //   - avatar 的 image 型不需資料轉換（舊資料皆 emoji 型，normalize 會保持原樣）
+  2: (s) => {
+    if (!Array.isArray(s.globalPrompts) || s.globalPrompts.length === 0) {
+      s.globalPrompts = [createExampleGlobalPrompt()];
+    }
+    if (!Array.isArray(s.journals)) s.journals = [];
+    if (typeof s.lastBackupAt !== 'number') s.lastBackupAt = 0;
+    s.schemaVersion = 3;
     return s;
   },
 };
