@@ -133,6 +133,14 @@ export async function addMessage(message) {
   return message;
 }
 
+export async function updateMessage(message) {
+  const transaction = await tx(MESSAGES_STORE, 'readwrite');
+  const store = transaction.objectStore(MESSAGES_STORE);
+  store.put(message);
+  await txDone(transaction);
+  return message;
+}
+
 export async function deleteMessagesByConversation(conversationId) {
   const transaction = await tx(MESSAGES_STORE, 'readwrite');
   const store = transaction.objectStore(MESSAGES_STORE);

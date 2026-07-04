@@ -13,6 +13,7 @@ import { renderConversationList } from './components/conversationList.js';
 import { renderChatView } from './components/chatView.js';
 import { renderSettingsPage } from './components/settingsPage.js';
 import { renderHomeView } from './components/homeView.js';
+import { renderFeedView } from './components/feedView.js';
 import { renderCharacterPage } from './components/characterPage.js';
 import { openCharacterCreator } from './components/characterEditor.js';
 import { getRoute, navigate } from './router.js';
@@ -56,6 +57,8 @@ export function render(state) {
   refs.content.textContent = '';
   if (route.name === 'settings') {
     renderSettingsPage(refs.content, state);
+  } else if (route.name === 'feed') {
+    renderFeedView(refs.content, state);
   } else if (route.name === 'chat') {
     renderChatPage(refs.content, state, route.params.conversationId);
   } else if (route.name === 'character') {
@@ -90,6 +93,7 @@ function renderNav(nav, route, state) {
   links.className = 'nav-links';
 
   links.appendChild(navLink('首頁', route.name === 'home', () => navigate('/home')));
+  links.appendChild(navLink('動態牆', route.name === 'feed', () => navigate('/feed')));
 
   // 聊天：導向目前（或第一個）對話；沒有角色則回首頁。
   links.appendChild(navLink('聊天', route.name === 'chat', () => {

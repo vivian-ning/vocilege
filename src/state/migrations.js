@@ -10,7 +10,7 @@
 
 import { createExampleGlobalPrompt } from './schema.js';
 
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 // 逐版升級函式表。key = 來源版本，value = 把該版 state 升到「下一版」的函式。
 const migrators = {
@@ -56,6 +56,57 @@ const migrators = {
     if (typeof settings.memoryInjectionLimit !== 'number') settings.memoryInjectionLimit = 10;
     s.settings = settings;
     s.schemaVersion = 4;
+    return s;
+  },
+
+  // v4 -> v5: V4 feed / keepsakes / message versions / utility usage.
+  4: (s) => {
+    const journals = Array.isArray(s.journals) ? s.journals : [];
+    const existingPosts = Array.isArray(s.posts) ? s.posts : [];
+    const postIds = new Set(existingPosts.map((p) => p && p.id).filter(Boolean));
+    const migratedPosts = journals
+      .filter((j) => j && !postIds.has(j.id))
+      .map((j) => ({
+        id: j.id || `post_${Math.random().toString(36).slice(2)}`,
+        authorType: 'player',
+        authorId: 'player',
+        content: j.content || '',
+        mood: j.mood || '',
+        createdAt: j.createdAt || Date.now(),
+        likes: [],
+        comments: []
+      }));
+    s.posts = existingPosts.concat(migratedPosts);
+
+    if (!Array.isArray(s.keepsakes)) s.keepsakes = [];
+    if (!Array.isArray(s.usageLog)) s.usageLog = [];
+    if (typeof s.lastOpenedAt !== 'number') s.lastOpenedAt = 0;
+    if (typeof s.lastGreetingAt !== 'number') s.lastGreetingAt = 0;
+
+    const settings = (s.settings && typeof s.settings === 'object') ? { ...s.settings } : {};
+    if (typeof settings.timeAwareness !== 'boolean') settings.timeAwareness = true;
+    if (typeof settings.feedReactorsPerPost !== 'number') settings.feedReactorsPerPost = 2;
+    if (typeof settings.feedDailyLimit !== 'number') settings.feedDailyLimit = 20;
+    if (typeof settings.feedAutoPost !== 'boolean') settings.feedAutoPost = false;
+    if (typeof settings.greetingAfterDays !== 'number') settings.greetingAfterDays = 3;
+    if (typeof settings.dreamEnabled !== 'boolean') settings.dreamEnabled = true;
+    if (typeof settings.dreamEveryMessages !== 'number') settings.dreamEveryMessages = 20;
+    if (typeof settings.dreamDailyLimit !== 'number') settings.dreamDailyLimit = 10;
+    s.settings = settings;
+
+    const api = (s.apiSettings && typeof s.apiSettings === 'object') ? { ...s.apiSettings } : {};
+    if (typeof api.utilityModel !== 'string') api.utilityModel = '';
+    s.apiSettings = api;
+
+    if (Array.isArray(s.conversations)) {
+      s.conversations = s.conversations.map((c) => (
+        c && typeof c === 'object' && typeof c.lastDreamMessageCount !== 'number'
+          ? { ...c, lastDreamMessageCount: 0 }
+          : c
+      ));
+    }
+
+    s.schemaVersion = 5;
     return s;
   },
 };

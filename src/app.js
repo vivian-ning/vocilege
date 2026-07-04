@@ -7,7 +7,7 @@
 // username.github.io/repo/ 子路徑下，絕對路徑會失效。
 
 import { initDB } from './db/indexeddb.js';
-import { initStore, subscribe, getState } from './state/store.js';
+import { initStore, subscribe, getState, markAppOpened, maybeCreateGreeting } from './state/store.js';
 import { mountLayout, render, setAppName } from './ui/render.js';
 import { onRouteChange, ensureRoute } from './ui/router.js';
 
@@ -33,6 +33,8 @@ async function boot() {
 
     await initDB();
     const state = await initStore(config);
+    await maybeCreateGreeting();
+    await markAppOpened();
 
     // 掛載外層骨架（頂部導航 + 內容容器），之後每次 render 只更新內容。
     mountLayout(root, state);

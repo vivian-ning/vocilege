@@ -20,6 +20,8 @@ import {
   addMemory,
   updateMemory,
   deleteMemory,
+  deleteKeepsake,
+  collectKeepsakeAsMemory,
   deleteCharacter
 } from '../../state/store.js';
 import { selectInjectedMemories } from '../../services/promptBuilder.js';
@@ -165,9 +167,56 @@ function renderRecordTab(container, state, character) {
     (c) => c.type === 'direct' && c.primaryCharacterId === character.id
   );
   container.appendChild(buildRelationshipSection(state, character, conv));
+  container.appendChild(buildKeepsakeSection(state, character));
   container.appendChild(buildMemorySection(state, character));
   container.appendChild(buildAnniversarySection(state, character));
   container.appendChild(buildWishlistSection(state, character));
+}
+
+function buildKeepsakeSection(state, character) {
+  const sec = sectionEl('珍藏');
+  const list = document.createElement('div');
+  list.className = 'keepsake-list';
+  const items = (state.keepsakes || [])
+    .filter((k) => k.characterId === character.id)
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  if (!items.length) {
+    const empty = document.createElement('div');
+    empty.className = 'form-hint';
+    empty.textContent = '還沒有珍藏。可在聊天訊息下方按「珍藏」。';
+    list.appendChild(empty);
+  } else {
+    for (const item of items) list.appendChild(buildKeepsakeItem(item));
+  }
+  sec.appendChild(list);
+  return sec;
+}
+
+function buildKeepsakeItem(item) {
+  const row = document.createElement('div');
+  row.className = 'keepsake-item';
+  const text = document.createElement('div');
+  text.className = 'keepsake-text';
+  text.textContent = partsToText(item.snapshot && item.snapshot.parts);
+  row.appendChild(text);
+  if (item.note) {
+    const note = document.createElement('div');
+    note.className = 'keepsake-note';
+    note.textContent = item.note;
+    row.appendChild(note);
+  }
+  const actions = document.createElement('div');
+  actions.className = 'keepsake-actions';
+  const collect = iconBtn('轉記憶', '轉成記憶');
+  collect.addEventListener('click', () => collectKeepsakeAsMemory(item.id));
+  const del = iconBtn('刪', '刪除珍藏');
+  del.addEventListener('click', () => {
+    if (window.confirm('要刪除這則珍藏嗎？')) deleteKeepsake(item.id);
+  });
+  actions.appendChild(collect);
+  actions.appendChild(del);
+  row.appendChild(actions);
+  return row;
 }
 
 // 相識天數 + 相遇日 + 相處統計
@@ -745,6 +794,13 @@ function numSelect(value, max) {
     sel.appendChild(o);
   }
   return sel;
+}
+
+function partsToText(parts) {
+  return (Array.isArray(parts) ? parts : [])
+    .map((p) => (p && p.content ? String(p.content) : ''))
+    .join('\n')
+    .trim();
 }
 
 function repeatSelect(value) {

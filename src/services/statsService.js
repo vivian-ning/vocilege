@@ -85,6 +85,21 @@ async function compute(state) {
     }
   }
 
+  for (const u of (state.usageLog || [])) {
+    if (!u) continue;
+    const ts = u.at || 0;
+    const p = Number(u.promptTokens) || 0;
+    const c = Number(u.completionTokens) || 0;
+    total.prompt += p; total.completion += c;
+    if (isSameLocalMonth(ts, ref)) { month.prompt += p; month.completion += c; }
+    if (isSameLocalDay(ts, ref)) { today.prompt += p; today.completion += c; }
+    if (u.characterId) {
+      if (!perCharacter[u.characterId]) perCharacter[u.characterId] = zero();
+      perCharacter[u.characterId].prompt += p;
+      perCharacter[u.characterId].completion += c;
+    }
+  }
+
   return { today, month, total, perCharacter, lastByConversation };
 }
 

@@ -64,6 +64,163 @@ body {
   padding: 32px;
   color: var(--muted);
 }
+
+/* V4 feed */
+.feed-page {
+  width: min(920px, calc(100% - 24px));
+  margin: 0 auto;
+}
+
+.feed-composer,
+.feed-post,
+.keepsake-item {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  box-shadow: var(--shadow-soft);
+}
+
+.feed-composer {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.feed-composer-row,
+.feed-actions,
+.feed-comment-form,
+.keepsake-actions,
+.msg-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.feed-mood {
+  max-width: 160px;
+}
+
+.feed-list {
+  display: grid;
+  gap: 14px;
+}
+
+.feed-empty {
+  color: var(--muted);
+  padding: 24px 0;
+}
+
+.feed-post-head,
+.feed-comment {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.feed-avatar {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+}
+
+.feed-comment-avatar {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+}
+
+.feed-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.feed-author,
+.feed-comment-author {
+  font-weight: 700;
+}
+
+.feed-time,
+.keepsake-note {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.feed-content {
+  white-space: pre-wrap;
+  line-height: 1.7;
+  margin: 12px 0;
+}
+
+.feed-comments {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.feed-comment-body {
+  min-width: 0;
+}
+
+.feed-comment-author {
+  margin-right: 8px;
+}
+
+.feed-comment-text,
+.keepsake-text {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+.msg-tools {
+  margin: 4px 0 10px 48px;
+  opacity: 0.78;
+}
+
+.msg-tool-btn {
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.msg-tool-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.msg-version-tag {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.keepsake-list {
+  display: grid;
+  gap: 10px;
+}
+
+.keepsake-item {
+  display: grid;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .feed-page {
+    width: min(100%, calc(100% - 16px));
+  }
+
+  .feed-comment-form {
+    display: grid;
+  }
+
+  .msg-tools {
+    margin-left: 0;
+  }
+}
 .boot-error h2 { color: var(--danger); }
 
 /* ---- 外層骨架（V2）：頂部導航 + 內容容器 ---- */

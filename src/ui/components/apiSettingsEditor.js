@@ -59,6 +59,10 @@ export function renderApiSettingsEditor(container, state) {
   const modelControl = buildModelControl(api.model || '', api.provider || '');
   form.appendChild(wrapField('模型 (model)', modelControl.wrap));
 
+  const utilityModelInput = textInput(api.utilityModel || '', '');
+  utilityModelInput.placeholder = '可留白，留白時使用主要 model';
+  form.appendChild(wrapField('utilityModel（輔助任務模型）', utilityModelInput));
+
   // baseUrl（placeholder 依 provider 顯示預設值）
   const baseUrlInput = textInput(api.baseUrl || '', '');
   const baseUrlField = wrapField('Base URL（留空使用預設）', baseUrlInput);
@@ -133,10 +137,43 @@ export function renderApiSettingsEditor(container, state) {
   const memField = wrapField('記憶注入上限（一般記憶筆數；locked 不占名額，改動即時生效）', memLimitInput);
   form.appendChild(memField);
 
+  const timeAwarenessInput = checkboxInput(state.settings.timeAwareness !== false);
+  timeAwarenessInput.addEventListener('change', () => updateSettings({ timeAwareness: timeAwarenessInput.checked }));
+  form.appendChild(wrapField('時間感知', timeAwarenessInput));
+
+  const feedReactorsInput = numberInput(state.settings.feedReactorsPerPost, 0, 10, 1);
+  feedReactorsInput.addEventListener('change', () => updateSettings({ feedReactorsPerPost: clampInt(feedReactorsInput.value, 0, 10, 2) }));
+  form.appendChild(wrapField('每則動態角色回應數', feedReactorsInput));
+
+  const feedDailyInput = numberInput(state.settings.feedDailyLimit, 0, 200, 1);
+  feedDailyInput.addEventListener('change', () => updateSettings({ feedDailyLimit: clampInt(feedDailyInput.value, 0, 200, 20) }));
+  form.appendChild(wrapField('每日動態 AI 上限', feedDailyInput));
+
+  const feedAutoInput = checkboxInput(!!state.settings.feedAutoPost);
+  feedAutoInput.addEventListener('change', () => updateSettings({ feedAutoPost: feedAutoInput.checked }));
+  form.appendChild(wrapField('允許角色自動發動態', feedAutoInput));
+
+  const greetingInput = numberInput(state.settings.greetingAfterDays, 0, 365, 1);
+  greetingInput.addEventListener('change', () => updateSettings({ greetingAfterDays: clampInt(greetingInput.value, 0, 365, 3) }));
+  form.appendChild(wrapField('幾天未開啟後問候', greetingInput));
+
+  const dreamEnabledInput = checkboxInput(state.settings.dreamEnabled !== false);
+  dreamEnabledInput.addEventListener('change', () => updateSettings({ dreamEnabled: dreamEnabledInput.checked }));
+  form.appendChild(wrapField('啟用 dream-lite 記憶擷取', dreamEnabledInput));
+
+  const dreamEveryInput = numberInput(state.settings.dreamEveryMessages, 1, 1000, 1);
+  dreamEveryInput.addEventListener('change', () => updateSettings({ dreamEveryMessages: clampInt(dreamEveryInput.value, 1, 1000, 20) }));
+  form.appendChild(wrapField('每幾則訊息擷取一次', dreamEveryInput));
+
+  const dreamDailyInput = numberInput(state.settings.dreamDailyLimit, 0, 200, 1);
+  dreamDailyInput.addEventListener('change', () => updateSettings({ dreamDailyLimit: clampInt(dreamDailyInput.value, 0, 200, 10) }));
+  form.appendChild(wrapField('每日 dream-lite 上限', dreamDailyInput));
+
   // 讀取目前表單值組出 apiSettings 物件（供儲存與測試連線共用）。
   const collect = () => ({
     provider: providerSel.value,
     model: modelControl.getValue(),
+    utilityModel: utilityModelInput.value.trim(),
     baseUrl: baseUrlInput.value.trim(),
     apiKey: apiKeyInput.value,
     rememberApiKey: rememberInput.checked,
@@ -314,8 +351,30 @@ function textInput(value, placeholder) {
   return input;
 }
 
+function numberInput(value, min, max, step) {
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.className = 'form-control';
+  input.min = String(min);
+  input.max = String(max);
+  input.step = String(step || 1);
+  input.value = value != null ? String(value) : String(min);
+  return input;
+}
+
+function checkboxInput(checked) {
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.checked = !!checked;
+  return input;
+}
+
 function clampNum(v, min, max, fallback) {
   const n = Number(v);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, n));
+}
+
+function clampInt(v, min, max, fallback) {
+  return Math.round(clampNum(v, min, max, fallback));
 }

@@ -66,10 +66,14 @@ export function createDefaultState(config) {
     globalPrompts: [createExampleGlobalPrompt()],
     posts: [],
     heartVoices: [],
+    keepsakes: [],
     relationshipData: [],
     wishlists: [],
     anniversaries: [],
     notifications: [],
+    usageLog: [],
+    lastOpenedAt: 0,
+    lastGreetingAt: 0,
     // V2 新增：上次成功匯出備份的時間戳（0 = 從未備份），供首頁備份提醒使用。
     lastBackupAt: 0,
     settings: {
@@ -78,6 +82,24 @@ export function createDefaultState(config) {
       // V3：非 locked 記憶注入的筆數上限（locked 不占名額）。
       memoryInjectionLimit: typeof defaultSettings.memoryInjectionLimit === 'number'
         ? defaultSettings.memoryInjectionLimit
+        : 10,
+      timeAwareness: defaultSettings.timeAwareness !== false,
+      feedReactorsPerPost: typeof defaultSettings.feedReactorsPerPost === 'number'
+        ? defaultSettings.feedReactorsPerPost
+        : 2,
+      feedDailyLimit: typeof defaultSettings.feedDailyLimit === 'number'
+        ? defaultSettings.feedDailyLimit
+        : 20,
+      feedAutoPost: !!defaultSettings.feedAutoPost,
+      greetingAfterDays: typeof defaultSettings.greetingAfterDays === 'number'
+        ? defaultSettings.greetingAfterDays
+        : 3,
+      dreamEnabled: defaultSettings.dreamEnabled !== false,
+      dreamEveryMessages: typeof defaultSettings.dreamEveryMessages === 'number'
+        ? defaultSettings.dreamEveryMessages
+        : 20,
+      dreamDailyLimit: typeof defaultSettings.dreamDailyLimit === 'number'
+        ? defaultSettings.dreamDailyLimit
         : 10
     },
     apiSettings: {
@@ -86,6 +108,7 @@ export function createDefaultState(config) {
       baseUrl: '',
       rememberApiKey: false,
       apiKey: '',
+      utilityModel: '',
       // V1 新增：temperature（0–2，預設 1）、maxTokens（預設 1024）。
       temperature: 1,
       maxTokens: 1024
@@ -129,8 +152,8 @@ export function normalizeState(state) {
   // 確保所有陣列欄位存在且為陣列。
   const arrayFields = [
     'characters', 'conversations', 'memories', 'worldbooks',
-    'journals', 'globalPrompts', 'posts', 'heartVoices', 'relationshipData',
-    'wishlists', 'anniversaries', 'notifications'
+    'journals', 'globalPrompts', 'posts', 'heartVoices', 'keepsakes', 'relationshipData',
+    'wishlists', 'anniversaries', 'notifications', 'usageLog'
   ];
   for (const f of arrayFields) {
     if (!Array.isArray(merged[f])) merged[f] = [];
@@ -143,10 +166,42 @@ export function normalizeState(state) {
   }
   merged.settings.memoryInjectionLimit = Math.max(0, Math.floor(merged.settings.memoryInjectionLimit));
 
+  const numericSettings = {
+    feedReactorsPerPost: [0, 10, 2],
+    feedDailyLimit: [0, 200, 20],
+    greetingAfterDays: [0, 365, 3],
+    dreamEveryMessages: [1, 1000, 20],
+    dreamDailyLimit: [0, 200, 10]
+  };
+  for (const [key, [min, max, fallback]] of Object.entries(numericSettings)) {
+    const n = Number(merged.settings[key]);
+    merged.settings[key] = Number.isFinite(n)
+      ? Math.min(max, Math.max(min, Math.floor(n)))
+      : fallback;
+  }
+  merged.settings.timeAwareness = merged.settings.timeAwareness !== false;
+  merged.settings.feedAutoPost = !!merged.settings.feedAutoPost;
+  merged.settings.dreamEnabled = merged.settings.dreamEnabled !== false;
+
+  if (typeof merged.lastOpenedAt !== 'number') merged.lastOpenedAt = 0;
+  if (typeof merged.lastGreetingAt !== 'number') merged.lastGreetingAt = 0;
+
+  merged.usageLog = merged.usageLog
+    .filter((u) => u && typeof u === 'object')
+    .slice(-500);
+
   // 角色頭貼型別修正（image / emoji 兩型）。
   merged.characters = merged.characters.map((c) => {
     if (!c || typeof c !== 'object') return c;
     return { ...c, avatar: cloneAvatar(c.avatar) };
+  });
+
+  merged.conversations = merged.conversations.map((c) => {
+    if (!c || typeof c !== 'object') return c;
+    if (typeof c.lastDreamMessageCount !== 'number') {
+      return { ...c, lastDreamMessageCount: 0 };
+    }
+    return c;
   });
 
   if (typeof merged.lastBackupAt !== 'number') merged.lastBackupAt = 0;

@@ -16,6 +16,12 @@
 
 import { formatTime } from '../../utils/time.js';
 import { createAvatarEl } from '../avatar.js';
+import {
+  addKeepsakeFromMessage,
+  regenerateMessage,
+  editMessageParts,
+  switchMessageVersion
+} from '../../state/store.js';
 
 export function renderMessage(message, context) {
   const wrap = document.createElement('div');
@@ -41,7 +47,68 @@ export function renderMessage(message, context) {
     wrap.appendChild(usageEl);
   }
 
+  if (message.senderType === 'character') {
+    wrap.appendChild(renderMessageTools(message));
+  }
+
   return wrap;
+}
+
+function renderMessageTools(message) {
+  const tools = document.createElement('div');
+  tools.className = 'msg-tools';
+
+  const keepsake = toolBtn('珍藏');
+  keepsake.addEventListener('click', () => {
+    const note = window.prompt('替這段珍藏加一點備註（可留白）', '');
+    if (note === null) return;
+    addKeepsakeFromMessage(message.id, note);
+  });
+  tools.appendChild(keepsake);
+
+  const regen = toolBtn('重抽');
+  regen.addEventListener('click', () => regenerateMessage(message.id));
+  tools.appendChild(regen);
+
+  const edit = toolBtn('編輯');
+  edit.addEventListener('click', () => {
+    const text = (message.parts || [])
+      .map((p) => (p && p.content ? String(p.content) : ''))
+      .join('\n')
+      .trim();
+    const next = window.prompt('編輯這則回覆', text);
+    if (next == null) return;
+    editMessageParts(message.id, next);
+  });
+  tools.appendChild(edit);
+
+  const versions = Array.isArray(message.versions) ? message.versions.length : 0;
+  if (versions > 1) {
+    const prev = toolBtn('上一版');
+    prev.disabled = (Number(message.activeVersion) || 0) <= 0;
+    prev.addEventListener('click', () => switchMessageVersion(message.id, -1));
+    tools.appendChild(prev);
+
+    const tag = document.createElement('span');
+    tag.className = 'msg-version-tag';
+    tag.textContent = `${(Number(message.activeVersion) || 0) + 1}/${versions}`;
+    tools.appendChild(tag);
+
+    const next = toolBtn('下一版');
+    next.disabled = (Number(message.activeVersion) || 0) >= versions - 1;
+    next.addEventListener('click', () => switchMessageVersion(message.id, 1));
+    tools.appendChild(next);
+  }
+
+  return tools;
+}
+
+function toolBtn(text) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'msg-tool-btn';
+  btn.textContent = text;
+  return btn;
 }
 
 export function renderMessagePart(part, message, context) {

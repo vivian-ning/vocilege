@@ -1,7 +1,7 @@
 {
   "appName": "拾聲",
   "appNameLatin": "Vocilège",
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "defaultPlayer": {
     "id": "player",
     "playerName": "",
@@ -11,6 +11,14 @@
   "defaultSettings": {
     "theme": "cream",
     "messageDisplayMode": "mixed",
-    "memoryInjectionLimit": 10
+    "memoryInjectionLimit": 10,
+    "timeAwareness": true,
+    "feedReactorsPerPost": 2,
+    "feedDailyLimit": 20,
+    "feedAutoPost": false,
+    "greetingAfterDays": 3,
+    "dreamEnabled": true,
+    "dreamEveryMessages": 20,
+    "dreamDailyLimit": 10
   }
 }

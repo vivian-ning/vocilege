@@ -19,6 +19,7 @@ import {
   saveState,
   getMessagesByConversation,
   addMessage,
+  updateMessage,
   deleteMessagesByConversation
 } from '../db/indexeddb.js';
 import { createDefaultState, normalizeState } from './schema.js';
@@ -131,7 +132,7 @@ export async function initStore(appConfig) {
 
 async function reloadCurrentMessages() {
   if (state.currentConversationId) {
-    messages = await getMessagesByConversation(state.currentConversationId);
+    messages = normalizeMessageList(await getMessagesByConversation(state.currentConversationId));
   } else {
     messages = [];
   }
@@ -151,6 +152,62 @@ function getActiveCharacter() {
 
 function getActiveConversation() {
   return state.conversations.find((c) => c.id === state.currentConversationId) || null;
+}
+
+function activeParts(message) {
+  if (!message || !Array.isArray(message.versions) || message.versions.length === 0) {
+    return Array.isArray(message && message.parts) ? message.parts : [];
+  }
+  const idx = Math.min(
+    message.versions.length - 1,
+    Math.max(0, Number(message.activeVersion) || 0)
+  );
+  const version = message.versions[idx];
+  return Array.isArray(version && version.parts) ? version.parts : (message.parts || []);
+}
+
+function activeUsage(message) {
+  if (!message || !Array.isArray(message.versions) || message.versions.length === 0) {
+    return message && message.usage ? message.usage : null;
+  }
+  const idx = Math.min(
+    message.versions.length - 1,
+    Math.max(0, Number(message.activeVersion) || 0)
+  );
+  return message.versions[idx] && message.versions[idx].usage ? message.versions[idx].usage : null;
+}
+
+function normalizeMessageRecord(message) {
+  if (!message || typeof message !== 'object') return message;
+  const parts = Array.isArray(message.parts) ? message.parts : [];
+  if (message.senderType !== 'character') {
+    return { ...message, parts };
+  }
+  if (Array.isArray(message.versions) && message.versions.length > 0) {
+    const activeVersion = Math.min(
+      message.versions.length - 1,
+      Math.max(0, Number(message.activeVersion) || 0)
+    );
+    const nextParts = Array.isArray(message.versions[activeVersion].parts)
+      ? message.versions[activeVersion].parts
+      : parts;
+    const usage = message.versions[activeVersion].usage || message.usage;
+    return { ...message, activeVersion, parts: nextParts, usage };
+  }
+  return {
+    ...message,
+    parts,
+    activeVersion: 0,
+    versions: [{
+      parts,
+      usage: message.usage || null,
+      createdAt: message.createdAt || now()
+    }]
+  };
+}
+
+function normalizeMessageList(list) {
+  return (Array.isArray(list) ? list : []).map(normalizeMessageRecord);
 }
 
 // ---- actions ----
@@ -687,7 +744,7 @@ export async function addMemory(characterId, data = {}) {
     lastRecalledAt: 0,
     recallCount: 0,
     status: 'active',
-    source: 'manual',
+    source: data.source || 'manual',
     createdAt: ts,
     updatedAt: ts
   });
@@ -768,6 +825,320 @@ export async function updateApiSettings(patch) {
   notify();
 }
 
+function pushUsageLog(entry) {
+  const usage = entry && entry.usage ? entry.usage : entry;
+  if (!usage) return;
+  const row = {
+    at: entry.at || now(),
+    kind: entry.kind || 'utility',
+    characterId: entry.characterId || '',
+    promptTokens: Number(usage.promptTokens) || 0,
+    completionTokens: Number(usage.completionTokens) || 0,
+    model: usage.model || ''
+  };
+  state.usageLog = (state.usageLog || []).concat(row).slice(-500);
+}
+
+export async function logUtilityUsage(kind, characterId, usage) {
+  pushUsageLog({ kind, characterId, usage });
+  await saveCurrentState();
+  notify();
+}
+
+export async function markAppOpened() {
+  const previous = state.lastOpenedAt || 0;
+  state.lastOpenedAt = now();
+  await saveCurrentState();
+  return previous;
+}
+
+// ---- V4 feed ----
+
+export async function addPost({ authorType = 'player', authorId = 'player', content, mood = '' }) {
+  const text = (content || '').trim();
+  if (!text) return null;
+  const post = {
+    id: generateId('post'),
+    authorType,
+    authorId,
+    content: text,
+    mood: (mood || '').trim(),
+    createdAt: now(),
+    likes: [],
+    comments: []
+  };
+  state.posts = state.posts || [];
+  state.posts.push(post);
+  await saveCurrentState();
+  notify();
+  return post;
+}
+
+export async function deletePost(id) {
+  state.posts = (state.posts || []).filter((p) => p.id !== id);
+  await saveCurrentState();
+  notify();
+}
+
+export async function togglePostLike(postId, userType = 'player', userId = 'player') {
+  const post = (state.posts || []).find((p) => p.id === postId);
+  if (!post) return;
+  post.likes = Array.isArray(post.likes) ? post.likes : [];
+  const idx = post.likes.findIndex((l) => l.userType === userType && l.userId === userId);
+  if (idx >= 0) post.likes.splice(idx, 1);
+  else post.likes.push({ userType, userId, at: now() });
+  await saveCurrentState();
+  notify();
+}
+
+export async function addPostComment(postId, { authorType = 'player', authorId = 'player', content }) {
+  const post = (state.posts || []).find((p) => p.id === postId);
+  const text = (content || '').trim();
+  if (!post || !text) return null;
+  post.comments = Array.isArray(post.comments) ? post.comments : [];
+  const comment = {
+    id: generateId('comment'),
+    authorType,
+    authorId,
+    content: text,
+    createdAt: now()
+  };
+  post.comments.push(comment);
+  await saveCurrentState();
+  notify();
+  return comment;
+}
+
+export async function generateMockFeedReaction(postId) {
+  const post = (state.posts || []).find((p) => p.id === postId);
+  if (!post) return null;
+  const characters = (state.characters || []).filter((c) => c && c.id);
+  if (!characters.length) return null;
+  const existing = new Set((post.comments || []).map((c) => c.authorId));
+  const candidates = characters.filter((c) => !existing.has(c.id));
+  const pick = candidates[0] || characters[0];
+  const name = pick.name || '角色';
+  const snippets = [
+    `我看到這段，第一個想到的是你當時的表情。`,
+    `這件事感覺值得被好好收著。`,
+    `我想陪你把這個瞬間多停留一下。`
+  ];
+  const comment = await addPostComment(postId, {
+    authorType: 'character',
+    authorId: pick.id,
+    content: `${name}：${snippets[Math.floor(Math.random() * snippets.length)]}`
+  });
+  pushUsageLog({ kind: 'feedReaction', characterId: pick.id, usage: { model: 'mock-utility' } });
+  await saveCurrentState();
+  return comment;
+}
+
+// ---- V4 keepsakes ----
+
+export async function addKeepsakeFromMessage(messageId, note = '') {
+  const msg = messages.find((m) => m.id === messageId);
+  if (!msg) return null;
+  const conversation = state.conversations.find((c) => c.id === msg.conversationId);
+  const characterId = conversation ? conversation.primaryCharacterId : state.currentCharacterId;
+  const keepsake = {
+    id: generateId('keep'),
+    characterId: characterId || '',
+    conversationId: msg.conversationId || '',
+    messageId: msg.id,
+    snapshot: {
+      senderType: msg.senderType || '',
+      senderId: msg.senderId || '',
+      parts: activeParts(msg),
+      createdAt: msg.createdAt || now()
+    },
+    note: (note || '').trim(),
+    createdAt: now()
+  };
+  state.keepsakes = state.keepsakes || [];
+  state.keepsakes.push(keepsake);
+  await saveCurrentState();
+  notify();
+  return keepsake;
+}
+
+export async function deleteKeepsake(id) {
+  state.keepsakes = (state.keepsakes || []).filter((k) => k.id !== id);
+  await saveCurrentState();
+  notify();
+}
+
+export async function collectKeepsakeAsMemory(keepsakeId) {
+  const item = (state.keepsakes || []).find((k) => k.id === keepsakeId);
+  if (!item || !item.characterId) return null;
+  const text = partsToPlainText(item.snapshot && item.snapshot.parts);
+  const content = [text, item.note ? `Note: ${item.note}` : ''].filter(Boolean).join('\n');
+  await addMemory(item.characterId, {
+    content,
+    summary: item.note || text.slice(0, 60),
+    importance: 4,
+    emotionWeight: 4,
+    locked: false,
+    source: 'collected'
+  });
+  return item;
+}
+
+// ---- V4 message versions ----
+
+export async function switchMessageVersion(messageId, dir) {
+  const msg = messages.find((m) => m.id === messageId);
+  if (!msg || !Array.isArray(msg.versions) || msg.versions.length < 2) return;
+  const next = Math.min(
+    msg.versions.length - 1,
+    Math.max(0, (Number(msg.activeVersion) || 0) + (dir < 0 ? -1 : 1))
+  );
+  msg.activeVersion = next;
+  msg.parts = activeParts(msg);
+  msg.usage = activeUsage(msg);
+  await updateMessage(msg);
+  invalidateStats();
+  notify();
+}
+
+export async function editMessageParts(messageId, text) {
+  const msg = messages.find((m) => m.id === messageId);
+  if (!msg) return;
+  msg.parts = [{ type: 'message', content: (text || '').trim() }];
+  msg.editedAt = now();
+  if (msg.senderType === 'character') {
+    msg.versions = Array.isArray(msg.versions) && msg.versions.length
+      ? msg.versions
+      : [{ parts: msg.parts, usage: msg.usage || null, createdAt: msg.createdAt || now() }];
+    const idx = Math.min(msg.versions.length - 1, Math.max(0, Number(msg.activeVersion) || 0));
+    msg.versions[idx] = { ...msg.versions[idx], parts: msg.parts, editedAt: msg.editedAt };
+  }
+  await updateMessage(msg);
+  invalidateStats();
+  notify();
+}
+
+export async function regenerateMessage(messageId) {
+  const msg = messages.find((m) => m.id === messageId);
+  const conversation = msg ? state.conversations.find((c) => c.id === msg.conversationId) : null;
+  const character = conversation
+    ? state.characters.find((c) => c.id === conversation.primaryCharacterId)
+    : getActiveCharacter();
+  if (!msg || msg.senderType !== 'character' || !conversation || !character || typing) return;
+
+  let userText = '';
+  const idx = messages.findIndex((m) => m.id === msg.id);
+  for (let i = idx - 1; i >= 0; i--) {
+    if (messages[i].senderType === 'player') {
+      userText = partsToPlainText(messages[i].parts);
+      break;
+    }
+  }
+
+  typing = true;
+  notify();
+  try {
+    const history = messages.slice(0, idx);
+    const prompt = buildPrompt({
+      conversation,
+      activeCharacter: character,
+      characters: state.characters,
+      player: state.player,
+      messages: history,
+      memories: state.memories,
+      worldEntries: state.worldbooks,
+      globalPrompts: state.globalPrompts,
+      mode: state.settings.messageDisplayMode,
+      memoryInjectionLimit: state.settings.memoryInjectionLimit
+    });
+    const result = await generateReply({
+      prompt,
+      conversation,
+      character,
+      player: state.player,
+      userMessage: userText,
+      apiSettings: state.apiSettings
+    });
+    const parts = Array.isArray(result) && result.length ? result : [{ type: 'message', content: '' }];
+    const usage = result && result.usage ? result.usage : null;
+    msg.versions = Array.isArray(msg.versions) && msg.versions.length
+      ? msg.versions
+      : [{ parts: msg.parts || [], usage: msg.usage || null, createdAt: msg.createdAt || now() }];
+    msg.versions.push({ parts, usage, createdAt: now() });
+    msg.activeVersion = msg.versions.length - 1;
+    msg.parts = parts;
+    if (usage) msg.usage = usage;
+    await updateMessage(msg);
+    invalidateStats();
+  } catch (err) {
+    pendingError = {
+      message: (err && err.userMessage) || (err && err.message) || 'AI 回覆失敗',
+      userText,
+      conversationId: conversation.id
+    };
+  } finally {
+    typing = false;
+    notify();
+  }
+}
+
+// ---- V4 greeting / dream lite ----
+
+export async function maybeCreateGreeting() {
+  const threshold = Math.max(0, Number(state.settings.greetingAfterDays) || 0);
+  if (!threshold || state.lastGreetingAt) return null;
+  const lastOpenedAt = state.lastOpenedAt || 0;
+  if (!lastOpenedAt || now() - lastOpenedAt < threshold * 86400000) return null;
+  const conv = (state.conversations || [])
+    .filter((c) => c.type === 'direct')
+    .sort((a, b) => (b.lastMessageAt || 0) - (a.lastMessageAt || 0))[0];
+  const character = conv ? state.characters.find((c) => c.id === conv.primaryCharacterId) : null;
+  if (!conv || !character) return null;
+  const msg = makeMessage({
+    conversationId: conv.id,
+    senderType: 'character',
+    senderId: character.id,
+    parts: [{ type: 'message', content: `${character.name || '我'} 想起你了。這幾天過得還好嗎？` }]
+  });
+  await addMessage(msg);
+  conv.lastMessageAt = msg.createdAt;
+  state.lastGreetingAt = now();
+  pushUsageLog({ kind: 'greeting', characterId: character.id, usage: { model: 'mock-utility' } });
+  await saveCurrentState();
+  await reloadCurrentMessages();
+  notify();
+  return msg;
+}
+
+export async function maybeExtractDreamMemories(conversationId) {
+  const conv = (state.conversations || []).find((c) => c.id === conversationId);
+  if (!conv || state.settings.dreamEnabled === false) return [];
+  const every = Math.max(1, Number(state.settings.dreamEveryMessages) || 20);
+  const list = conversationId === state.currentConversationId
+    ? messages
+    : normalizeMessageList(await getMessagesByConversation(conversationId));
+  const count = list.length;
+  if (count - (conv.lastDreamMessageCount || 0) < every) return [];
+  const characterId = conv.primaryCharacterId;
+  const recent = list.slice(-every);
+  const text = recent.map((m) => partsToPlainText(activeParts(m))).join('\n').trim();
+  if (!text) return [];
+  const content = text.length > 160 ? text.slice(0, 160) + '...' : text;
+  const memory = {
+    content: `Conversation echo: ${content}`,
+    summary: content.slice(0, 60),
+    importance: 3,
+    emotionWeight: 3,
+    locked: false,
+    source: 'extracted'
+  };
+  await addMemory(characterId, memory);
+  conv.lastDreamMessageCount = count;
+  pushUsageLog({ kind: 'dream', characterId, usage: { model: 'mock-utility' } });
+  await saveCurrentState();
+  notify();
+  return [memory];
+}
+
 // ---- message 工廠：套用 senderType→role 映射（第七節）----
 //
 // 映射規則（必須一致）：
@@ -778,6 +1149,7 @@ export async function updateApiSettings(patch) {
 // role 對應未來 AI API 的 message role；senderType + senderId 用於區分「群聊中多個
 // 角色都是 assistant」的情境（未來群聊時，靠 senderId 分辨是哪個角色）。
 function makeMessage({ conversationId, senderType, senderId, parts, usage }) {
+  const createdAt = now();
   let role;
   if (senderType === 'player') role = 'user';
   else if (senderType === 'character') role = 'assistant';
@@ -790,7 +1162,7 @@ function makeMessage({ conversationId, senderType, senderId, parts, usage }) {
     senderId: senderType === 'player' ? 'player' : senderId,
     role,
     parts: parts || [],
-    createdAt: now()
+    createdAt
   };
   // usage 為選填：只有真 API 回覆的 assistant message 才寫入
   // { promptTokens, completionTokens, model }。player / mock 不寫。
@@ -803,6 +1175,14 @@ function makeMessage({ conversationId, senderType, senderId, parts, usage }) {
     // V3：快取用量為選填（只有 anthropic 回應帶快取欄位時才寫入）。
     if (usage.cacheRead != null) msg.usage.cacheRead = Number(usage.cacheRead) || 0;
     if (usage.cacheWrite != null) msg.usage.cacheWrite = Number(usage.cacheWrite) || 0;
+  }
+  if (senderType === 'character') {
+    msg.activeVersion = 0;
+    msg.versions = [{
+      parts: msg.parts,
+      usage: msg.usage || null,
+      createdAt
+    }];
   }
   return msg;
 }
