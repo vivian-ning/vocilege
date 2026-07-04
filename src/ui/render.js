@@ -1,18 +1,19 @@
 // src/ui/render.js
 //
-// 主渲染函式（V2 導航改版）。作為 store 的唯一資料訂閱者（app.js 註冊），並由
-// router 的 hashchange 一併呼叫。每次 render 依目前路由決定顯示哪一頁：
-//   #/home     → 首頁主控台（homeView）
-//   #/chat/:id → 聊天頁（三欄式：左對話列表 / 中聊天 / 右角色+玩家設定）
-//   #/settings → 設定頁（API / Prompt 存放區 / 資料）
+// 主渲染函式（V2 導航改版；V3 介面重組）。作為 store 的唯一資料訂閱者（app.js
+// 註冊），並由 router 的 hashchange 一併呼叫。每次 render 依目前路由決定顯示哪一頁：
+//   #/home         → 首頁主控台（homeView）
+//   #/chat/:id     → 聊天頁（兩欄式：左對話列表 / 中聊天）
+//   #/character/:id→ 角色相處頁（相處紀錄 / 角色設定）
+//   #/settings     → 設定頁（API / Prompt 存放區 / 玩家設定 / 資料）
 //
 // 常駐頂部導航列：拾聲 logo（回首頁）、聊天、設定。
 
 import { renderConversationList } from './components/conversationList.js';
 import { renderChatView } from './components/chatView.js';
-import { renderChatSidePanel } from './tabs.js';
 import { renderSettingsPage } from './components/settingsPage.js';
 import { renderHomeView } from './components/homeView.js';
+import { renderCharacterPage } from './components/characterPage.js';
 import { openCharacterCreator } from './components/characterEditor.js';
 import { getRoute, navigate } from './router.js';
 import { selectConversation, getState } from '../state/store.js';
@@ -57,6 +58,8 @@ export function render(state) {
     renderSettingsPage(refs.content, state);
   } else if (route.name === 'chat') {
     renderChatPage(refs.content, state, route.params.conversationId);
+  } else if (route.name === 'character') {
+    renderCharacterPage(refs.content, state, route.params.characterId);
   } else {
     renderHomeView(refs.content, state);
   }
@@ -117,7 +120,7 @@ function pickChatConversationId(state) {
   return direct[0].id;
 }
 
-// ---- 聊天頁（三欄式）----
+// ---- 聊天頁（兩欄式；V3 移除右欄）----
 function renderChatPage(container, state, conversationId) {
   // 指標同步：URL 指定的對話與 store 目前對話不一致時，走唯一的 selectConversation
   // 更新指標（會再次 notify → 重繪）。無效 id 則不動指標，改顯示空狀態。
@@ -146,19 +149,13 @@ function renderChatPage(container, state, conversationId) {
   addBtn.addEventListener('click', () => openCharacterCreator());
   left.appendChild(addBtn);
 
-  // 中欄：聊天
+  // 中欄：聊天（佔滿剩餘寬度）
   const center = document.createElement('main');
   center.className = 'col col-center';
   renderChatView(center, state);
 
-  // 右欄：角色設定 / 玩家設定
-  const right = document.createElement('aside');
-  right.className = 'col col-right';
-  renderChatSidePanel(right, state);
-
   layout.appendChild(left);
   layout.appendChild(center);
-  layout.appendChild(right);
   container.appendChild(layout);
 }
 

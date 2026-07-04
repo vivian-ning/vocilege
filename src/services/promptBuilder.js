@@ -2,16 +2,20 @@
 //
 // buildPrompt 只負責「組 prompt」，不負責呼叫 API；呼叫 API 是 aiService 的職責。
 //
-// V1：回傳結構化物件 { system, messages }，直接對應各家 Chat API 的形狀：
-//   - system  ：字串，角色核心設定 + 玩家資訊 + 輸出格式要求
+// V3：回傳「快取友善」的分區結構 { systemBlocks, messages }：
+//   - systemBlocks：[{ text, cache:true 靜態區 }, { text, cache:false 動態區 }]
+//       靜態區＝穩定前綴（全域 Prompt → 角色設定 → 玩家設定/對話人設 → locked 記憶
+//               → 輸出格式指示），逐字不變，適合進提示詞快取。
+//       動態區＝每輪可能變動的內容（非 locked 的注入記憶等），一律放末尾。
 //   - messages：[{ role: "user"|"assistant", content }]，最近聊天紀錄（上限 RECENT_LIMIT）
 //
-// aiService 依 provider 取用：
-//   - openai-compatible：把 system 併為 messages[0]（role: "system"）
-//   - anthropic        ：system 為獨立頂層欄位，不放進 messages
+// 鐵律：靜態區內不得出現任何每輪變動的內容（時間戳、相識天數、token 數字、
+// 最新訊息等一律禁止）。若未來要讓角色知道今天日期，放動態區。
 //
-// 其餘參數（characters、memories、worldEntries）先接住，未來擴充時才填內容
-// （群聊需要 characters；記憶 / 世界書需要 memories、worldEntries）。
+// aiService 依 provider 取用：
+//   - anthropic        ：system 為 block 陣列，靜態 block 帶 cache_control
+//   - openai-compatible / gemini：把 systemBlocks 依序串接為單一 system 字串即可
+//     （前綴快取由 provider 自動處理，分區順序本身就是優化）。
 
 const RECENT_LIMIT = 30; // 最近聊天紀錄取樣上限（可調整）。
 
@@ -30,65 +34,129 @@ export function buildPrompt({
   characters,      // 未來群聊使用
   player,
   messages,
-  memories,        // 未來記憶系統使用
+  memories,        // V3：角色記憶（依 characterId 過濾）
   worldEntries,    // 未來世界書使用
   globalPrompts,   // V2：全域 Prompt 存放區（套用到全部角色）
-  mode
+  mode,
+  memoryInjectionLimit // V3：非 locked 記憶注入上限（預設 10）
 }) {
   const character = activeCharacter || {};
   const p = player || {};
 
-  // 1) system 段：角色核心設定。
-  const systemParts = [];
-  if (character.systemPrompt) systemParts.push(character.systemPrompt.trim());
-  if (character.personality) systemParts.push(`【個性】${character.personality.trim()}`);
-  if (character.scenario) systemParts.push(`【情境】${character.scenario.trim()}`);
-  if (character.speechStyle) systemParts.push(`【說話風格】${character.speechStyle.trim()}`);
+  // 對話層級人設覆蓋（任務四）：playerPersona 的非空欄位優先於全域 player 對應欄位。
+  // 覆蓋值屬於靜態區——切換人設會使快取失效一次，屬預期行為。
+  const persona = conversation && conversation.playerPersona ? conversation.playerPersona : null;
+  const playerName =
+    (persona && persona.name && persona.name.trim()) || p.playerName || '玩家';
+  const playerDescRaw =
+    (persona && persona.description && persona.description.trim()) ||
+    (p.playerDescription || '').trim();
 
-  // 2) 玩家資訊段。
-  const playerName = p.playerName || '玩家';
-  const playerDesc = p.playerDescription ? `（${p.playerDescription.trim()}）` : '';
-  systemParts.push(`【對話對象】${playerName}${playerDesc}`);
+  // 記憶選取：locked → 靜態區、general（非 locked）→ 動態區。
+  const { locked, general } = selectInjectedMemories(memories, character.id, memoryInjectionLimit);
 
-  // 3) 顯示模式需求。未來 narrative / message 模式可要求不同輸出結構。
-  systemParts.push(`【輸出模式】${describeMode(mode)}`);
+  // ---- 靜態區（穩定前綴，逐字不變）----
+  const staticParts = [];
 
-  // 4) 輸出格式要求（固定；供 parseReplyToParts 還原 message / narration）。
-  systemParts.push(OUTPUT_FORMAT_INSTRUCTION);
-
-  // 5) 全域 Prompt（V2）：取 enabled 的區塊、依 order 排序、以空行相連，放在 system 的
-  //    「最前面」（在角色 systemPrompt / personality 等之前）。全域管通則、角色管個性。
+  // 1) 全域 Prompt（enabled，依 order）。
   const globalBlocks = collectGlobalPromptText(globalPrompts);
+  if (globalBlocks) staticParts.push(globalBlocks);
 
-  const characterSystem = systemParts.join('\n');
-  const systemPrompt = globalBlocks
-    ? `${globalBlocks}\n\n${characterSystem}`
-    : characterSystem;
+  // 2) 角色核心設定。
+  const charParts = [];
+  if (character.systemPrompt) charParts.push(character.systemPrompt.trim());
+  if (character.personality) charParts.push(`【個性】${character.personality.trim()}`);
+  if (character.scenario) charParts.push(`【情境】${character.scenario.trim()}`);
+  if (character.speechStyle) charParts.push(`【說話風格】${character.speechStyle.trim()}`);
+  if (charParts.length) staticParts.push(charParts.join('\n'));
 
-  // 5) 最近聊天紀錄 → 依 message.role 轉為 { role, content } 序列。
-  //    role 映射在 store.makeMessage 已完成（player→user、character→assistant）；
-  //    一則訊息的多個 parts 合併為單一字串，narration part 以原樣文字併入。
-  //    只保留 user / assistant，system 類訊息（V0 尚無）略過。
+  // 3) 玩家設定（或對話人設覆蓋）。
+  const playerDesc = playerDescRaw ? `（${playerDescRaw}）` : '';
+  staticParts.push(`【對話對象】${playerName}${playerDesc}`);
+
+  // 4) locked 記憶（全部、全文；變動頻率低，適合進快取）。
+  const lockedText = memoriesToText(locked);
+  if (lockedText) {
+    staticParts.push(`【關於你與${playerName}的核心記憶（請始終記住並遵循）】\n${lockedText}`);
+  }
+
+  // 5) 輸出模式 + 輸出格式要求（穩定，放靜態區末尾）。
+  staticParts.push(`【輸出模式】${describeMode(mode)}`);
+  staticParts.push(OUTPUT_FORMAT_INSTRUCTION);
+
+  const staticText = staticParts.join('\n\n');
+
+  // ---- 動態區（每輪可能變動；不進穩定前綴）----
+  const dynamicParts = [];
+  const generalText = memoriesToText(general);
+  if (generalText) {
+    dynamicParts.push(`【關於${playerName}與你的記憶】\n${generalText}`);
+  }
+  const dynamicText = dynamicParts.join('\n\n');
+
+  // 本輪實際注入 prompt 的記憶 id（locked + general），供 store 更新
+  // lastRecalledAt / recallCount。
+  const injectedMemoryIds = locked.concat(general).map((m) => m.id);
+
+  // 最近聊天紀錄 → 依 message.role 轉為 { role, content } 序列。
   const recent = (messages || []).slice(-RECENT_LIMIT);
   const history = recent
     .filter((m) => m && (m.role === 'user' || m.role === 'assistant'))
-    .map((m) => ({
-      role: m.role,
-      content: partsToText(m.parts)
-    }))
+    .map((m) => ({ role: m.role, content: partsToText(m.parts) }))
     .filter((m) => m.content && m.content.trim());
 
-  // 回傳結構化 prompt。mock 與真 API 都從這裡取用需要的欄位。
   return {
-    system: systemPrompt,
+    systemBlocks: [
+      { text: staticText, cache: true },
+      { text: dynamicText, cache: false } // 可能為空字串。
+    ],
     messages: history,
     mode: mode || 'mixed',
     meta: {
       conversationId: conversation ? conversation.id : '',
       characterName: character.name || '',
-      playerName
+      playerName,
+      injectedMemoryIds
     }
   };
+}
+
+// 記憶選取（純函式，供 buildPrompt 與角色頁「注入估算」共用）：
+//   - 只取該角色、status === "active" 的記憶
+//   - locked：全部（不占 N 名額）
+//   - general（非 locked）：依 importance 由高到低、同分以 updatedAt 新者優先，取前 limit 筆
+export function selectInjectedMemories(memories, characterId, limit) {
+  const all = (memories || []).filter(
+    (m) => m && m.characterId === characterId && (m.status || 'active') === 'active'
+  );
+  const locked = all.filter((m) => m.locked);
+  const general = all
+    .filter((m) => !m.locked)
+    .sort(
+      (a, b) =>
+        (b.importance || 0) - (a.importance || 0) ||
+        (b.updatedAt || 0) - (a.updatedAt || 0)
+    );
+  const n = Number.isFinite(Number(limit)) ? Math.max(0, Math.floor(Number(limit))) : 10;
+  return { locked, general: general.slice(0, n) };
+}
+
+// 把記憶清單組成注入文字（每筆一行、以「・」起頭；空 content 略過）。
+function memoriesToText(list) {
+  return (list || [])
+    .map((m) => (m && m.content ? String(m.content).trim() : ''))
+    .filter(Boolean)
+    .map((t) => `・${t}`)
+    .join('\n');
+}
+
+// 把 systemBlocks 依序（靜態在前、動態在後）串接為單一 system 字串。
+// openai-compatible / gemini 與 mock 使用；空 block 自動略過。
+export function systemBlocksToString(systemBlocks) {
+  return (systemBlocks || [])
+    .map((b) => (b && b.text ? String(b.text) : ''))
+    .filter((t) => t && t.trim())
+    .join('\n\n');
 }
 
 // 取 enabled 的全域 Prompt 區塊，依 order 升冪排序，內容以空行相連為單一字串。
@@ -101,7 +169,7 @@ export function collectGlobalPromptText(globalPrompts) {
   return list.map((g) => String(g.content).trim()).join('\n\n');
 }
 
-// 目前生效（enabled）的全域 Prompt 數量，供聊天頁 / 角色設定顯示提示。
+// 目前生效（enabled）的全域 Prompt 數量（保留供未來使用）。
 export function countEnabledGlobalPrompts(globalPrompts) {
   return (globalPrompts || []).filter((g) => g && g.enabled).length;
 }

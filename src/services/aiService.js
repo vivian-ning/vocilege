@@ -21,6 +21,7 @@
 // 改用 SSE 讀取即可。
 
 import { generateReply as mockGenerateReply } from './mockAIService.js';
+import { systemBlocksToString } from './promptBuilder.js';
 
 const REQUEST_TIMEOUT_MS = 60000; // 逾時 60 秒。
 
@@ -98,8 +99,10 @@ async function callOpenAICompatible(args, { stream = false } = {}) {
   const base = resolveBaseUrl(apiSettings);
   const url = `${base}/chat/completions`;
 
+  // openai-compatible：前綴快取自動；把 systemBlocks 串接為單一 system 字串即可。
+  const systemText = systemBlocksToString(prompt && prompt.systemBlocks);
   const messages = [];
-  if (prompt && prompt.system) messages.push({ role: 'system', content: prompt.system });
+  if (systemText) messages.push({ role: 'system', content: systemText });
   for (const m of (prompt && prompt.messages) || []) {
     messages.push({ role: m.role, content: m.content });
   }
@@ -142,8 +145,13 @@ async function callAnthropic(args, { stream = false } = {}) {
 
   const body = {
     model: apiSettings.model || '',
-    system: (prompt && prompt.system) || '',
-    messages,
+    // 快取分區（任務五）：system 改為 block 陣列，靜態 block 帶 cache_control 讓穩定
+    // 前綴進提示詞快取；動態 block 不帶。可快取前綴最低約 1024 token（Haiku 系列
+    // 2048），不足時 API 會自動忽略 cache_control，不會報錯。快取寫入 1.25 倍、
+    // 讀取 0.1 倍、TTL 5 分鐘且每次命中會刷新。
+    system: buildAnthropicSystem(prompt && prompt.systemBlocks),
+    // 對話歷史增量快取：歷史 ≥ 2 則時，在倒數第二則加 cache_control，讓歷史逐輪命中。
+    messages: withHistoryCacheBreakpoint(messages),
     // Anthropic temperature 範圍 0–1，超出會 400，這裡夾住。
     temperature: clampNumber(apiSettings.temperature, 0, 1, 1),
     max_tokens: clampNumber(apiSettings.maxTokens, 1, 1000000, 1024),
@@ -159,15 +167,52 @@ async function callAnthropic(args, { stream = false } = {}) {
   }, body);
 
   const text = extractAnthropicText(data);
+  const u = (data && data.usage) || {};
   const usage = {
-    promptTokens: intOr(data && data.usage && data.usage.input_tokens, 0),
-    completionTokens: intOr(data && data.usage && data.usage.output_tokens, 0),
+    promptTokens: intOr(u.input_tokens, 0),
+    completionTokens: intOr(u.output_tokens, 0),
     model: (data && data.model) || apiSettings.model || ''
   };
+  // 快取用量（若存在）：讓使用者看得到省了多少（聊天氣泡以 ⚡ 顯示 cacheRead）。
+  if (u.cache_read_input_tokens != null) usage.cacheRead = intOr(u.cache_read_input_tokens, 0);
+  if (u.cache_creation_input_tokens != null) usage.cacheWrite = intOr(u.cache_creation_input_tokens, 0);
 
   const parts = parseReplyToParts(text);
   parts.usage = usage;
   return parts;
+}
+
+// system 分區 → Anthropic block 陣列。靜態 block 帶 cache_control；動態 block 為空則省略。
+function buildAnthropicSystem(systemBlocks) {
+  const blocks = Array.isArray(systemBlocks) ? systemBlocks : [];
+  const staticBlock = blocks[0];
+  const dynamicBlock = blocks[1];
+  const out = [];
+  const staticText = staticBlock && staticBlock.text ? String(staticBlock.text) : '';
+  if (staticText) {
+    out.push({ type: 'text', text: staticText, cache_control: { type: 'ephemeral' } });
+  }
+  const dynamicText = dynamicBlock && dynamicBlock.text ? String(dynamicBlock.text) : '';
+  if (dynamicText) {
+    out.push({ type: 'text', text: dynamicText });
+  }
+  // 極端情況：兩區皆空，回一個最小 block，避免 system 為空陣列。
+  if (out.length === 0) out.push({ type: 'text', text: ' ' });
+  return out;
+}
+
+// 對話歷史增量快取：若歷史 ≥ 2 則，在倒數第二則訊息的 content 上加 cache_control
+// （content 需改為 block 陣列形式），讓越滾越長的歷史逐輪命中快取。回傳新陣列。
+function withHistoryCacheBreakpoint(messages) {
+  const list = Array.isArray(messages) ? messages.slice() : [];
+  if (list.length < 2) return list;
+  const idx = list.length - 2;
+  const m = list[idx];
+  list[idx] = {
+    role: m.role,
+    content: [{ type: 'text', text: String(m.content || ''), cache_control: { type: 'ephemeral' } }]
+  };
+  return list;
 }
 
 async function callGemini(args, { stream = false } = {}) {
@@ -186,8 +231,10 @@ async function callGemini(args, { stream = false } = {}) {
       maxOutputTokens: clampNumber(apiSettings.maxTokens, 1, 1000000, 1024)
     }
   };
-  if (prompt && prompt.system) {
-    body.systemInstruction = { parts: [{ text: prompt.system }] };
+  // gemini：前綴快取自動；把 systemBlocks 串接為單一 systemInstruction 即可。
+  const systemText = systemBlocksToString(prompt && prompt.systemBlocks);
+  if (systemText) {
+    body.systemInstruction = { parts: [{ text: systemText }] };
   }
 
   const data = await postJson(url, {

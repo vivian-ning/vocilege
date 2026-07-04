@@ -133,11 +133,13 @@ export function openCharacterCreator() {
   if (first) first.focus();
 }
 
-// ---- 聊天頁右欄「角色設定」分頁：編輯目前角色 ----
-export function renderCharacterEditor(container, state) {
+// ---- 角色設定表單：編輯指定角色（characterId 省略時用目前角色）----
+// V3：角色相處頁的「角色設定」分頁使用（傳入該頁的 characterId）。
+export function renderCharacterEditor(container, state, characterId) {
   container.textContent = '';
 
-  const character = state.characters.find((c) => c.id === state.currentCharacterId);
+  const targetId = characterId || state.currentCharacterId;
+  const character = state.characters.find((c) => c.id === targetId);
   if (!character) {
     const empty = document.createElement('div');
     empty.className = 'tab-empty';

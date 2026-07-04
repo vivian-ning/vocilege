@@ -9,13 +9,12 @@ import {
   getCurrentMessages,
   isTyping,
   getPendingError,
-  retryLastReply
+  retryLastReply,
+  updateConversationPersona
 } from '../../state/store.js';
 import { usesMock } from '../../services/aiService.js';
-import { countEnabledGlobalPrompts } from '../../services/promptBuilder.js';
 import { applyAvatar } from '../avatar.js';
 import { navigate } from '../router.js';
-import { setSettingsTab } from './settingsPage.js';
 
 export function renderChatView(container, state) {
   container.textContent = '';
@@ -55,19 +54,30 @@ export function renderChatView(container, state) {
 
   header.appendChild(avatar);
   header.appendChild(titleWrap);
-  container.appendChild(header);
 
-  // 全域 Prompt 生效提示（V2 任務三）：點擊導向設定頁的 Prompt 存放區。
-  const gpCount = countEnabledGlobalPrompts(state.globalPrompts);
-  if (gpCount > 0) {
-    const gpBar = document.createElement('button');
-    gpBar.type = 'button';
-    gpBar.className = 'global-prompt-indicator';
-    gpBar.textContent = `目前有 ${gpCount} 個全域 Prompt 生效 ›`;
-    gpBar.title = '前往「設定 → Prompt 存放區」管理';
-    gpBar.addEventListener('click', () => { setSettingsTab('prompts'); navigate('/settings'); });
-    container.appendChild(gpBar);
-  }
+  // 標題列動作按鈕（靠右）：角色頁 / 此對話的我。
+  const headerActions = document.createElement('div');
+  headerActions.className = 'chat-header-actions';
+
+  const charPageBtn = document.createElement('button');
+  charPageBtn.type = 'button';
+  charPageBtn.className = 'chat-header-btn';
+  charPageBtn.textContent = '角色頁';
+  charPageBtn.title = '相處紀錄與角色設定';
+  charPageBtn.addEventListener('click', () => navigate(`/character/${character.id}`));
+  headerActions.appendChild(charPageBtn);
+
+  const personaBtn = document.createElement('button');
+  personaBtn.type = 'button';
+  personaBtn.className = 'chat-header-btn';
+  personaBtn.textContent = '此對話的我';
+  personaBtn.title = '為這個對話設定專屬的玩家人設（選填）';
+  if (conversation.playerPersona) personaBtn.classList.add('active');
+  personaBtn.addEventListener('click', () => openPersonaPanel(conversation));
+  headerActions.appendChild(personaBtn);
+
+  header.appendChild(headerActions);
+  container.appendChild(header);
 
   // 訊息列表
   const list = document.createElement('div');
@@ -168,4 +178,100 @@ export function renderChatView(container, state) {
   inputBar.appendChild(textarea);
   inputBar.appendChild(sendBtn);
   container.appendChild(inputBar);
+}
+
+// 「此對話的我」面板（任務四）：編輯 conversation.playerPersona。
+// 兩欄皆留空（或清除）代表使用設定頁的全域玩家設定。
+function openPersonaPanel(conversation) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal persona-modal';
+
+  const title = document.createElement('h2');
+  title.className = 'modal-title';
+  title.textContent = '此對話的我';
+  modal.appendChild(title);
+
+  const hint = document.createElement('p');
+  hint.className = 'form-hint';
+  hint.textContent = '為這個對話設定專屬的玩家名稱與描述。留空則使用設定頁的玩家設定。';
+  modal.appendChild(hint);
+
+  const persona = conversation.playerPersona || { name: '', description: '' };
+
+  const nameField = personaField('對話中的我（名稱）', 'input', persona.name || '', '留空 = 用全域玩家名稱');
+  const descField = personaField('對話中的我（描述）', 'textarea', persona.description || '', '留空 = 用全域玩家描述');
+  modal.appendChild(nameField.el);
+  modal.appendChild(descField.el);
+
+  const actions = document.createElement('div');
+  actions.className = 'form-actions';
+
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'btn';
+  clearBtn.textContent = '清除覆蓋';
+  clearBtn.addEventListener('click', async () => {
+    await updateConversationPersona(conversation.id, { name: '', description: '' });
+    close();
+  });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'btn';
+  cancelBtn.textContent = '取消';
+  cancelBtn.addEventListener('click', close);
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'btn btn-primary';
+  saveBtn.textContent = '儲存';
+  saveBtn.addEventListener('click', async () => {
+    await updateConversationPersona(conversation.id, {
+      name: nameField.getValue(),
+      description: descField.getValue()
+    });
+    close();
+  });
+
+  actions.appendChild(clearBtn);
+  actions.appendChild(cancelBtn);
+  actions.appendChild(saveBtn);
+  modal.appendChild(actions);
+
+  function close() {
+    if (overlay.parentNode) document.body.removeChild(overlay);
+  }
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  const firstInput = modal.querySelector('input, textarea');
+  if (firstInput) firstInput.focus();
+}
+
+function personaField(label, type, value, placeholder) {
+  const el = document.createElement('label');
+  el.className = 'form-field';
+  const labelEl = document.createElement('span');
+  labelEl.className = 'form-label';
+  labelEl.textContent = label;
+  el.appendChild(labelEl);
+  let control;
+  if (type === 'textarea') {
+    control = document.createElement('textarea');
+    control.rows = 2;
+  } else {
+    control = document.createElement('input');
+    control.type = 'text';
+  }
+  control.className = 'form-control';
+  control.value = value;
+  control.placeholder = placeholder || '';
+  el.appendChild(control);
+  return { el, getValue: () => control.value };
 }

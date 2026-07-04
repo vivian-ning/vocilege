@@ -33,7 +33,10 @@ export function renderMessage(message, context) {
   if (message.usage && (message.usage.promptTokens || message.usage.completionTokens)) {
     const usageEl = document.createElement('div');
     usageEl.className = 'msg-usage';
-    usageEl.textContent = `↑${message.usage.promptTokens} ↓${message.usage.completionTokens}`;
+    let text = `↑${message.usage.promptTokens} ↓${message.usage.completionTokens}`;
+    // 快取命中（Anthropic）：顯示 ⚡{cacheRead}，讓使用者看到省下的輸入 token。
+    if (message.usage.cacheRead) text += `　⚡${message.usage.cacheRead}`;
+    usageEl.textContent = text;
     if (message.usage.model) usageEl.title = message.usage.model;
     wrap.appendChild(usageEl);
   }

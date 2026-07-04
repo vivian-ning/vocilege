@@ -1,20 +1,23 @@
 // src/ui/components/settingsPage.js
 //
-// 設定頁（#/settings，V2 任務一）。容納：
+// 設定頁（#/settings，V2 任務一；V3 新增玩家設定分頁）。容納：
 //   - API 設定（原右欄「API 設定」分頁）
-//   - Prompt 存放區（V2 任務三，新）
+//   - Prompt 存放區（V2 任務三）
+//   - 玩家設定（V3：從聊天頁右欄移入；全域玩家設定，對所有角色生效）
 //   - 資料（原右欄「資料」分頁：匯出 / 匯入 / 清空）
 //
-// 以內部分頁切換；activeTab 為 UI 狀態，存模組變數。可由外部（聊天頁的全域 Prompt
-// 提示）以 setSettingsTab 預先指定要落在哪個分頁。
+// 以內部分頁切換；activeTab 為 UI 狀態，存模組變數。可由外部（如首頁備份提醒）
+// 以 setSettingsTab 預先指定要落在哪個分頁。
 
 import { renderApiSettingsEditor } from './apiSettingsEditor.js';
 import { renderGlobalPromptsEditor } from './globalPromptsEditor.js';
+import { renderPlayerEditor } from './playerEditor.js';
 import { renderBackupPanel } from './backupPanel.js';
 
 const TABS = [
   { key: 'api', label: 'API 設定' },
   { key: 'prompts', label: 'Prompt 存放區' },
+  { key: 'player', label: '玩家設定' },
   { key: 'data', label: '資料' }
 ];
 
@@ -57,6 +60,8 @@ export function renderSettingsPage(container, state) {
 
   if (activeTab === 'prompts') {
     renderGlobalPromptsEditor(body, state);
+  } else if (activeTab === 'player') {
+    renderPlayerEditor(body, state);
   } else if (activeTab === 'data') {
     renderBackupPanel(body);
   } else {

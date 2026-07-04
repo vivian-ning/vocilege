@@ -41,7 +41,8 @@ export function createDefaultState(config) {
   };
   const defaultSettings = (config && config.defaultSettings) || {
     theme: 'cream',
-    messageDisplayMode: 'mixed'
+    messageDisplayMode: 'mixed',
+    memoryInjectionLimit: 10
   };
 
   return {
@@ -57,7 +58,8 @@ export function createDefaultState(config) {
     },
     characters: [],
     conversations: [],
-    // 以下陣列供未來擴充；V2 起 journals / globalPrompts 正式啟用。
+    // 以下陣列供未來擴充；V2 起 journals / globalPrompts 正式啟用，
+    // V3 起 memories / wishlists / relationshipData / anniversaries 正式啟用。
     memories: [],
     worldbooks: [],
     journals: [],
@@ -66,12 +68,17 @@ export function createDefaultState(config) {
     heartVoices: [],
     relationshipData: [],
     wishlists: [],
+    anniversaries: [],
     notifications: [],
     // V2 新增：上次成功匯出備份的時間戳（0 = 從未備份），供首頁備份提醒使用。
     lastBackupAt: 0,
     settings: {
       theme: defaultSettings.theme || 'cream',
-      messageDisplayMode: defaultSettings.messageDisplayMode || 'mixed'
+      messageDisplayMode: defaultSettings.messageDisplayMode || 'mixed',
+      // V3：非 locked 記憶注入的筆數上限（locked 不占名額）。
+      memoryInjectionLimit: typeof defaultSettings.memoryInjectionLimit === 'number'
+        ? defaultSettings.memoryInjectionLimit
+        : 10
     },
     apiSettings: {
       provider: '',
@@ -123,11 +130,18 @@ export function normalizeState(state) {
   const arrayFields = [
     'characters', 'conversations', 'memories', 'worldbooks',
     'journals', 'globalPrompts', 'posts', 'heartVoices', 'relationshipData',
-    'wishlists', 'notifications'
+    'wishlists', 'anniversaries', 'notifications'
   ];
   for (const f of arrayFields) {
     if (!Array.isArray(merged[f])) merged[f] = [];
   }
+
+  // V3：memoryInjectionLimit 型別 / 範圍修正（至少 0）。
+  if (typeof merged.settings.memoryInjectionLimit !== 'number' ||
+      !Number.isFinite(merged.settings.memoryInjectionLimit)) {
+    merged.settings.memoryInjectionLimit = 10;
+  }
+  merged.settings.memoryInjectionLimit = Math.max(0, Math.floor(merged.settings.memoryInjectionLimit));
 
   // 角色頭貼型別修正（image / emoji 兩型）。
   merged.characters = merged.characters.map((c) => {

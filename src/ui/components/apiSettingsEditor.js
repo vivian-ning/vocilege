@@ -8,7 +8,7 @@
 // 安全性：apiKey 只放在 password 欄位與記憶體 state；rememberApiKey=false 時
 // db.saveState 不會把 apiKey 寫入 IndexedDB（重新整理後欄位即為空）。
 
-import { updateApiSettings } from '../../state/store.js';
+import { updateApiSettings, updateSettings } from '../../state/store.js';
 import { testConnection } from '../../services/aiService.js';
 import { getAllMessages } from '../../db/indexeddb.js';
 
@@ -115,6 +115,23 @@ export function renderApiSettingsEditor(container, state) {
   maxTokInput.step = '1';
   maxTokInput.value = api.maxTokens != null ? String(api.maxTokens) : '1024';
   form.appendChild(wrapField('maxTokens', maxTokInput));
+
+  // memoryInjectionLimit（記憶注入上限）：屬 settings 而非 apiSettings，改動即時獨立
+  // 儲存（不隨「儲存 API 設定」），避免與 apiKey 表單耦合。
+  const memLimitInput = document.createElement('input');
+  memLimitInput.type = 'number';
+  memLimitInput.className = 'form-control';
+  memLimitInput.min = '0';
+  memLimitInput.step = '1';
+  const curLimit = state.settings && state.settings.memoryInjectionLimit != null
+    ? state.settings.memoryInjectionLimit : 10;
+  memLimitInput.value = String(curLimit);
+  memLimitInput.addEventListener('change', () => {
+    const n = Math.max(0, Math.round(clampNum(memLimitInput.value, 0, 1000, 10)));
+    updateSettings({ memoryInjectionLimit: n });
+  });
+  const memField = wrapField('記憶注入上限（一般記憶筆數；locked 不占名額，改動即時生效）', memLimitInput);
+  form.appendChild(memField);
 
   // 讀取目前表單值組出 apiSettings 物件（供儲存與測試連線共用）。
   const collect = () => ({

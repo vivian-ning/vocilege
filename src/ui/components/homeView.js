@@ -12,9 +12,11 @@ import { createAvatarEl } from '../avatar.js';
 import { navigate } from '../router.js';
 import { setSettingsTab } from './settingsPage.js';
 import { openCharacterCreator } from './characterEditor.js';
+import { parseDateInput } from '../../utils/time.js';
 
 const DAY_MS = 86400000;
 const BACKUP_REMIND_DAYS = 14;
+const ANNIVERSARY_REMIND_DAYS = 3;
 
 export function renderHomeView(container, state) {
   container.textContent = '';
@@ -25,6 +27,10 @@ export function renderHomeView(container, state) {
   // 2.4 備份提醒條（置頂）
   const reminder = buildBackupReminder(state);
   if (reminder) page.appendChild(reminder);
+
+  // V3：紀念日提醒（3 天內含當天）
+  const annivReminders = buildAnniversaryReminders(state);
+  if (annivReminders) page.appendChild(annivReminders);
 
   const title = document.createElement('h1');
   title.className = 'page-title';
@@ -74,6 +80,63 @@ function buildBackupReminder(state) {
   bar.appendChild(link);
 
   return bar;
+}
+
+// ---- V3 紀念日提醒 ----
+// 對每個紀念日計算「距離下一次發生的天數」，落在 0..3（含當天）時顯示提醒條。
+function buildAnniversaryReminders(state) {
+  const charById = {};
+  for (const c of (state.characters || [])) charById[c.id] = c;
+
+  const hits = [];
+  for (const a of (state.anniversaries || [])) {
+    const days = daysUntilAnniversary(a.date, a.repeat);
+    if (days == null || days > ANNIVERSARY_REMIND_DAYS) continue;
+    const char = charById[a.characterId];
+    if (!char) continue;
+    hits.push({ days, name: char.name || '（角色）', title: a.title || '紀念日', charId: char.id });
+  }
+  if (hits.length === 0) return null;
+  hits.sort((x, y) => x.days - y.days);
+
+  const box = document.createElement('div');
+  box.className = 'anniv-reminders';
+  for (const h of hits) {
+    const bar = document.createElement('button');
+    bar.type = 'button';
+    bar.className = 'anniv-reminder';
+    bar.textContent = h.days === 0
+      ? `🎂 今天是與${h.name}的「${h.title}」`
+      : `🎂 ${h.days} 天後是與${h.name}的「${h.title}」`;
+    bar.title = '前往角色相處頁';
+    bar.addEventListener('click', () => navigate(`/character/${h.charId}`));
+    box.appendChild(bar);
+  }
+  return box;
+}
+
+// 距離下一次紀念日的天數（本地時區，以「天」為單位）。過去的單次紀念日回傳 null。
+function daysUntilAnniversary(dateStr, repeat) {
+  const base = parseDateInput(dateStr);
+  if (!base) return null;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const bd = new Date(base);
+
+  if (repeat === 'yearly') {
+    let next = new Date(today.getFullYear(), bd.getMonth(), bd.getDate());
+    if (next < today) next = new Date(today.getFullYear() + 1, bd.getMonth(), bd.getDate());
+    return Math.round((next - today) / DAY_MS);
+  }
+  if (repeat === 'monthly') {
+    let next = new Date(today.getFullYear(), today.getMonth(), bd.getDate());
+    if (next < today) next = new Date(today.getFullYear(), today.getMonth() + 1, bd.getDate());
+    return Math.round((next - today) / DAY_MS);
+  }
+  // 單次：只在未來（含今天）時提醒。
+  const oneShot = new Date(bd.getFullYear(), bd.getMonth(), bd.getDate());
+  const d = Math.round((oneShot - today) / DAY_MS);
+  return d < 0 ? null : d;
 }
 
 // ---- 2.1 角色卡片牆 ----
@@ -147,13 +210,13 @@ function buildCharacterCard(char, conv) {
   main.appendChild(info);
   card.appendChild(main);
 
-  // 「相處紀錄」入口（V2 先 disabled）
+  // 「相處紀錄」入口（V3 啟用）→ 角色相處頁。
   const recordBtn = document.createElement('button');
   recordBtn.type = 'button';
   recordBtn.className = 'char-card-record';
-  recordBtn.textContent = '相處紀錄（即將推出）';
-  recordBtn.disabled = true;
-  recordBtn.title = 'V3 將提供角色相處紀錄頁';
+  recordBtn.textContent = '相處紀錄 ›';
+  recordBtn.title = '相處紀錄與角色設定';
+  recordBtn.addEventListener('click', () => navigate(`/character/${char.id}`));
   card.appendChild(recordBtn);
 
   return card;

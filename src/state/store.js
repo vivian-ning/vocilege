@@ -253,6 +253,13 @@ export async function deleteCharacter(characterId) {
   }
   state.characters = state.characters.filter((c) => c.id !== characterId);
 
+  // 3b) V3 連鎖刪除：一併清除該角色的 memories / anniversaries / wishlists /
+  //     relationshipData，避免孤兒資料。
+  state.memories = (state.memories || []).filter((m) => m.characterId !== characterId);
+  state.anniversaries = (state.anniversaries || []).filter((a) => a.characterId !== characterId);
+  state.wishlists = (state.wishlists || []).filter((w) => w.characterId !== characterId);
+  state.relationshipData = (state.relationshipData || []).filter((r) => r.characterId !== characterId);
+
   // 4) 修復指標：若指向被刪除對象，自動選取剩餘第一個角色；若已無角色則清空。
   const pointedDeleted =
     state.currentCharacterId === characterId ||
@@ -356,7 +363,7 @@ async function runGeneration(conversation, character, userText) {
   notify();
 
   try {
-    // 3) buildPrompt（回傳 { system, messages }）
+    // 3) buildPrompt（回傳 { systemBlocks, messages }）
     const prompt = buildPrompt({
       conversation,
       activeCharacter: character,
@@ -366,8 +373,14 @@ async function runGeneration(conversation, character, userText) {
       memories: state.memories,
       worldEntries: state.worldbooks,
       globalPrompts: state.globalPrompts,
-      mode: state.settings.messageDisplayMode
+      mode: state.settings.messageDisplayMode,
+      memoryInjectionLimit: state.settings.memoryInjectionLimit
     });
+
+    // 記憶「被想起」：凡實際注入 prompt 的記憶（locked 與非 locked 都算），
+    // 更新 lastRecalledAt / recallCount。在此更新確保 mock 與真 API 一致，
+    // 且即使後續 API 失敗，注入紀錄仍已持久化。
+    await markMemoriesRecalled(prompt.meta && prompt.meta.injectedMemoryIds);
 
     // 4) aiService.generateReply（回傳 MessagePart[]，可能附帶 .usage）
     const result = await generateReply({
@@ -541,6 +554,199 @@ function normalizeGlobalPromptOrder() {
     .forEach((g, i) => { g.order = i; });
 }
 
+// ---- V3：角色相處資料（relationshipData / anniversaries / wishlists / memories）----
+
+function clampInt(v, min, max, fallback) {
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+// 取得（或建立）某角色的 relationshipData 記錄。系統維護，不供使用者手改欄位。
+function getOrCreateRelationship(characterId) {
+  let r = state.relationshipData.find((x) => x.characterId === characterId);
+  if (!r) {
+    r = { characterId, firstMetAt: 0, totalMessages: 0 };
+    state.relationshipData.push(r);
+  }
+  return r;
+}
+
+// 唯讀查詢（供 UI）：找不到時回傳預設值，不建立記錄。
+export function getRelationship(characterId) {
+  return (
+    state.relationshipData.find((x) => x.characterId === characterId) || {
+      characterId,
+      firstMetAt: 0,
+      totalMessages: 0
+    }
+  );
+}
+
+// 設定「相遇日」：firstMetAt 為 ms 時間戳；傳 0 代表清除（回到以 createdAt 起算）。
+export async function setFirstMetAt(characterId, ts) {
+  const r = getOrCreateRelationship(characterId);
+  r.firstMetAt = Number(ts) || 0;
+  await saveCurrentState();
+  notify();
+}
+
+// 重算並快取相處統計的 totalMessages（雙方訊息總數）。不 notify（供渲染期間呼叫），
+// 回傳最新計數供 UI 直接顯示；只有數值改變時才寫回 DB。
+export async function refreshRelationshipStats(characterId, conversationId) {
+  const count = conversationId ? (await getMessagesByConversation(conversationId)).length : 0;
+  const r = getOrCreateRelationship(characterId);
+  if (r.totalMessages !== count) {
+    r.totalMessages = count;
+    await saveCurrentState();
+  }
+  return count;
+}
+
+// ---- 紀念日 anniversaries ----
+function normalizeRepeat(r) {
+  return r === 'yearly' || r === 'monthly' ? r : 'none';
+}
+
+export async function addAnniversary(characterId, { title, date, repeat } = {}) {
+  state.anniversaries.push({
+    id: generateId('anniv'),
+    characterId,
+    title: (title || '').trim() || '未命名紀念日',
+    date: (date || '').trim(),
+    repeat: normalizeRepeat(repeat),
+    createdAt: now()
+  });
+  await saveCurrentState();
+  notify();
+}
+
+export async function updateAnniversary(id, patch) {
+  const a = state.anniversaries.find((x) => x.id === id);
+  if (!a) return;
+  if ('title' in patch) a.title = (patch.title || '').trim() || '未命名紀念日';
+  if ('date' in patch) a.date = (patch.date || '').trim();
+  if ('repeat' in patch) a.repeat = normalizeRepeat(patch.repeat);
+  await saveCurrentState();
+  notify();
+}
+
+export async function deleteAnniversary(id) {
+  state.anniversaries = state.anniversaries.filter((x) => x.id !== id);
+  await saveCurrentState();
+  notify();
+}
+
+// ---- 想一起做的事 wishlists ----
+export async function addWishlist(characterId, { title, note } = {}) {
+  state.wishlists.push({
+    id: generateId('wish'),
+    characterId,
+    title: (title || '').trim() || '未命名',
+    done: false,
+    note: (note || '').trim(),
+    createdAt: now(),
+    doneAt: 0
+  });
+  await saveCurrentState();
+  notify();
+}
+
+export async function updateWishlist(id, patch) {
+  const w = state.wishlists.find((x) => x.id === id);
+  if (!w) return;
+  if ('title' in patch) w.title = (patch.title || '').trim() || '未命名';
+  if ('note' in patch) w.note = (patch.note || '').trim();
+  if ('done' in patch) {
+    w.done = !!patch.done;
+    w.doneAt = w.done ? now() : 0;
+  }
+  await saveCurrentState();
+  notify();
+}
+
+export async function deleteWishlist(id) {
+  state.wishlists = state.wishlists.filter((x) => x.id !== id);
+  await saveCurrentState();
+  notify();
+}
+
+// ---- 記憶 memories（任務三）----
+// 欄位一次到位；部分欄位 V3 只儲存不使用（emotionWeight 的實際運用、status 的
+// invalidated、source 的 extracted 為未來預留）。
+export async function addMemory(characterId, data = {}) {
+  const ts = now();
+  state.memories.push({
+    id: generateId('mem'),
+    characterId,
+    content: (data.content || '').trim(),
+    summary: (data.summary || '').trim(),
+    importance: clampInt(data.importance, 1, 5, 3),
+    emotionWeight: clampInt(data.emotionWeight, 1, 5, 3),
+    locked: !!data.locked,
+    lastRecalledAt: 0,
+    recallCount: 0,
+    status: 'active',
+    source: 'manual',
+    createdAt: ts,
+    updatedAt: ts
+  });
+  await saveCurrentState();
+  notify();
+}
+
+export async function updateMemory(id, patch) {
+  const m = state.memories.find((x) => x.id === id);
+  if (!m) return;
+  if ('content' in patch) m.content = (patch.content || '').trim();
+  if ('summary' in patch) m.summary = (patch.summary || '').trim();
+  if ('importance' in patch) m.importance = clampInt(patch.importance, 1, 5, m.importance);
+  if ('emotionWeight' in patch) m.emotionWeight = clampInt(patch.emotionWeight, 1, 5, m.emotionWeight);
+  if ('locked' in patch) m.locked = !!patch.locked;
+  m.updatedAt = now();
+  await saveCurrentState();
+  notify();
+}
+
+export async function deleteMemory(id) {
+  state.memories = state.memories.filter((x) => x.id !== id);
+  await saveCurrentState();
+  notify();
+}
+
+// 記憶「被想起」：實際注入 prompt 的記憶更新 lastRecalledAt / recallCount。
+// 內部使用（runGeneration 呼叫），不對外匯出、不 notify（避免打斷產生流程的渲染節奏）。
+async function markMemoriesRecalled(ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return;
+  const set = new Set(ids);
+  const ts = now();
+  let changed = false;
+  for (const m of state.memories) {
+    if (m && set.has(m.id)) {
+      m.lastRecalledAt = ts;
+      m.recallCount = (Number(m.recallCount) || 0) + 1;
+      changed = true;
+    }
+  }
+  if (changed) await saveCurrentState();
+}
+
+// ---- 對話層級人設覆蓋 playerPersona（任務四）----
+// 兩欄皆空 → 清除覆蓋，回到全域玩家設定。
+export async function updateConversationPersona(conversationId, persona) {
+  const conv = state.conversations.find((c) => c.id === conversationId);
+  if (!conv) return;
+  const name = (persona && persona.name ? String(persona.name) : '').trim();
+  const description = (persona && persona.description ? String(persona.description) : '').trim();
+  if (!name && !description) {
+    delete conv.playerPersona;
+  } else {
+    conv.playerPersona = { name, description };
+  }
+  await saveCurrentState();
+  notify();
+}
+
 // ---- 備份時間戳（V2 任務 2.4）----
 export async function markBackupDone() {
   state.lastBackupAt = now();
@@ -594,6 +800,9 @@ function makeMessage({ conversationId, senderType, senderId, parts, usage }) {
       completionTokens: Number(usage.completionTokens) || 0,
       model: usage.model || ''
     };
+    // V3：快取用量為選填（只有 anthropic 回應帶快取欄位時才寫入）。
+    if (usage.cacheRead != null) msg.usage.cacheRead = Number(usage.cacheRead) || 0;
+    if (usage.cacheWrite != null) msg.usage.cacheWrite = Number(usage.cacheWrite) || 0;
   }
   return msg;
 }

@@ -10,7 +10,7 @@
 
 import { createExampleGlobalPrompt } from './schema.js';
 
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 // 逐版升級函式表。key = 來源版本，value = 把該版 state 升到「下一版」的函式。
 const migrators = {
@@ -37,6 +37,25 @@ const migrators = {
     if (!Array.isArray(s.journals)) s.journals = [];
     if (typeof s.lastBackupAt !== 'number') s.lastBackupAt = 0;
     s.schemaVersion = 3;
+    return s;
+  },
+
+  // v3 -> v4（V3 角色相處頁 + 記憶系統）：
+  //   - 新增 anniversaries（紀念日）空陣列
+  //   - 啟用 memories / wishlists / relationshipData（結構已存在，補空陣列即可）
+  //   - settings.memoryInjectionLimit 預設 10
+  //   - conversation.playerPersona / message.usage.cacheRead|cacheWrite 為選填，
+  //     缺值即代表未設定，無需回填（normalize 與各消費端已容忍缺漏）。
+  //   本步驟純補預設值，無資料轉換。
+  3: (s) => {
+    if (!Array.isArray(s.anniversaries)) s.anniversaries = [];
+    if (!Array.isArray(s.memories)) s.memories = [];
+    if (!Array.isArray(s.wishlists)) s.wishlists = [];
+    if (!Array.isArray(s.relationshipData)) s.relationshipData = [];
+    const settings = (s.settings && typeof s.settings === 'object') ? { ...s.settings } : {};
+    if (typeof settings.memoryInjectionLimit !== 'number') settings.memoryInjectionLimit = 10;
+    s.settings = settings;
+    s.schemaVersion = 4;
     return s;
   },
 };

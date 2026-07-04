@@ -118,10 +118,10 @@ body {
 .nav-link:hover { background: var(--surface-2); color: var(--text); }
 .nav-link.active { color: var(--primary); background: var(--surface-2); }
 
-/* ---- 三欄版面（聊天頁）---- */
+/* ---- 兩欄版面（聊天頁；V3 移除右欄）---- */
 .app-layout {
   display: grid;
-  grid-template-columns: 280px 1fr 340px;
+  grid-template-columns: 280px 1fr;
   height: 100%;
   overflow: hidden;
 }
@@ -661,12 +661,14 @@ select.form-control { cursor: pointer; }
   border: none;
   border-top: 1px solid var(--border);
   background: transparent;
-  color: var(--muted);
+  color: var(--primary);
   font-family: inherit;
   font-size: 12px;
+  font-weight: 600;
   padding: 8px;
-  cursor: not-allowed;
+  cursor: pointer;
 }
+.char-card-record:hover { background: var(--surface-2); }
 .add-card {
   border: 1px dashed var(--border);
   background: transparent;
@@ -802,6 +804,191 @@ select.form-control { cursor: pointer; }
     grid-template-rows: auto 1fr;
     overflow-y: auto;
   }
-  .col-right { display: none; }
   .stats-grid { grid-template-columns: 1fr; }
+  .mem-form-row { grid-template-columns: 1fr; }
 }
+
+/* =====================================================================
+   V3 新增樣式：聊天標題列動作、角色相處頁、記憶、紀念日、想一起做的事
+   ===================================================================== */
+
+/* 聊天標題列：動作按鈕靠右 */
+.chat-header-actions { margin-left: auto; display: flex; gap: 8px; }
+.chat-header-btn {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.chat-header-btn:hover { filter: brightness(.97); }
+.chat-header-btn.active {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+}
+
+/* 此對話的我：面板欄位間距 */
+.persona-modal .form-field { margin-bottom: 12px; }
+
+/* 紀念日提醒（首頁） */
+.anniv-reminders { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.anniv-reminder {
+  text-align: left;
+  width: 100%;
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+  border: 1px solid var(--primary);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.anniv-reminder:hover { background: color-mix(in srgb, var(--primary) 18%, var(--surface)); }
+
+/* ---- 角色相處頁 ---- */
+.character-page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px 24px 60px;
+}
+.character-page-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.character-back { flex: 0 0 auto; }
+.character-page-avatar {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: 50%;
+  background-color: var(--surface-2);
+  font-size: 26px;
+}
+.character-page-headinfo { min-width: 0; }
+.character-page-name { font-size: 18px; font-weight: 700; }
+.character-page-desc { font-size: 12px; color: var(--muted); }
+.character-page-body { padding: 20px 0; }
+
+.char-section { margin-bottom: 8px; }
+
+/* 相識 */
+.rel-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+.rel-days { font-size: 18px; font-weight: 700; }
+.rel-metfield { max-width: 260px; }
+.rel-metfield input[type="date"] { font-family: inherit; }
+.rel-stat { font-size: 13px; color: var(--muted); }
+
+/* 記憶 */
+.mem-estimate {
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.mem-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+.mem-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.mem-list { display: flex; flex-direction: column; gap: 10px; }
+.mem-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.mem-item.mem-locked { border-color: var(--primary); }
+.mem-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.mem-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.mem-badge {
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+.mem-badge-lock { color: var(--primary); }
+.mem-actions { display: flex; gap: 4px; flex: 0 0 auto; }
+.mem-content { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+.mem-summary { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.mem-recall { font-size: 11px; color: var(--muted); margin-top: 6px; opacity: .85; }
+
+/* 紀念日 / 想一起做的事：共用的行內表單 */
+.anniv-form, .wish-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.anniv-form .form-control, .wish-form .form-control { flex: 1; min-width: 120px; }
+.anniv-date, .anniv-repeat { flex: 0 0 auto; min-width: 0; }
+.wish-note { flex: 1; }
+
+.anniv-list, .wish-list { display: flex; flex-direction: column; gap: 8px; }
+.anniv-item, .wish-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.anniv-info { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.anniv-title { font-weight: 600; font-size: 13px; }
+.anniv-meta { font-size: 12px; color: var(--muted); }
+.anniv-actions, .wish-actions { display: flex; gap: 4px; flex: 0 0 auto; }
+
+.wish-check { flex: 0 0 auto; width: 16px; height: 16px; }
+.wish-info { flex: 1; min-width: 0; }
+.wish-title { font-size: 13px; font-weight: 600; }
+.wish-note-text { font-size: 12px; color: var(--muted); }
+.wish-item.wish-done .wish-title { text-decoration: line-through; color: var(--muted); }
+.wish-item.wish-done { opacity: .75; }
+
+/* 危險區（刪除角色） */
+.char-danger {
+  margin-top: 24px;
+  border: 1px solid var(--danger);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface));
+}
+.char-danger-title { margin: 0 0 6px; font-size: 14px; color: var(--danger); }
