@@ -3,7 +3,8 @@ import {
   deletePost,
   togglePostLike,
   addPostComment,
-  generateMockFeedReaction
+  triggerFeedReactions,
+  inviteCharacterPost
 } from '../../state/store.js';
 import { createAvatarEl } from '../avatar.js';
 
@@ -15,10 +16,10 @@ export function renderFeedView(container, state) {
 
   const title = document.createElement('h1');
   title.className = 'page-title';
-  title.textContent = '動態牆';
+  title.textContent = '迴聲';
   page.appendChild(title);
 
-  page.appendChild(buildComposer());
+  page.appendChild(buildComposer(state));
 
   const list = document.createElement('div');
   list.className = 'feed-list';
@@ -28,7 +29,7 @@ export function renderFeedView(container, state) {
   if (!posts.length) {
     const empty = document.createElement('div');
     empty.className = 'feed-empty';
-    empty.textContent = '還沒有動態。寫一則日記般的貼文，讓角色有東西可以回應。';
+    empty.textContent = '還沒有迴聲。寫一則日記般的貼文，讓角色有東西可以回應。';
     list.appendChild(empty);
   } else {
     for (const post of posts) list.appendChild(buildPost(post, state));
@@ -38,7 +39,7 @@ export function renderFeedView(container, state) {
   container.appendChild(page);
 }
 
-function buildComposer() {
+function buildComposer(state) {
   const form = document.createElement('form');
   form.className = 'feed-composer';
 
@@ -63,6 +64,28 @@ function buildComposer() {
   submit.textContent = '發布';
   row.appendChild(submit);
   form.appendChild(row);
+
+  const inviteRow = document.createElement('div');
+  inviteRow.className = 'feed-invite-row';
+  const select = document.createElement('select');
+  select.className = 'form-control feed-character-select';
+  for (const c of (state.characters || [])) {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.name || '未命名角色';
+    select.appendChild(opt);
+  }
+  const invite = document.createElement('button');
+  invite.type = 'button';
+  invite.className = 'btn';
+  invite.textContent = '邀請 TA 說說話';
+  invite.disabled = !select.options.length;
+  invite.addEventListener('click', () => {
+    if (select.value) inviteCharacterPost(select.value);
+  });
+  inviteRow.appendChild(select);
+  inviteRow.appendChild(invite);
+  form.appendChild(inviteRow);
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -102,7 +125,7 @@ function buildPost(post, state) {
     del.textContent = '刪';
     del.title = '刪除貼文';
     del.addEventListener('click', () => {
-      if (window.confirm('要刪除這則動態嗎？')) deletePost(post.id);
+      if (window.confirm('要刪除這則迴聲嗎？')) deletePost(post.id);
     });
     head.appendChild(del);
   }
@@ -126,8 +149,8 @@ function buildPost(post, state) {
   const react = document.createElement('button');
   react.type = 'button';
   react.className = 'btn';
-  react.textContent = '角色回應';
-  react.addEventListener('click', () => generateMockFeedReaction(post.id));
+  react.textContent = '呼喚迴聲';
+  react.addEventListener('click', () => triggerFeedReactions(post.id));
   actions.appendChild(react);
   card.appendChild(actions);
 

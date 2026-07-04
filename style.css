@@ -614,6 +614,41 @@ body {
 .form-actions { display: flex; gap: 8px; margin-top: 4px; }
 .form-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
+.greeting-card,
+.old-replay-card {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.greeting-card { margin-bottom: 16px; }
+.greeting-avatar { width: 44px; height: 44px; flex: 0 0 44px; }
+.greeting-body { min-width: 0; flex: 1; }
+.greeting-label,
+.old-replay-meta { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+.greeting-text,
+.old-replay-text { color: var(--text); line-height: 1.5; }
+.greeting-actions,
+.feed-invite-row,
+.dream-row,
+.stats-split { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.old-replay-host { margin: 16px 0; }
+.old-replay-card { text-align: left; cursor: pointer; }
+.old-replay-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feed-character-select { max-width: 220px; }
+.dream-row { margin: 10px 0 14px; }
+.dream-status { margin: 0; }
+.mem-new-extracted { background: color-mix(in srgb, var(--primary) 8%, var(--surface)); }
+.mem-badge-auto { background: #e8f3ff; }
+.mem-badge-collected { background: #f1edff; }
+.mem-badge-new { background: #fff2c7; }
+.edit-message-modal { max-width: 560px; }
+
 /* API 設定分頁 */
 .form-check {
   flex-direction: row;

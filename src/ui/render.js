@@ -93,7 +93,7 @@ function renderNav(nav, route, state) {
   links.className = 'nav-links';
 
   links.appendChild(navLink('首頁', route.name === 'home', () => navigate('/home')));
-  links.appendChild(navLink('動態牆', route.name === 'feed', () => navigate('/feed')));
+  links.appendChild(navLink('迴聲', route.name === 'feed', () => navigate('/feed')));
 
   // 聊天：導向目前（或第一個）對話；沒有角色則回首頁。
   links.appendChild(navLink('聊天', route.name === 'chat', () => {

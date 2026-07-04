@@ -72,8 +72,11 @@ export function createDefaultState(config) {
     anniversaries: [],
     notifications: [],
     usageLog: [],
+    pendingGreeting: null,
+    dailyCounters: { date: '', feed: 0, dream: 0, background: 0 },
     lastOpenedAt: 0,
     lastGreetingAt: 0,
+    lastFeedAutoPostAt: 0,
     // V2 新增：上次成功匯出備份的時間戳（0 = 從未備份），供首頁備份提醒使用。
     lastBackupAt: 0,
     settings: {
@@ -185,6 +188,11 @@ export function normalizeState(state) {
 
   if (typeof merged.lastOpenedAt !== 'number') merged.lastOpenedAt = 0;
   if (typeof merged.lastGreetingAt !== 'number') merged.lastGreetingAt = 0;
+  if (typeof merged.lastFeedAutoPostAt !== 'number') merged.lastFeedAutoPostAt = 0;
+  if (!merged.pendingGreeting || typeof merged.pendingGreeting !== 'object') merged.pendingGreeting = null;
+  if (!merged.dailyCounters || typeof merged.dailyCounters !== 'object') {
+    merged.dailyCounters = { date: '', feed: 0, dream: 0, background: 0 };
+  }
 
   merged.usageLog = merged.usageLog
     .filter((u) => u && typeof u === 'object')

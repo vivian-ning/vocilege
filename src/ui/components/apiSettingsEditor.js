@@ -143,7 +143,7 @@ export function renderApiSettingsEditor(container, state) {
 
   const feedReactorsInput = numberInput(state.settings.feedReactorsPerPost, 0, 10, 1);
   feedReactorsInput.addEventListener('change', () => updateSettings({ feedReactorsPerPost: clampInt(feedReactorsInput.value, 0, 10, 2) }));
-  form.appendChild(wrapField('每則動態角色回應數', feedReactorsInput));
+  form.appendChild(wrapField('每則迴聲反應數', feedReactorsInput));
 
   const feedDailyInput = numberInput(state.settings.feedDailyLimit, 0, 200, 1);
   feedDailyInput.addEventListener('change', () => updateSettings({ feedDailyLimit: clampInt(feedDailyInput.value, 0, 200, 20) }));

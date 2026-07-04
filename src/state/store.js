@@ -18,6 +18,7 @@ import {
   loadState,
   saveState,
   getMessagesByConversation,
+  getAllMessages,
   addMessage,
   updateMessage,
   deleteMessagesByConversation
@@ -25,7 +26,7 @@ import {
 import { createDefaultState, normalizeState } from './schema.js';
 import { migrateState } from './migrations.js';
 import { buildPrompt } from '../services/promptBuilder.js';
-import { generateReply } from '../services/aiService.js';
+import { generateReply, generateUtilityText, parseReplyToParts, usesMock } from '../services/aiService.js';
 import { deleteAvatarAsset } from '../services/assetService.js';
 import { invalidateStats } from '../services/statsService.js';
 import { generateId } from '../utils/id.js';
@@ -431,7 +432,9 @@ async function runGeneration(conversation, character, userText) {
       worldEntries: state.worldbooks,
       globalPrompts: state.globalPrompts,
       mode: state.settings.messageDisplayMode,
-      memoryInjectionLimit: state.settings.memoryInjectionLimit
+      memoryInjectionLimit: state.settings.memoryInjectionLimit,
+      settings: state.settings,
+      anniversaries: state.anniversaries
     });
 
     // 記憶「被想起」：凡實際注入 prompt 的記憶（locked 與非 locked 都算），
@@ -473,6 +476,7 @@ async function runGeneration(conversation, character, userText) {
     conversation.lastMessageAt = replyMsg.createdAt;
     conversation.updatedAt = replyMsg.createdAt;
     await saveCurrentState();
+    maybeExtractDreamMemories(conversation.id, { automatic: true }).catch(() => {});
   } catch (err) {
     // API 失敗：保留 player message，僅記錄可讀錯誤供錯誤條顯示。
     pendingError = {
@@ -516,39 +520,7 @@ export async function selectConversation(conversationId) {
   await selectCharacter(conv.primaryCharacterId);
 }
 
-// ---- 個人日記（V2 任務 2.3）----
-export async function addJournal({ content, mood }) {
-  const text = (content || '').trim();
-  if (!text) return;
-  const ts = now();
-  state.journals.push({
-    id: generateId('jrnl'),
-    ownerType: 'player',
-    ownerId: 'player',
-    content: text,
-    mood: (mood || '').trim(),
-    createdAt: ts,
-    updatedAt: ts
-  });
-  await saveCurrentState();
-  notify();
-}
-
-export async function updateJournal(id, patch) {
-  const j = state.journals.find((x) => x.id === id);
-  if (!j) return;
-  if ('content' in patch) j.content = (patch.content || '').trim();
-  if ('mood' in patch) j.mood = (patch.mood || '').trim();
-  j.updatedAt = now();
-  await saveCurrentState();
-  notify();
-}
-
-export async function deleteJournal(id) {
-  state.journals = state.journals.filter((x) => x.id !== id);
-  await saveCurrentState();
-  notify();
-}
+// （V4：獨白已併入迴聲牆，journal actions 移除；journals 陣列保留給未來角色私語（V8）。）
 
 // ---- 全域 Prompt 存放區（V2 任務三）----
 export async function addGlobalPrompt(data) {
@@ -837,6 +809,7 @@ function pushUsageLog(entry) {
     model: usage.model || ''
   };
   state.usageLog = (state.usageLog || []).concat(row).slice(-500);
+  invalidateStats();
 }
 
 export async function logUtilityUsage(kind, characterId, usage) {
@@ -852,7 +825,79 @@ export async function markAppOpened() {
   return previous;
 }
 
+function localDayKey(ts) {
+  const d = new Date(ts || now());
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function resetDailyCounters() {
+  const key = localDayKey(now());
+  state.dailyCounters = state.dailyCounters || {};
+  if (state.dailyCounters.date !== key) {
+    state.dailyCounters = { date: key, feed: 0, dream: 0, background: 0 };
+  }
+  return state.dailyCounters;
+}
+
+function consumeDaily(kind, limit, { manual = false } = {}) {
+  const max = Math.max(0, Number(limit) || 0);
+  if (!max) return true;
+  const counters = resetDailyCounters();
+  const key = kind || 'background';
+  const current = Number(counters[key]) || 0;
+  if (current >= max) {
+    if (manual) windowAlert('今日聲量已滿');
+    return false;
+  }
+  counters[key] = current + 1;
+  counters.background = (Number(counters.background) || 0) + 1;
+  return true;
+}
+
+function canUseDaily(kind, limit) {
+  const max = Math.max(0, Number(limit) || 0);
+  if (!max) return true;
+  const counters = resetDailyCounters();
+  return (Number(counters[kind || 'background']) || 0) < max;
+}
+
+function windowAlert(message) {
+  if (typeof window !== 'undefined' && window.alert) window.alert(message);
+}
+
 // ---- V4 feed ----
+
+function characterBrief(character) {
+  if (!character) return '';
+  return [
+    `角色：${character.name || '未命名'}`,
+    character.personality ? `個性：${character.personality}` : '',
+    character.speechStyle ? `說話風格：${character.speechStyle}` : '',
+    character.scenario ? `情境：${character.scenario}` : ''
+  ].filter(Boolean).join('\n');
+}
+
+function topMemoryText(characterId, limit = 3) {
+  return (state.memories || [])
+    .filter((m) => m && m.characterId === characterId && (m.status || 'active') === 'active')
+    .slice()
+    .sort((a, b) => (b.importance || 0) - (a.importance || 0) || (b.updatedAt || 0) - (a.updatedAt || 0))
+    .slice(0, limit)
+    .map((m) => `・${m.summary || m.content || ''}`)
+    .filter((x) => x.trim())
+    .join('\n');
+}
+
+function stripSpeakerName(text, character) {
+  const raw = String(text || '').trim();
+  const name = character && character.name ? String(character.name).trim() : '';
+  if (name && raw.startsWith(`${name}：`)) return raw.slice(name.length + 1).trim();
+  return raw;
+}
+
+function shuffled(list) {
+  return (list || []).slice().sort(() => Math.random() - 0.5);
+}
 
 export async function addPost({ authorType = 'player', authorId = 'player', content, mood = '' }) {
   const text = (content || '').trim();
@@ -871,6 +916,9 @@ export async function addPost({ authorType = 'player', authorId = 'player', cont
   state.posts.push(post);
   await saveCurrentState();
   notify();
+  if (post.authorType === 'player') {
+    triggerFeedReactions(post.id, { automatic: true }).catch(() => {});
+  }
   return post;
 }
 
@@ -906,6 +954,10 @@ export async function addPostComment(postId, { authorType = 'player', authorId =
   post.comments.push(comment);
   await saveCurrentState();
   notify();
+  if (authorType === 'player' && post.authorType === 'character' && !post.characterRepliedToPlayer && !usesMock(state.apiSettings)) {
+    post.characterRepliedToPlayer = true;
+    triggerSingleFeedReaction(post.id, post.authorId, { automatic: true }).catch(() => {});
+  }
   return comment;
 }
 
@@ -915,8 +967,8 @@ export async function generateMockFeedReaction(postId) {
   const characters = (state.characters || []).filter((c) => c && c.id);
   if (!characters.length) return null;
   const existing = new Set((post.comments || []).map((c) => c.authorId));
-  const candidates = characters.filter((c) => !existing.has(c.id));
-  const pick = candidates[0] || characters[0];
+  const candidates = shuffled(characters.filter((c) => !existing.has(c.id)));
+  const pick = candidates[0] || shuffled(characters)[0];
   const name = pick.name || '角色';
   const snippets = [
     `我看到這段，第一個想到的是你當時的表情。`,
@@ -926,11 +978,113 @@ export async function generateMockFeedReaction(postId) {
   const comment = await addPostComment(postId, {
     authorType: 'character',
     authorId: pick.id,
-    content: `${name}：${snippets[Math.floor(Math.random() * snippets.length)]}`
+    content: snippets[Math.floor(Math.random() * snippets.length)]
   });
-  pushUsageLog({ kind: 'feedReaction', characterId: pick.id, usage: { model: 'mock-utility' } });
   await saveCurrentState();
   return comment;
+}
+
+export async function triggerFeedReactions(postId, { automatic = false } = {}) {
+  const post = (state.posts || []).find((p) => p.id === postId);
+  if (!post) return [];
+  if (!canUseDaily('feed', state.settings.feedDailyLimit)) {
+    if (!automatic) windowAlert('今日聲量已滿');
+    return [];
+  }
+  if (usesMock(state.apiSettings)) {
+    if (automatic) return [];
+    return [await generateMockFeedReaction(postId)].filter(Boolean);
+  }
+  const max = Math.max(0, Number(state.settings.feedReactorsPerPost) || 2);
+  const existing = new Set((post.comments || []).map((c) => c.authorId));
+  const candidates = shuffled((state.characters || []).filter((c) => c && c.id && c.id !== post.authorId && !existing.has(c.id))).slice(0, max);
+  const out = [];
+  for (const c of candidates) {
+    const row = await triggerSingleFeedReaction(postId, c.id, { automatic });
+    if (row) out.push(row);
+  }
+  return out;
+}
+
+async function triggerSingleFeedReaction(postId, characterId, { automatic = false } = {}) {
+  const post = (state.posts || []).find((p) => p.id === postId);
+  const character = (state.characters || []).find((c) => c.id === characterId);
+  if (!post || !character) return null;
+  if (!consumeDaily('feed', state.settings.feedDailyLimit, { manual: !automatic })) return null;
+  post.likes = Array.isArray(post.likes) ? post.likes : [];
+  if (!post.likes.some((l) => l.userType === 'character' && l.userId === character.id)) {
+    post.likes.push({ userType: 'character', userId: character.id, at: now() });
+  }
+  if (usesMock(state.apiSettings)) {
+    await saveCurrentState();
+    notify();
+    return null;
+  }
+  const result = await generateUtilityText({
+    apiSettings: state.apiSettings,
+    maxTokens: 120,
+    system: [
+      '你要以指定角色語氣回應玩家在迴聲中的貼文。',
+      '請輸出一兩句繁體中文短留言；若只想按讚，輸出空字串。',
+      characterBrief(character),
+      topMemoryText(character.id) ? `聲痕：\n${topMemoryText(character.id)}` : ''
+    ].filter(Boolean).join('\n\n'),
+    userText: `貼文內容：${post.content || ''}\n心情：${post.mood || '未填'}`
+  });
+  const text = stripSpeakerName(result.text, character);
+  let comment = null;
+  if (text) {
+    post.comments = Array.isArray(post.comments) ? post.comments : [];
+    comment = {
+      id: generateId('comment'),
+      authorType: 'character',
+      authorId: character.id,
+      content: text,
+      createdAt: now()
+    };
+    post.comments.push(comment);
+  }
+  pushUsageLog({ kind: 'feedReaction', characterId: character.id, usage: result.usage });
+  await saveCurrentState();
+  notify();
+  return comment;
+}
+
+export async function inviteCharacterPost(characterId) {
+  if (!consumeDaily('feed', state.settings.feedDailyLimit, { manual: true })) return null;
+  const character = (state.characters || []).find((c) => c.id === characterId);
+  if (!character) return null;
+  let content = '';
+  if (!usesMock(state.apiSettings)) {
+    const result = await generateUtilityText({
+      apiSettings: state.apiSettings,
+      maxTokens: 160,
+      system: [
+        '你要以指定角色語氣在迴聲發一則短貼文。',
+        '取材於你與玩家的最近關係、記憶或想對玩家說的話。繁體中文，一到兩句，不要加角色名。',
+        characterBrief(character),
+        topMemoryText(character.id) ? `聲痕：\n${topMemoryText(character.id)}` : ''
+      ].filter(Boolean).join('\n\n'),
+      userText: '請寫一則適合發布在迴聲的短貼文。'
+    });
+    content = stripSpeakerName(result.text, character);
+    pushUsageLog({ kind: 'feedPost', characterId: character.id, usage: result.usage });
+  } else {
+    content = '剛剛想起一些細小的片段，想把它留在這裡等你看見。';
+  }
+  if (!content) content = '今天也想把一點聲音留給你。';
+  return addPost({ authorType: 'character', authorId: character.id, content });
+}
+
+export async function maybeAutoFeedPost() {
+  if (!state.settings.feedAutoPost) return null;
+  if (now() - (state.lastFeedAutoPostAt || 0) < 24 * 86400000) return null;
+  if (!canUseDaily('feed', state.settings.feedDailyLimit)) return null;
+  const characters = shuffled(state.characters || []);
+  if (!characters.length) return null;
+  state.lastFeedAutoPostAt = now();
+  await saveCurrentState();
+  return inviteCharacterPost(characters[0].id);
 }
 
 // ---- V4 keepsakes ----
@@ -948,7 +1102,7 @@ export async function addKeepsakeFromMessage(messageId, note = '') {
     snapshot: {
       senderType: msg.senderType || '',
       senderId: msg.senderId || '',
-      parts: activeParts(msg),
+      parts: JSON.parse(JSON.stringify(activeParts(msg))),
       createdAt: msg.createdAt || now()
     },
     note: (note || '').trim(),
@@ -1003,7 +1157,7 @@ export async function switchMessageVersion(messageId, dir) {
 export async function editMessageParts(messageId, text) {
   const msg = messages.find((m) => m.id === messageId);
   if (!msg) return;
-  msg.parts = [{ type: 'message', content: (text || '').trim() }];
+  msg.parts = parseReplyToParts((text || '').trim());
   msg.editedAt = now();
   if (msg.senderType === 'character') {
     msg.versions = Array.isArray(msg.versions) && msg.versions.length
@@ -1027,6 +1181,8 @@ export async function regenerateMessage(messageId) {
 
   let userText = '';
   const idx = messages.findIndex((m) => m.id === msg.id);
+  const lastCharIdx = findLastCharacterMessageIndex(msg.conversationId);
+  if (idx !== lastCharIdx) return;
   for (let i = idx - 1; i >= 0; i--) {
     if (messages[i].senderType === 'player') {
       userText = partsToPlainText(messages[i].parts);
@@ -1048,7 +1204,9 @@ export async function regenerateMessage(messageId) {
       worldEntries: state.worldbooks,
       globalPrompts: state.globalPrompts,
       mode: state.settings.messageDisplayMode,
-      memoryInjectionLimit: state.settings.memoryInjectionLimit
+      memoryInjectionLimit: state.settings.memoryInjectionLimit,
+      settings: state.settings,
+      anniversaries: state.anniversaries
     });
     const result = await generateReply({
       prompt,
@@ -1081,62 +1239,221 @@ export async function regenerateMessage(messageId) {
   }
 }
 
+function findLastCharacterMessageIndex(conversationId) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].conversationId === conversationId && messages[i].senderType === 'character') return i;
+  }
+  return -1;
+}
+
 // ---- V4 greeting / dream lite ----
 
 export async function maybeCreateGreeting() {
   const threshold = Math.max(0, Number(state.settings.greetingAfterDays) || 0);
-  if (!threshold || state.lastGreetingAt) return null;
+  if (!threshold || state.pendingGreeting) return state.pendingGreeting || null;
   const lastOpenedAt = state.lastOpenedAt || 0;
   if (!lastOpenedAt || now() - lastOpenedAt < threshold * 86400000) return null;
+  if (localDayKey(state.lastGreetingAt) === localDayKey(now())) return null;
+  if (!canUseDaily('feed', state.settings.feedDailyLimit)) return null;
   const conv = (state.conversations || [])
     .filter((c) => c.type === 'direct')
     .sort((a, b) => (b.lastMessageAt || 0) - (a.lastMessageAt || 0))[0];
   const character = conv ? state.characters.find((c) => c.id === conv.primaryCharacterId) : null;
   if (!conv || !character) return null;
-  const msg = makeMessage({
-    conversationId: conv.id,
-    senderType: 'character',
-    senderId: character.id,
-    parts: [{ type: 'message', content: `${character.name || '我'} 想起你了。這幾天過得還好嗎？` }]
-  });
-  await addMessage(msg);
-  conv.lastMessageAt = msg.createdAt;
+  let content = `${character.name || '我'} 想起你了。這幾天過得還好嗎？`;
+  if (!usesMock(state.apiSettings)) {
+    try {
+      consumeDaily('feed', state.settings.feedDailyLimit);
+      const days = Math.max(1, Math.floor((now() - lastOpenedAt) / 86400000));
+      const result = await generateUtilityText({
+        apiSettings: state.apiSettings,
+        maxTokens: 120,
+        system: [
+          '你要以角色語氣寫一則久別問候。繁體中文，一到兩句，不要加角色名。',
+          characterBrief(character),
+          topMemoryText(character.id) ? `聲痕：\n${topMemoryText(character.id)}` : ''
+        ].filter(Boolean).join('\n\n'),
+        userText: `玩家離開了 ${days} 天，請給出自然、符合角色語氣的問候。`
+      });
+      content = stripSpeakerName(result.text, character) || content;
+      pushUsageLog({ kind: 'greeting', characterId: character.id, usage: result.usage });
+    } catch (e) {
+      content = `${character.name || '我'} 想起你了。這幾天過得還好嗎？`;
+    }
+  }
+  state.pendingGreeting = { characterId: character.id, content, createdAt: now() };
   state.lastGreetingAt = now();
-  pushUsageLog({ kind: 'greeting', characterId: character.id, usage: { model: 'mock-utility' } });
   await saveCurrentState();
-  await reloadCurrentMessages();
   notify();
-  return msg;
+  return state.pendingGreeting;
 }
 
-export async function maybeExtractDreamMemories(conversationId) {
+export async function clearPendingGreeting() {
+  state.pendingGreeting = null;
+  await saveCurrentState();
+  notify();
+}
+
+export async function pickOldReplay() {
+  const all = normalizeMessageList(await getAllMessages());
+  const charByConv = {};
+  for (const conv of (state.conversations || [])) {
+    if (conv && conv.type === 'direct') charByConv[conv.id] = conv.primaryCharacterId;
+  }
+  const withChar = all
+    .filter((m) => m && charByConv[m.conversationId] && m.createdAt)
+    .map((m) => ({ message: m, characterId: charByConv[m.conversationId] }));
+  const nowTs = now();
+  const targetYear = nowTs - 365 * 86400000;
+  const yearHit = pickByWindow(withChar, targetYear, 3);
+  if (yearHit) return replayRecord(yearHit);
+  const target90 = nowTs - 90 * 86400000;
+  const ninetyHit = pickByWindow(withChar, target90, 7);
+  if (ninetyHit) return replayRecord(ninetyHit);
+  const old = withChar.filter((x) => nowTs - x.message.createdAt >= 30 * 86400000);
+  return old.length ? replayRecord(old[Math.floor(Math.random() * old.length)]) : null;
+}
+
+function pickByWindow(list, target, days) {
+  const span = days * 86400000;
+  const hits = list.filter((x) => Math.abs((x.message.createdAt || 0) - target) <= span);
+  return hits.length ? hits[Math.floor(Math.random() * hits.length)] : null;
+}
+
+function replayRecord(row) {
+  const character = (state.characters || []).find((c) => c.id === row.characterId);
+  const firstPart = activeParts(row.message)[0];
+  return {
+    conversationId: row.message.conversationId,
+    characterId: row.characterId,
+    characterName: character ? character.name || '角色' : '角色',
+    createdAt: row.message.createdAt,
+    snippet: firstPart && firstPart.content ? String(firstPart.content).replace(/\s+/g, ' ').trim() : ''
+  };
+}
+
+export async function maybeExtractDreamMemories(conversationId, { automatic = false } = {}) {
   const conv = (state.conversations || []).find((c) => c.id === conversationId);
   if (!conv || state.settings.dreamEnabled === false) return [];
+  if (usesMock(state.apiSettings)) {
+    if (!automatic) windowAlert('夢釀需要連接 AI 服務');
+    return [];
+  }
   const every = Math.max(1, Number(state.settings.dreamEveryMessages) || 20);
   const list = conversationId === state.currentConversationId
     ? messages
     : normalizeMessageList(await getMessagesByConversation(conversationId));
   const count = list.length;
   if (count - (conv.lastDreamMessageCount || 0) < every) return [];
+  if (!consumeDaily('dream', state.settings.dreamDailyLimit, { manual: !automatic })) return [];
   const characterId = conv.primaryCharacterId;
-  const recent = list.slice(-every);
-  const text = recent.map((m) => partsToPlainText(activeParts(m))).join('\n').trim();
+  const recent = list.slice(conv.lastDreamMessageCount || 0).slice(-Math.max(every, 30));
+  const text = recent.map((m) => {
+    const speaker = m.senderType === 'player' ? '玩家' : '角色';
+    return `${speaker}：${partsToPlainText(activeParts(m))}`;
+  }).join('\n').trim();
   if (!text) return [];
-  const content = text.length > 160 ? text.slice(0, 160) + '...' : text;
-  const memory = {
-    content: `Conversation echo: ${content}`,
-    summary: content.slice(0, 60),
-    importance: 3,
-    emotionWeight: 3,
-    locked: false,
-    source: 'extracted'
-  };
-  await addMemory(characterId, memory);
+  const existing = (state.memories || [])
+    .filter((m) => m.characterId === characterId && (m.status || 'active') === 'active');
+  let result;
+  try {
+    result = await generateUtilityText({
+      apiSettings: state.apiSettings,
+      maxTokens: 500,
+      system: [
+        '你要從對話中萃取可長期保存的聲痕。',
+        '只記關於玩家的持久事實、雙方的約定、關係中的重要事件。',
+        '不要記寒暄、臨時情緒、普通閒聊或已存在資訊。繁體中文。',
+        '只輸出 JSON 陣列，0 到 3 筆。格式：[{ "content": "...", "summary": "...", "importance": 1-5, "emotionWeight": 1-5 }]。沒有值得記的輸出 []。',
+        existing.length ? `既有聲痕摘要：\n${existing.map((m) => `・${m.summary || m.content}`).join('\n')}` : ''
+      ].filter(Boolean).join('\n\n'),
+      userText: text
+    });
+  } catch (e) {
+    return [];
+  }
+  const rows = parseDreamJson(result.text);
+  if (!rows.length) {
+    conv.lastDreamMessageCount = count;
+    await saveCurrentState();
+    return [];
+  }
+  const added = [];
+  for (const row of rows.slice(0, 3)) {
+    const content = String(row.content || '').trim();
+    if (!content) continue;
+    const summary = String(row.summary || content.slice(0, 60)).trim();
+    if (isDuplicateMemory(content, existing.concat(added))) continue;
+    const memory = {
+      id: generateId('mem'),
+      characterId,
+      content,
+      summary,
+      importance: clampInt(row.importance, 1, 5, 3),
+      emotionWeight: clampInt(row.emotionWeight, 1, 5, 3),
+      locked: false,
+      lastRecalledAt: 0,
+      recallCount: 0,
+      status: 'active',
+      source: 'extracted',
+      createdAt: now(),
+      updatedAt: now()
+    };
+    state.memories.push(memory);
+    added.push(memory);
+  }
   conv.lastDreamMessageCount = count;
-  pushUsageLog({ kind: 'dream', characterId, usage: { model: 'mock-utility' } });
+  if (result && result.usage) pushUsageLog({ kind: 'dream', characterId, usage: result.usage });
   await saveCurrentState();
   notify();
-  return [memory];
+  return added;
+}
+
+function parseDreamJson(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return [];
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  try {
+    const data = JSON.parse(cleaned);
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    const m = /\[[\s\S]*\]/.exec(cleaned);
+    if (!m) return [];
+    try {
+      const data = JSON.parse(m[0]);
+      return Array.isArray(data) ? data : [];
+    } catch (err) {
+      return [];
+    }
+  }
+}
+
+function normalizeForCompare(text) {
+  return String(text || '').toLowerCase().replace(/[\s，。！？、,.!?;；：「」『』"'（）()]/g, '');
+}
+
+function bigrams(text) {
+  const s = normalizeForCompare(text);
+  const set = new Set();
+  for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2));
+  if (!set.size && s) set.add(s);
+  return set;
+}
+
+function overlapRatio(a, b) {
+  const x = bigrams(a);
+  const y = bigrams(b);
+  if (!x.size || !y.size) return 0;
+  let same = 0;
+  for (const token of x) if (y.has(token)) same++;
+  return same / Math.min(x.size, y.size);
+}
+
+function isDuplicateMemory(content, list) {
+  return (list || []).some((m) => {
+    const t = [m.content, m.summary].filter(Boolean).join('\n');
+    return overlapRatio(content, t) > 0.6;
+  });
 }
 
 // ---- message 工廠：套用 senderType→role 映射（第七節）----

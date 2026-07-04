@@ -22,6 +22,7 @@ import {
   deleteMemory,
   deleteKeepsake,
   collectKeepsakeAsMemory,
+  maybeExtractDreamMemories,
   deleteCharacter
 } from '../../state/store.js';
 import { selectInjectedMemories } from '../../services/promptBuilder.js';
@@ -168,13 +169,13 @@ function renderRecordTab(container, state, character) {
   );
   container.appendChild(buildRelationshipSection(state, character, conv));
   container.appendChild(buildKeepsakeSection(state, character));
-  container.appendChild(buildMemorySection(state, character));
+  container.appendChild(buildMemorySection(state, character, conv));
   container.appendChild(buildAnniversarySection(state, character));
   container.appendChild(buildWishlistSection(state, character));
 }
 
 function buildKeepsakeSection(state, character) {
-  const sec = sectionEl('珍藏');
+  const sec = sectionEl('拾貝');
   const list = document.createElement('div');
   list.className = 'keepsake-list';
   const items = (state.keepsakes || [])
@@ -183,7 +184,7 @@ function buildKeepsakeSection(state, character) {
   if (!items.length) {
     const empty = document.createElement('div');
     empty.className = 'form-hint';
-    empty.textContent = '還沒有珍藏。可在聊天訊息下方按「珍藏」。';
+    empty.textContent = '還沒有拾貝。可在聊天訊息下方按「拾貝」。';
     list.appendChild(empty);
   } else {
     for (const item of items) list.appendChild(buildKeepsakeItem(item));
@@ -207,11 +208,11 @@ function buildKeepsakeItem(item) {
   }
   const actions = document.createElement('div');
   actions.className = 'keepsake-actions';
-  const collect = iconBtn('轉記憶', '轉成記憶');
+  const collect = iconBtn('轉聲痕', '轉成聲痕');
   collect.addEventListener('click', () => collectKeepsakeAsMemory(item.id));
-  const del = iconBtn('刪', '刪除珍藏');
+  const del = iconBtn('刪', '刪除拾貝');
   del.addEventListener('click', () => {
-    if (window.confirm('要刪除這則珍藏嗎？')) deleteKeepsake(item.id);
+    if (window.confirm('要刪除這則拾貝嗎？')) deleteKeepsake(item.id);
   });
   actions.appendChild(collect);
   actions.appendChild(del);
@@ -274,8 +275,8 @@ function buildRelationshipSection(state, character, conv) {
 }
 
 // ---- 記憶 ----
-function buildMemorySection(state, character) {
-  const sec = sectionEl('記憶');
+function buildMemorySection(state, character, conv) {
+  const sec = sectionEl('聲痕');
 
   // 注入估算（與 buildPrompt 用同一份選取邏輯）。
   const limit = state.settings.memoryInjectionLimit;
@@ -291,10 +292,36 @@ function buildMemorySection(state, character) {
     `（一般記憶上限 ${limit} 筆，可在「設定 → API 設定」調整；locked 不占名額。）`;
   sec.appendChild(est);
 
+  const dreamRow = document.createElement('div');
+  dreamRow.className = 'dream-row';
+  const dreamBtn = document.createElement('button');
+  dreamBtn.type = 'button';
+  dreamBtn.className = 'btn';
+  dreamBtn.textContent = '夢釀';
+  const dreamStatus = document.createElement('span');
+  dreamStatus.className = 'form-hint dream-status';
+  dreamStatus.textContent = '讓 TA 整理最近的記憶';
+  dreamBtn.addEventListener('click', async () => {
+    if (!conv) return;
+    dreamBtn.disabled = true;
+    dreamStatus.textContent = '正在夢釀……';
+    try {
+      const added = await maybeExtractDreamMemories(conv.id, { automatic: false });
+      dreamStatus.textContent = `新增了 ${added.length} 筆聲痕`;
+    } catch (e) {
+      dreamStatus.textContent = '夢釀失敗';
+    } finally {
+      dreamBtn.disabled = false;
+    }
+  });
+  dreamRow.appendChild(dreamBtn);
+  dreamRow.appendChild(dreamStatus);
+  sec.appendChild(dreamRow);
+
   // 新增記憶表單
   sec.appendChild(
     buildMemoryForm({
-      submitLabel: '新增記憶',
+      submitLabel: '新增聲痕',
       onSubmit: (data) => addMemory(character.id, data)
     })
   );
@@ -304,11 +331,11 @@ function buildMemorySection(state, character) {
   list.className = 'mem-list';
   const mems = (state.memories || [])
     .filter((m) => m.characterId === character.id)
-    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    .sort(memorySort);
   if (mems.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'form-hint';
-    empty.textContent = '還沒有記憶。新增一些關於你們的重要設定或事件吧。';
+    empty.textContent = '還沒有聲痕。新增一些關於你們的重要設定或事件吧。';
     list.appendChild(empty);
   } else {
     for (const m of mems) list.appendChild(buildMemoryItem(m));
@@ -319,7 +346,7 @@ function buildMemorySection(state, character) {
 
 function buildMemoryItem(m) {
   const item = document.createElement('div');
-  item.className = 'mem-item' + (m.locked ? ' mem-locked' : '');
+  item.className = 'mem-item' + (m.locked ? ' mem-locked' : '') + (isNewExtracted(m) ? ' mem-new-extracted' : '');
 
   // 頭列：星等 / 情感 / locked 徽章 + 動作
   const head = document.createElement('div');
@@ -330,6 +357,11 @@ function buildMemoryItem(m) {
   badges.appendChild(badge(`重要 ${stars(m.importance)}`));
   badges.appendChild(badge(`情感 ${m.emotionWeight || 0}`));
   if (m.locked) badges.appendChild(badge('🔒 鎖定', 'mem-badge-lock'));
+  if (m.source === 'extracted') {
+    badges.appendChild(badge('自動', 'mem-badge-auto'));
+    if (isNewExtracted(m)) badges.appendChild(badge('新', 'mem-badge-new'));
+  }
+  if (m.source === 'collected') badges.appendChild(badge('拾貝', 'mem-badge-collected'));
   head.appendChild(badges);
 
   const actions = document.createElement('div');
@@ -363,7 +395,7 @@ function buildMemoryItem(m) {
 
   editBtn.addEventListener('click', () => {
     const form = buildMemoryForm({
-      submitLabel: '儲存記憶',
+      submitLabel: '儲存聲痕',
       initial: m,
       onSubmit: (data) => updateMemory(m.id, data),
       onCancel: () => item.replaceWith(buildMemoryItem(m))
@@ -443,7 +475,7 @@ function buildMemoryForm({ submitLabel, onSubmit, initial, onCancel }) {
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     if (!content.value.trim()) {
-      window.alert('請輸入記憶內容');
+      window.alert('請輸入聲痕內容');
       return;
     }
     onSubmit({
@@ -461,6 +493,16 @@ function buildMemoryForm({ submitLabel, onSubmit, initial, onCancel }) {
   });
 
   return form;
+}
+
+function isNewExtracted(m) {
+  return m && m.source === 'extracted' && Date.now() - (m.createdAt || 0) <= 7 * DAY_MS;
+}
+
+function memorySort(a, b) {
+  const an = isNewExtracted(a) ? 1 : 0;
+  const bn = isNewExtracted(b) ? 1 : 0;
+  return bn - an || (b.updatedAt || 0) - (a.updatedAt || 0);
 }
 
 function recallText(m) {

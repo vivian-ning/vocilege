@@ -48,39 +48,34 @@ export function renderMessage(message, context) {
   }
 
   if (message.senderType === 'character') {
-    wrap.appendChild(renderMessageTools(message));
+    wrap.appendChild(renderMessageTools(message, context));
   }
 
   return wrap;
 }
 
-function renderMessageTools(message) {
+function renderMessageTools(message, context) {
   const tools = document.createElement('div');
   tools.className = 'msg-tools';
 
-  const keepsake = toolBtn('珍藏');
+  const keepsake = toolBtn('拾貝');
   keepsake.addEventListener('click', () => {
-    const note = window.prompt('替這段珍藏加一點備註（可留白）', '');
+    const note = window.prompt('替這段拾貝加一點備註（可留白）', '');
     if (note === null) return;
     addKeepsakeFromMessage(message.id, note);
   });
   tools.appendChild(keepsake);
 
-  const regen = toolBtn('重抽');
-  regen.addEventListener('click', () => regenerateMessage(message.id));
-  tools.appendChild(regen);
+  const isLastCharacter = context && context.lastCharacterMessageId === message.id;
+  if (isLastCharacter) {
+    const regen = toolBtn('再說一次');
+    regen.addEventListener('click', () => regenerateMessage(message.id));
+    tools.appendChild(regen);
 
-  const edit = toolBtn('編輯');
-  edit.addEventListener('click', () => {
-    const text = (message.parts || [])
-      .map((p) => (p && p.content ? String(p.content) : ''))
-      .join('\n')
-      .trim();
-    const next = window.prompt('編輯這則回覆', text);
-    if (next == null) return;
-    editMessageParts(message.id, next);
-  });
-  tools.appendChild(edit);
+    const edit = toolBtn('修飾');
+    edit.addEventListener('click', () => openEditModal(message));
+    tools.appendChild(edit);
+  }
 
   const versions = Array.isArray(message.versions) ? message.versions.length : 0;
   if (versions > 1) {
@@ -101,6 +96,55 @@ function renderMessageTools(message) {
   }
 
   return tools;
+}
+
+function openEditModal(message) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const modal = document.createElement('div');
+  modal.className = 'modal edit-message-modal';
+  const title = document.createElement('h2');
+  title.className = 'modal-title';
+  title.textContent = '修飾回覆';
+  modal.appendChild(title);
+  const ta = document.createElement('textarea');
+  ta.className = 'form-control';
+  ta.rows = 8;
+  ta.value = (message.parts || [])
+    .map((p) => {
+      const content = p && p.content ? String(p.content) : '';
+      return p && p.type === 'narration' ? `＊${content}＊` : content;
+    })
+    .join('\n\n')
+    .trim();
+  modal.appendChild(ta);
+  const actions = document.createElement('div');
+  actions.className = 'form-actions';
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'btn';
+  cancel.textContent = '取消';
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.className = 'btn btn-primary';
+  save.textContent = '儲存';
+  cancel.addEventListener('click', close);
+  save.addEventListener('click', async () => {
+    await editMessageParts(message.id, ta.value);
+    close();
+  });
+  actions.appendChild(cancel);
+  actions.appendChild(save);
+  modal.appendChild(actions);
+  overlay.appendChild(modal);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+  function close() {
+    if (overlay.parentNode) document.body.removeChild(overlay);
+  }
+  document.body.appendChild(overlay);
+  ta.focus();
 }
 
 function toolBtn(text) {

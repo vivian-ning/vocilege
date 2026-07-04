@@ -38,7 +38,9 @@ export function buildPrompt({
   worldEntries,    // 未來世界書使用
   globalPrompts,   // V2：全域 Prompt 存放區（套用到全部角色）
   mode,
-  memoryInjectionLimit // V3：非 locked 記憶注入上限（預設 10）
+  memoryInjectionLimit, // V3：非 locked 記憶注入上限（預設 10）
+  settings,
+  anniversaries
 }) {
   const character = activeCharacter || {};
   const p = player || {};
@@ -91,6 +93,10 @@ export function buildPrompt({
   const generalText = memoriesToText(general);
   if (generalText) {
     dynamicParts.push(`【關於${playerName}與你的記憶】\n${generalText}`);
+  }
+  if (!settings || settings.timeAwareness !== false) {
+    const timeText = buildTimeAwarenessText(anniversaries, character.id);
+    if (timeText) dynamicParts.push(timeText);
   }
   const dynamicText = dynamicParts.join('\n\n');
 
@@ -184,6 +190,62 @@ function describeMode(mode) {
     default:
       return '混合模式：對白與旁白交錯，自然呈現。';
   }
+}
+
+function buildTimeAwarenessText(anniversaries, characterId) {
+  const d = new Date();
+  const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+  const label = timeOfDay(d.getHours());
+  const today = `【現在】${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 星期${weekdays[d.getDay()]}，${label}。`;
+  const upcoming = nextAnniversaryText(anniversaries, characterId, d);
+  return upcoming ? `${today}${upcoming}` : today;
+}
+
+function timeOfDay(hour) {
+  if (hour >= 5 && hour < 8) return '清晨';
+  if (hour >= 8 && hour < 12) return '上午';
+  if (hour >= 12 && hour < 17) return '午後';
+  if (hour >= 17 && hour < 19) return '傍晚';
+  if (hour >= 19 && hour < 23) return '夜晚';
+  return '深夜';
+}
+
+function nextAnniversaryText(anniversaries, characterId, nowDate) {
+  const today = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate());
+  const hits = [];
+  for (const a of (anniversaries || [])) {
+    if (!a || a.characterId !== characterId || !a.date) continue;
+    const days = daysUntil(a, today);
+    if (days == null || days < 0 || days > 3) continue;
+    hits.push({ days, title: a.title || '紀念日', date: occurrenceDate(a, today) });
+  }
+  hits.sort((x, y) => x.days - y.days);
+  const h = hits[0];
+  if (!h) return '';
+  const when = h.days === 0 ? '今天' : h.days === 1 ? '明天' : h.days === 2 ? '後天' : '三天後';
+  return `${when}（${h.date.getMonth() + 1}月${h.date.getDate()}日）是「${h.title}」。`;
+}
+
+function occurrenceDate(a, today) {
+  const parts = String(a.date || '').split('-').map((x) => Number(x));
+  const y = parts[0], m = (parts[1] || 1) - 1, d = parts[2] || 1;
+  if (a.repeat === 'yearly') {
+    let next = new Date(today.getFullYear(), m, d);
+    if (next < today) next = new Date(today.getFullYear() + 1, m, d);
+    return next;
+  }
+  if (a.repeat === 'monthly') {
+    let next = new Date(today.getFullYear(), today.getMonth(), d);
+    if (next < today) next = new Date(today.getFullYear(), today.getMonth() + 1, d);
+    return next;
+  }
+  return new Date(y, m, d);
+}
+
+function daysUntil(a, today) {
+  const target = occurrenceDate(a, today);
+  const days = Math.round((target - today) / 86400000);
+  return a.repeat === 'none' && days < 0 ? null : days;
 }
 
 function partsToText(parts) {

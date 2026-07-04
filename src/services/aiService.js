@@ -43,6 +43,14 @@ export class ApiError extends Error {
   }
 }
 
+export class UtilityUnavailableError extends Error {
+  constructor() {
+    super('夢釀與背景功能需要連接 AI 服務');
+    this.name = 'UtilityUnavailableError';
+    this.userMessage = '夢釀需要連接 AI 服務';
+  }
+}
+
 // 是否使用 mock：未設定 provider 或 apiKey 為空。
 export function usesMock(apiSettings) {
   const s = apiSettings || {};
@@ -92,6 +100,27 @@ export async function generateReply(args) {
   return result;
 }
 
+// 背景任務用的通用文字補全。使用 apiSettings.utilityModel；空值退回主 model。
+export async function generateUtilityText({ system, userText, apiSettings, maxTokens } = {}) {
+  if (usesMock(apiSettings)) throw new UtilityUnavailableError();
+  const s = {
+    ...(apiSettings || {}),
+    model: (apiSettings && apiSettings.utilityModel) || (apiSettings && apiSettings.model) || ''
+  };
+  const prompt = {
+    systemBlocks: [
+      { text: String(system || ''), cache: true },
+      { text: '', cache: false }
+    ],
+    messages: [{ role: 'user', content: String(userText || '') }]
+  };
+  const args = { prompt, apiSettings: { ...s, maxTokens: maxTokens || s.maxTokens } };
+  if (s.provider === 'anthropic') return callAnthropicUtility(args);
+  if (s.provider === 'openai-compatible') return callOpenAIUtility(args);
+  if (s.provider === 'gemini') return callGeminiUtility(args);
+  throw new UtilityUnavailableError();
+}
+
 // ---- provider 實作 ----
 
 async function callOpenAICompatible(args, { stream = false } = {}) {
@@ -133,6 +162,34 @@ async function callOpenAICompatible(args, { stream = false } = {}) {
   const parts = parseReplyToParts(text);
   parts.usage = usage;
   return parts;
+}
+
+async function callOpenAIUtility(args) {
+  const { prompt, apiSettings } = args;
+  const base = resolveBaseUrl(apiSettings);
+  const data = await postJson(`${base}/chat/completions`, {
+    'Authorization': `Bearer ${apiSettings.apiKey}`,
+    'Content-Type': 'application/json'
+  }, {
+    model: apiSettings.model || '',
+    messages: [
+      { role: 'system', content: systemBlocksToString(prompt.systemBlocks) },
+      { role: 'user', content: prompt.messages[0].content }
+    ],
+    temperature: clampNumber(apiSettings.temperature, 0, 2, 1),
+    max_tokens: clampNumber(apiSettings.maxTokens, 1, 1000000, 512),
+    stream: false
+  });
+  return {
+    text: data && data.choices && data.choices[0] && data.choices[0].message
+      ? String(data.choices[0].message.content || '').trim()
+      : '',
+    usage: {
+      promptTokens: intOr(data && data.usage && data.usage.prompt_tokens, 0),
+      completionTokens: intOr(data && data.usage && data.usage.completion_tokens, 0),
+      model: (data && data.model) || apiSettings.model || ''
+    }
+  };
 }
 
 async function callAnthropic(args, { stream = false } = {}) {
@@ -180,6 +237,33 @@ async function callAnthropic(args, { stream = false } = {}) {
   const parts = parseReplyToParts(text);
   parts.usage = usage;
   return parts;
+}
+
+async function callAnthropicUtility(args) {
+  const { prompt, apiSettings } = args;
+  const base = resolveBaseUrl(apiSettings);
+  const data = await postJson(`${base}/v1/messages`, {
+    'x-api-key': apiSettings.apiKey,
+    'anthropic-version': '2023-06-01',
+    'content-type': 'application/json',
+    'anthropic-dangerous-direct-browser-access': 'true'
+  }, {
+    model: apiSettings.model || '',
+    system: systemBlocksToString(prompt.systemBlocks) || ' ',
+    messages: sanitizeAnthropicMessages(prompt.messages),
+    temperature: clampNumber(apiSettings.temperature, 0, 1, 1),
+    max_tokens: clampNumber(apiSettings.maxTokens, 1, 1000000, 512),
+    stream: false
+  });
+  const u = (data && data.usage) || {};
+  const usage = {
+    promptTokens: intOr(u.input_tokens, 0),
+    completionTokens: intOr(u.output_tokens, 0),
+    model: (data && data.model) || apiSettings.model || ''
+  };
+  if (u.cache_read_input_tokens != null) usage.cacheRead = intOr(u.cache_read_input_tokens, 0);
+  if (u.cache_creation_input_tokens != null) usage.cacheWrite = intOr(u.cache_creation_input_tokens, 0);
+  return { text: extractAnthropicText(data).trim(), usage };
 }
 
 // system 分區 → Anthropic block 陣列。靜態 block 帶 cache_control；動態 block 為空則省略。
@@ -252,6 +336,34 @@ async function callGemini(args, { stream = false } = {}) {
   const parts = parseReplyToParts(text);
   parts.usage = usage;
   return parts;
+}
+
+async function callGeminiUtility(args) {
+  const { prompt, apiSettings } = args;
+  const base = resolveBaseUrl(apiSettings);
+  const data = await postJson(
+    `${base}/v1beta/models/${encodeURIComponent(apiSettings.model || '')}:generateContent`,
+    {
+      'x-goog-api-key': apiSettings.apiKey,
+      'Content-Type': 'application/json'
+    },
+    {
+      contents: [{ role: 'user', parts: [{ text: prompt.messages[0].content }] }],
+      systemInstruction: { parts: [{ text: systemBlocksToString(prompt.systemBlocks) || ' ' }] },
+      generationConfig: {
+        temperature: clampNumber(apiSettings.temperature, 0, 2, 1),
+        maxOutputTokens: clampNumber(apiSettings.maxTokens, 1, 1000000, 512)
+      }
+    }
+  );
+  return {
+    text: extractGeminiText(data).trim(),
+    usage: {
+      promptTokens: intOr(data && data.usageMetadata && data.usageMetadata.promptTokenCount, 0),
+      completionTokens: intOr(data && data.usageMetadata && data.usageMetadata.candidatesTokenCount, 0),
+      model: (data && data.modelVersion) || apiSettings.model || ''
+    }
+  };
 }
 
 // Gemini 回覆：candidates[0].content.parts[].text 串接。

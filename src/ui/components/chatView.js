@@ -89,7 +89,8 @@ export function renderChatView(container, state) {
     playerAvatar: state.player ? state.player.avatar : null,
     characterName: character.name,
     characterAvatar: character.avatar,
-    settings: state.settings
+    settings: state.settings,
+    lastCharacterMessageId: findLastCharacterMessageId(messages)
   };
 
   for (const msg of messages) {
@@ -178,6 +179,13 @@ export function renderChatView(container, state) {
   inputBar.appendChild(textarea);
   inputBar.appendChild(sendBtn);
   container.appendChild(inputBar);
+}
+
+function findLastCharacterMessageId(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].senderType === 'character') return messages[i].id;
+  }
+  return '';
 }
 
 // 「此對話的我」面板（任務四）：編輯 conversation.playerPersona。

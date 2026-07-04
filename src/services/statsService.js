@@ -49,6 +49,8 @@ async function compute(state) {
   const today = zero();
   const month = zero();
   const total = zero();
+  const chatTotal = zero();
+  const backgroundTotal = zero();
   const perCharacter = {}; // characterId -> { prompt, completion }
   const lastByConversation = {}; // conversationId -> { createdAt, snippet }
 
@@ -73,6 +75,7 @@ async function compute(state) {
       const p = Number(m.usage.promptTokens) || 0;
       const c = Number(m.usage.completionTokens) || 0;
       total.prompt += p; total.completion += c;
+      chatTotal.prompt += p; chatTotal.completion += c;
       if (isSameLocalMonth(ts, ref)) { month.prompt += p; month.completion += c; }
       if (isSameLocalDay(ts, ref)) { today.prompt += p; today.completion += c; }
 
@@ -91,6 +94,7 @@ async function compute(state) {
     const p = Number(u.promptTokens) || 0;
     const c = Number(u.completionTokens) || 0;
     total.prompt += p; total.completion += c;
+    backgroundTotal.prompt += p; backgroundTotal.completion += c;
     if (isSameLocalMonth(ts, ref)) { month.prompt += p; month.completion += c; }
     if (isSameLocalDay(ts, ref)) { today.prompt += p; today.completion += c; }
     if (u.characterId) {
@@ -100,7 +104,7 @@ async function compute(state) {
     }
   }
 
-  return { today, month, total, perCharacter, lastByConversation };
+  return { today, month, total, chatTotal, backgroundTotal, perCharacter, lastByConversation };
 }
 
 // 取得聚合（帶快取）。state 只用於每角色歸戶對照，不進入快取鍵；訊息異動時以

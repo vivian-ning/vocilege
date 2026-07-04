@@ -77,6 +77,7 @@ const migrators = {
         comments: []
       }));
     s.posts = existingPosts.concat(migratedPosts);
+    s.journals = []; // 轉換後清空：獨白已併入迴聲，journals 留給未來角色私語（V8）
 
     if (!Array.isArray(s.keepsakes)) s.keepsakes = [];
     if (!Array.isArray(s.usageLog)) s.usageLog = [];
@@ -127,6 +128,28 @@ export function migrateState(state) {
     }
     s = migrate(s);
     version = s.schemaVersion;
+  }
+
+  // 防禦性修復：v5 初版的 4→5 migration 漏了「轉換後清空 journals」，
+  // 已升到 v5 的資料可能殘留舊獨白。此處補做一次同樣的轉換（以 id 去重，
+  // 冪等安全），確保獨白不會卡在死掉的 journals 陣列裡。
+  if (s.schemaVersion >= 5 && Array.isArray(s.journals) && s.journals.length) {
+    const existingPosts = Array.isArray(s.posts) ? s.posts : [];
+    const postIds = new Set(existingPosts.map((p) => p && p.id).filter(Boolean));
+    const migratedPosts = s.journals
+      .filter((j) => j && !postIds.has(j.id))
+      .map((j) => ({
+        id: j.id || `post_${Math.random().toString(36).slice(2)}`,
+        authorType: 'player',
+        authorId: 'player',
+        content: j.content || '',
+        mood: j.mood || '',
+        createdAt: j.createdAt || Date.now(),
+        likes: [],
+        comments: []
+      }));
+    s.posts = existingPosts.concat(migratedPosts);
+    s.journals = [];
   }
 
   return s;

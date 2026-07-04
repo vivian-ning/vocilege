@@ -3,10 +3,10 @@
 // 首頁主控台（#/home，V2 任務二）：
 //   2.1 角色卡片牆（頭貼 / 名字 / 簡介 / 相識天數 / 最後對話時間 / 最後一句摘要）
 //   2.2 Token 消耗統計（今日 / 本月 / 累計 + 每角色）
-//   2.3 個人日記（快速輸入 + 最近 5 篇，可編輯 / 刪除）
+//   2.3 迴聲摘要（最新 2 則貼文 + 入口；V4 起獨白併入迴聲牆）
 //   2.4 備份提醒（從未備份或距上次超過 14 天）
 
-import { addJournal, updateJournal, deleteJournal } from '../../state/store.js';
+import { clearPendingGreeting, pickOldReplay } from '../../state/store.js';
 import { getStats } from '../../services/statsService.js';
 import { createAvatarEl } from '../avatar.js';
 import { navigate } from '../router.js';
@@ -28,6 +28,9 @@ export function renderHomeView(container, state) {
   const reminder = buildBackupReminder(state);
   if (reminder) page.appendChild(reminder);
 
+  const greeting = buildGreetingCard(state);
+  if (greeting) page.appendChild(greeting);
+
   // V3：紀念日提醒（3 天內含當天）
   const annivReminders = buildAnniversaryReminders(state);
   if (annivReminders) page.appendChild(annivReminders);
@@ -41,6 +44,8 @@ export function renderHomeView(container, state) {
   page.appendChild(sectionTitle('角色'));
   page.appendChild(buildCharacterWall(state));
 
+  page.appendChild(buildOldReplaySection());
+
   // 2.2 Token 統計
   page.appendChild(sectionTitle('Token 消耗統計'));
   const statsBox = document.createElement('div');
@@ -49,11 +54,82 @@ export function renderHomeView(container, state) {
   page.appendChild(statsBox);
   fillStats(statsBox, state);
 
-  // 2.3 個人日記
-  page.appendChild(sectionTitle('個人日記'));
-  page.appendChild(buildJournal(state));
+  // 2.3 迴聲摘要（V4：獨白已併入迴聲牆）
+  page.appendChild(sectionTitle('迴聲'));
+  page.appendChild(buildFeedSummary(state));
 
   container.appendChild(page);
+}
+
+function buildGreetingCard(state) {
+  const pending = state.pendingGreeting;
+  if (!pending || !pending.characterId || !pending.content) return null;
+  const character = (state.characters || []).find((c) => c.id === pending.characterId);
+  const conv = (state.conversations || []).find((c) => c.type === 'direct' && c.primaryCharacterId === pending.characterId);
+  if (!character || !conv) return null;
+  const card = document.createElement('div');
+  card.className = 'greeting-card';
+  card.appendChild(createAvatarEl(character.avatar, 'greeting-avatar'));
+  const body = document.createElement('div');
+  body.className = 'greeting-body';
+  const label = document.createElement('div');
+  label.className = 'greeting-label';
+  label.textContent = `喚聲 · ${character.name || '角色'}`;
+  body.appendChild(label);
+  const text = document.createElement('div');
+  text.className = 'greeting-text';
+  text.textContent = pending.content;
+  body.appendChild(text);
+  card.appendChild(body);
+  const actions = document.createElement('div');
+  actions.className = 'greeting-actions';
+  const reply = document.createElement('button');
+  reply.type = 'button';
+  reply.className = 'btn btn-primary';
+  reply.textContent = '回應 TA';
+  reply.addEventListener('click', async () => {
+    await clearPendingGreeting();
+    navigate(`/chat/${conv.id}`);
+  });
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'btn';
+  close.textContent = '關閉';
+  close.addEventListener('click', () => clearPendingGreeting());
+  actions.appendChild(reply);
+  actions.appendChild(close);
+  card.appendChild(actions);
+  return card;
+}
+
+function buildOldReplaySection() {
+  const wrap = document.createElement('div');
+  wrap.className = 'old-replay-host';
+  pickOldReplay()
+    .then((item) => {
+      if (!item) {
+        wrap.remove();
+        return;
+      }
+      wrap.textContent = '';
+      const title = sectionTitle('舊聲重播');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'old-replay-card';
+      btn.addEventListener('click', () => navigate(`/chat/${item.conversationId}`));
+      const meta = document.createElement('div');
+      meta.className = 'old-replay-meta';
+      meta.textContent = `${item.characterName} · ${formatDate(item.createdAt)}`;
+      const text = document.createElement('div');
+      text.className = 'old-replay-text';
+      text.textContent = item.snippet || '（沒有文字內容）';
+      btn.appendChild(meta);
+      btn.appendChild(text);
+      wrap.appendChild(title);
+      wrap.appendChild(btn);
+    })
+    .catch(() => wrap.remove());
+  return wrap;
 }
 
 // ---- 2.4 備份提醒 ----
@@ -243,6 +319,12 @@ async function fillStats(box, state) {
   grid.appendChild(statCard('累計', stats.total));
   box.appendChild(grid);
 
+  const split = document.createElement('div');
+  split.className = 'stats-split';
+  split.appendChild(statCard('聊天', stats.chatTotal || { prompt: 0, completion: 0 }));
+  split.appendChild(statCard('背景', stats.backgroundTotal || { prompt: 0, completion: 0 }));
+  box.appendChild(split);
+
   const note = document.createElement('div');
   note.className = 'form-hint';
   note.textContent = '僅統計真 API 回覆（mock 模擬回覆不計入）。';
@@ -310,156 +392,56 @@ function statCard(label, usage) {
   return card;
 }
 
-// ---- 2.3 個人日記 ----
-function buildJournal(state) {
+// ---- 2.3 迴聲摘要（V4：獨白已併入迴聲牆）----
+function buildFeedSummary(state) {
   const box = document.createElement('div');
   box.className = 'journal-box';
 
-  // 快速輸入
-  const form = document.createElement('form');
-  form.className = 'journal-form';
-
-  const contentInput = document.createElement('textarea');
-  contentInput.className = 'form-control';
-  contentInput.rows = 2;
-  contentInput.placeholder = '今天想記點什麼？';
-
-  const row = document.createElement('div');
-  row.className = 'journal-input-row';
-
-  const moodInput = document.createElement('input');
-  moodInput.type = 'text';
-  moodInput.className = 'form-control journal-mood';
-  moodInput.placeholder = '心情（選填，一個 emoji）';
-  moodInput.maxLength = 4;
-
-  const submit = document.createElement('button');
-  submit.type = 'submit';
-  submit.className = 'btn btn-primary';
-  submit.textContent = '記下';
-
-  row.appendChild(moodInput);
-  row.appendChild(submit);
-
-  form.appendChild(contentInput);
-  form.appendChild(row);
-
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const content = contentInput.value.trim();
-    if (!content) return;
-    addJournal({ content, mood: moodInput.value.trim() });
-    // notify 會重繪整頁；此處清空即可。
-    contentInput.value = '';
-    moodInput.value = '';
-  });
-
-  box.appendChild(form);
-
-  // 最近 5 篇
-  const list = document.createElement('div');
-  list.className = 'journal-list';
-  const recent = (state.journals || [])
+  const recent = (state.posts || [])
     .slice()
     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-    .slice(0, 5);
+    .slice(0, 2);
 
   if (recent.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'form-hint';
-    empty.textContent = '還沒有日記。';
-    list.appendChild(empty);
+    empty.textContent = '迴聲牆還很安靜。去說點什麼吧。';
+    box.appendChild(empty);
   } else {
-    for (const j of recent) list.appendChild(buildJournalEntry(j));
+    for (const p of recent) {
+      const entry = document.createElement('div');
+      entry.className = 'journal-entry';
+
+      const head = document.createElement('div');
+      head.className = 'journal-entry-head';
+      const date = document.createElement('span');
+      date.className = 'journal-date';
+      date.textContent = `${feedAuthorName(state, p)}　${formatDateTime(p.createdAt)}${p.mood ? `　${p.mood}` : ''}`;
+      head.appendChild(date);
+      entry.appendChild(head);
+
+      const content = document.createElement('div');
+      content.className = 'journal-content';
+      content.textContent = p.content || '';
+      entry.appendChild(content);
+      box.appendChild(entry);
+    }
   }
-  box.appendChild(list);
+
+  const go = document.createElement('button');
+  go.type = 'button';
+  go.className = 'btn';
+  go.textContent = '前往迴聲牆 ›';
+  go.addEventListener('click', () => navigate('#/feed'));
+  box.appendChild(go);
 
   return box;
 }
 
-function buildJournalEntry(j) {
-  const entry = document.createElement('div');
-  entry.className = 'journal-entry';
-
-  const head = document.createElement('div');
-  head.className = 'journal-entry-head';
-
-  const date = document.createElement('span');
-  date.className = 'journal-date';
-  date.textContent = formatDateTime(j.createdAt) + (j.mood ? `　${j.mood}` : '');
-  head.appendChild(date);
-
-  const actions = document.createElement('span');
-  actions.className = 'journal-actions';
-
-  const editBtn = document.createElement('button');
-  editBtn.type = 'button';
-  editBtn.className = 'gp-icon-btn';
-  editBtn.textContent = '✎';
-  editBtn.title = '編輯';
-
-  const delBtn = document.createElement('button');
-  delBtn.type = 'button';
-  delBtn.className = 'gp-icon-btn';
-  delBtn.textContent = '🗑';
-  delBtn.title = '刪除';
-  delBtn.addEventListener('click', () => {
-    if (window.confirm('確定要刪除這篇日記嗎？此動作無法復原。')) {
-      deleteJournal(j.id);
-    }
-  });
-
-  actions.appendChild(editBtn);
-  actions.appendChild(delBtn);
-  head.appendChild(actions);
-  entry.appendChild(head);
-
-  const content = document.createElement('div');
-  content.className = 'journal-content';
-  content.textContent = j.content || '';
-  entry.appendChild(content);
-
-  // 行內編輯
-  editBtn.addEventListener('click', () => {
-    entry.textContent = '';
-    const ta = document.createElement('textarea');
-    ta.className = 'form-control';
-    ta.rows = 3;
-    ta.value = j.content || '';
-    const moodEdit = document.createElement('input');
-    moodEdit.type = 'text';
-    moodEdit.className = 'form-control journal-mood';
-    moodEdit.value = j.mood || '';
-    moodEdit.placeholder = '心情 emoji';
-    moodEdit.maxLength = 4;
-
-    const btnRow = document.createElement('div');
-    btnRow.className = 'form-actions';
-    const saveBtn = document.createElement('button');
-    saveBtn.type = 'button';
-    saveBtn.className = 'btn btn-primary';
-    saveBtn.textContent = '儲存';
-    saveBtn.addEventListener('click', () => {
-      updateJournal(j.id, { content: ta.value, mood: moodEdit.value });
-    });
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.className = 'btn';
-    cancelBtn.textContent = '取消';
-    cancelBtn.addEventListener('click', () => {
-      // 重繪由整頁 render 負責；這裡直接還原顯示。
-      entry.replaceWith(buildJournalEntry(j));
-    });
-    btnRow.appendChild(saveBtn);
-    btnRow.appendChild(cancelBtn);
-
-    entry.appendChild(ta);
-    entry.appendChild(moodEdit);
-    entry.appendChild(btnRow);
-    ta.focus();
-  });
-
-  return entry;
+function feedAuthorName(state, post) {
+  if (post.authorType === 'player') return (state.player && state.player.playerName) || '你';
+  const character = (state.characters || []).find((c) => c.id === post.authorId);
+  return character ? character.name || '角色' : '角色';
 }
 
 // ---- 小工具 ----
