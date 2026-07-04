@@ -1,0 +1,475 @@
+/* style.css
+ *
+ * 桌面三欄式版面 + CSS variables 主題（第十四節）。
+ * 顏色一律走變數，不寫死在各 class。
+ *
+ * V0 只啟用 cream 主題；其餘五組（night / fog / warm / sea / rose）先保留骨架，
+ * 未來只要填滿變數並提供切換 UI（settings.theme）即可，無需改元件。
+ */
+
+/* ---- 主題變數 ---- */
+:root,
+:root[data-theme="cream"] {
+  --bg: #f3ede1;
+  --surface: #fbf7ef;
+  --surface-2: #efe7d6;
+  --text: #3d3529;
+  --muted: #8a7f6d;
+  --border: #e0d6c2;
+  --primary: #b08954;
+  --bubble-player: #d9c3a0;
+  --bubble-character: #ffffff;
+  --narration: #9a8f7c;
+  --danger: #c0603f;
+}
+
+/* 未來主題骨架（先只留 cream 內容，其餘複製並調色即可） */
+:root[data-theme="night"] {
+  --bg: #1b1d24;
+  --surface: #23262f;
+  --surface-2: #2c303b;
+  --text: #e8e6e1;
+  --muted: #9aa0ad;
+  --border: #363b47;
+  --primary: #c8a26a;
+  --bubble-player: #3a4152;
+  --bubble-character: #2c303b;
+  --narration: #8a8f9c;
+  --danger: #d3705a;
+}
+/* :root[data-theme="fog"]  { ... } */
+/* :root[data-theme="warm"] { ... } */
+/* :root[data-theme="sea"]  { ... } */
+/* :root[data-theme="rose"] { ... } */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+#app { height: 100vh; }
+
+.boot-loading,
+.boot-error {
+  padding: 32px;
+  color: var(--muted);
+}
+.boot-error h2 { color: var(--danger); }
+
+/* ---- 三欄版面 ---- */
+/* V0 為桌面固定三欄；未來改手機優先 PWA 時，於此加 @media 切換為單欄堆疊即可。 */
+.app-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr 340px;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.col {
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.col-left {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+.col-center {
+  background: var(--bg);
+}
+.col-right {
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+}
+
+/* ---- 左欄 ---- */
+.app-title {
+  padding: 18px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.app-title-main {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: .3px;
+}
+.app-title-latin {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  margin-top: 2px;
+}
+
+.conv-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.list-empty {
+  padding: 24px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.conv-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  position: relative;
+}
+.conv-item:hover { background: var(--surface-2); }
+.conv-item.active { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--primary); }
+
+.conv-avatar {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+}
+
+.conv-meta { flex: 1; min-width: 0; }
+.conv-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.conv-desc {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conv-delete {
+  opacity: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px;
+  border-radius: 6px;
+}
+.conv-item:hover .conv-delete { opacity: .7; }
+.conv-delete:hover { opacity: 1; background: var(--bg); }
+
+.add-character {
+  margin: 8px 12px 16px;
+}
+
+/* ---- 中欄聊天室 ---- */
+.chat-empty {
+  margin: auto;
+  color: var(--muted);
+  text-align: center;
+  padding: 40px;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.chat-header-avatar { font-size: 22px; }
+.chat-header-titlewrap { display: flex; flex-direction: column; }
+.chat-header-title { font-weight: 700; font-size: 15px; }
+.chat-header-mock {
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+  margin-top: 1px;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.msg-group { display: flex; flex-direction: column; gap: 6px; }
+
+.bubble-row { display: flex; }
+.bubble-row.from-player { justify-content: flex-end; }
+.bubble-row.from-character { justify-content: flex-start; }
+
+.bubble {
+  max-width: 70%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.06);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.bubble-player {
+  background: var(--bubble-player);
+  border-bottom-right-radius: 4px;
+}
+.bubble-character {
+  background: var(--bubble-character);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+}
+.bubble-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 2px;
+}
+.bubble-time {
+  font-size: 10px;
+  color: var(--muted);
+  text-align: right;
+  margin-top: 4px;
+}
+
+.part-narration {
+  align-self: center;
+  max-width: 80%;
+  text-align: center;
+  color: var(--narration);
+  font-style: italic;
+  font-size: 13px;
+}
+
+.part-system {
+  align-self: center;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface-2);
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+
+.typing-indicator {
+  align-self: flex-start;
+  color: var(--muted);
+  font-size: 13px;
+  font-style: italic;
+  padding: 4px 8px;
+}
+
+/* 每則訊息下方的極小 token 用量標示 */
+.msg-usage {
+  font-size: 10px;
+  color: var(--muted);
+  opacity: .8;
+  margin-top: -2px;
+}
+.from-player + .msg-usage,
+.msg-group:has(.from-player) .msg-usage { text-align: right; }
+
+/* API 失敗錯誤條（非 message、不存 DB） */
+.error-bar {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.error-bar-text { flex: 1; white-space: pre-wrap; }
+.error-bar-retry {
+  flex: 0 0 auto;
+  border: 1px solid var(--danger);
+  background: var(--danger);
+  color: #fff;
+  border-radius: 8px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+}
+.error-bar-retry:hover { filter: brightness(.95); }
+
+.chat-input-bar {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.chat-input {
+  flex: 1;
+  resize: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--text);
+  max-height: 120px;
+}
+.chat-input:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
+.chat-input:disabled { opacity: .6; cursor: not-allowed; }
+.chat-send:disabled { opacity: .6; cursor: not-allowed; }
+
+/* ---- 右欄分頁 ---- */
+.tab-header {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+.tab-btn {
+  flex: 1;
+  padding: 12px 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  border-bottom: 2px solid transparent;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+.tab-body { padding: 16px; overflow-y: auto; }
+.tab-empty { color: var(--muted); padding: 20px; text-align: center; }
+
+/* ---- 表單 ---- */
+.char-form { display: flex; flex-direction: column; gap: 12px; }
+.form-field { display: flex; flex-direction: column; gap: 4px; }
+.form-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.form-control {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+  resize: vertical;
+}
+.form-control:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
+.form-actions { display: flex; gap: 8px; margin-top: 4px; }
+.form-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+/* API 設定分頁 */
+.form-check {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+}
+.form-check input[type="checkbox"] { margin-top: 3px; flex: 0 0 auto; }
+.form-check-label { font-size: 12px; color: var(--muted); line-height: 1.5; }
+select.form-control { cursor: pointer; }
+.model-control { display: flex; flex-direction: column; gap: 6px; }
+
+.api-test-status { font-size: 12px; margin-top: 8px; min-height: 16px; }
+.api-test-status.ok { color: #3f9d54; font-weight: 600; } /* 成功：綠色 */
+.api-test-status.error { color: var(--danger); white-space: pre-wrap; }
+
+.api-usage {
+  margin-top: 16px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* ---- 按鈕 ---- */
+.btn {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 9px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+}
+.btn:hover { filter: brightness(.97); }
+.btn:disabled { opacity: .6; cursor: default; }
+.btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.btn-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.chat-send { align-self: stretch; }
+
+/* ---- 資料分頁 ---- */
+.backup-panel { display: flex; flex-direction: column; gap: 18px; }
+.backup-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.backup-title { margin: 0; font-size: 14px; }
+.backup-desc { margin: 0; font-size: 12px; color: var(--muted); }
+.file-input { display: none; }
+.backup-status { font-size: 12px; }
+.backup-status.ok { color: var(--primary); }
+.backup-status.error { color: var(--danger); white-space: pre-wrap; }
+.backup-notice {
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface-2);
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+/* ---- Modal ---- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 20px;
+}
+.modal {
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 20px;
+  width: 100%;
+  max-width: 440px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 40px rgba(0,0,0,.25);
+}
+.modal-title { margin: 0 0 14px; font-size: 17px; }

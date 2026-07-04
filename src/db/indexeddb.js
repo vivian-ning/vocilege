@@ -1,0 +1,159 @@
+// src/db/indexeddb.js
+//
+// IndexedDB 存取層（第六節）。使用兩個 object store：
+//   - "state"    ：單一 record（固定 key "app"），保存除 messages 以外的全部狀態
+//   - "messages" ：keyPath "id"，另建 "conversationId" 索引
+//
+// 拆開的原因：messages 是唯一會無限成長的資料。若塞進單一 state blob，每送一則
+// 訊息都要全量序列化重寫整包 state，聊天紀錄一多效能就會劣化。從 V0 就拆開，
+// 未來才能做分頁載入。
+//
+// 所有函式一律回傳 Promise 並處理錯誤。
+
+const DB_NAME = 'local-character-chat';
+const DB_VERSION = 1;
+const STATE_STORE = 'state';
+const MESSAGES_STORE = 'messages';
+const STATE_KEY = 'app';
+
+let dbPromise = null;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+
+    req.onupgradeneeded = (event) => {
+      const db = req.result;
+
+      // state store：以固定 key 存單一 record（不使用 keyPath，改用外部 key）。
+      if (!db.objectStoreNames.contains(STATE_STORE)) {
+        db.createObjectStore(STATE_STORE);
+      }
+
+      // messages store：keyPath = id，並建立 conversationId 索引。
+      if (!db.objectStoreNames.contains(MESSAGES_STORE)) {
+        const msgStore = db.createObjectStore(MESSAGES_STORE, { keyPath: 'id' });
+        msgStore.createIndex('conversationId', 'conversationId', { unique: false });
+      }
+    };
+
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('開啟 IndexedDB 失敗'));
+    req.onblocked = () => reject(new Error('IndexedDB 被其他分頁阻擋，請關閉其他分頁後重試'));
+  });
+}
+
+export function initDB() {
+  if (!dbPromise) {
+    dbPromise = openDB();
+  }
+  return dbPromise;
+}
+
+function tx(storeNames, mode) {
+  return initDB().then((db) => {
+    const transaction = db.transaction(storeNames, mode);
+    return transaction;
+  });
+}
+
+function reqToPromise(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function txDone(transaction) {
+  return new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error || new Error('交易中止'));
+  });
+}
+
+// ---- state ----
+
+export async function loadState() {
+  const transaction = await tx(STATE_STORE, 'readonly');
+  const store = transaction.objectStore(STATE_STORE);
+  const result = await reqToPromise(store.get(STATE_KEY));
+  return result == null ? null : result;
+}
+
+// 完整保存 state record（不含 messages）。
+//
+// apiKey 持久化規則（第六節）：
+//   - rememberApiKey = false（預設）：寫入 IndexedDB 前把 apiSettings.apiKey 清空
+//   - rememberApiKey = true          ：apiKey 以明文存入
+// 為避免污染呼叫端記憶體中的 state，先做淺層 clone 再處理。
+export async function saveState(state) {
+  const toStore = { ...state };
+  const api = state.apiSettings ? { ...state.apiSettings } : undefined;
+  if (api) {
+    if (!api.rememberApiKey) {
+      api.apiKey = '';
+    }
+    toStore.apiSettings = api;
+  }
+
+  const transaction = await tx(STATE_STORE, 'readwrite');
+  const store = transaction.objectStore(STATE_STORE);
+  store.put(toStore, STATE_KEY);
+  await txDone(transaction);
+}
+
+// ---- messages ----
+
+export async function getMessagesByConversation(conversationId) {
+  const transaction = await tx(MESSAGES_STORE, 'readonly');
+  const store = transaction.objectStore(MESSAGES_STORE);
+  const index = store.index('conversationId');
+  const result = await reqToPromise(index.getAll(conversationId));
+  const list = Array.isArray(result) ? result : [];
+  list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  return list;
+}
+
+export async function addMessage(message) {
+  const transaction = await tx(MESSAGES_STORE, 'readwrite');
+  const store = transaction.objectStore(MESSAGES_STORE);
+  store.add(message);
+  await txDone(transaction);
+  return message;
+}
+
+export async function deleteMessagesByConversation(conversationId) {
+  const transaction = await tx(MESSAGES_STORE, 'readwrite');
+  const store = transaction.objectStore(MESSAGES_STORE);
+  const index = store.index('conversationId');
+  const keys = await reqToPromise(index.getAllKeys(conversationId));
+  (keys || []).forEach((key) => store.delete(key));
+  await txDone(transaction);
+}
+
+export async function getAllMessages() {
+  const transaction = await tx(MESSAGES_STORE, 'readonly');
+  const store = transaction.objectStore(MESSAGES_STORE);
+  const result = await reqToPromise(store.getAll());
+  return Array.isArray(result) ? result : [];
+}
+
+// 批次寫入多則訊息（供匯入還原使用）。
+export async function bulkAddMessages(messages) {
+  const transaction = await tx(MESSAGES_STORE, 'readwrite');
+  const store = transaction.objectStore(MESSAGES_STORE);
+  (messages || []).forEach((m) => store.put(m));
+  await txDone(transaction);
+}
+
+// ---- 清空 ----
+
+export async function clearAll() {
+  const transaction = await tx([STATE_STORE, MESSAGES_STORE], 'readwrite');
+  transaction.objectStore(STATE_STORE).clear();
+  transaction.objectStore(MESSAGES_STORE).clear();
+  await txDone(transaction);
+}
+
+export { STATE_KEY };

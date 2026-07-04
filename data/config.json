@@ -1,0 +1,15 @@
+{
+  "appName": "拾聲",
+  "appNameLatin": "Vocilège",
+  "schemaVersion": 2,
+  "defaultPlayer": {
+    "id": "player",
+    "playerName": "",
+    "playerDescription": "",
+    "avatar": { "type": "emoji", "value": "🙂" }
+  },
+  "defaultSettings": {
+    "theme": "cream",
+    "messageDisplayMode": "mixed"
+  }
+}

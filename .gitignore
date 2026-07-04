@@ -1,0 +1,6 @@
+# Claude Code 本機工具設定（不屬於應用程式）
+.claude/
+
+# 個人規劃文件（不公開到 GitHub Pages）
+PROMPT*.md
+ROADMAP.md
