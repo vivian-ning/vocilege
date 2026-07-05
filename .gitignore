@@ -4,3 +4,10 @@
 # 個人規劃文件（不公開到 GitHub Pages）
 PROMPT*.md
 ROADMAP.md
+
+# 個人工作流文件（本機 harness，不公開）
+CLAUDE.md
+AGENTS.md
+WORKFLOW.md
+DECISIONS.md
+QUESTIONS.md
