@@ -1,96 +1,184 @@
 // src/ui/components/conversationList.js
 //
-// 左欄列表元件，「以 conversation 為單位」渲染（第四節說明）。
-// V0 中每個 direct conversation 顯示其對應角色的 avatar / name / description，
-// 看起來就是角色列表；未來加入群聊時，同一個元件可直接渲染 group conversation，
-// 不需重寫左欄（group 顯示 conversation.title 與成員頭像）。
+// V7 對話列表：direct 聊天列表 + group 佔位。可作為整頁列表或桌面 master 欄。
 
 import { deleteCharacter } from '../../state/store.js';
+import { getStats } from '../../services/statsService.js';
 import { applyAvatar } from '../avatar.js';
 import { navigate } from '../router.js';
+import { openCharacterCreator } from './characterEditor.js';
 
-export function renderConversationList(container, state, handlers) {
+let activeType = 'direct';
+
+export function renderConversationList(container, state, options = {}) {
   container.textContent = '';
+  const showTabs = options.showTabs !== false;
+  const showAdd = options.showAdd !== false;
 
-  const conversations = state.conversations || [];
+  const shell = document.createElement('div');
+  shell.className = 'conversation-list-view';
 
-  if (conversations.length === 0) {
+  const head = document.createElement('div');
+  head.className = 'conversation-list-head';
+  const title = document.createElement('h1');
+  title.className = 'conversation-list-title';
+  title.textContent = '聊天';
+  head.appendChild(title);
+  if (showAdd) {
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'btn btn-primary conversation-add';
+    add.textContent = '+ 新增角色';
+    add.addEventListener('click', () => openCharacterCreator());
+    head.appendChild(add);
+  }
+  shell.appendChild(head);
+
+  if (showTabs) shell.appendChild(typeTabs(container, state, options));
+
+  const body = document.createElement('div');
+  body.className = 'conversation-list-body';
+  shell.appendChild(body);
+
+  if (activeType === 'group') {
     const empty = document.createElement('div');
-    empty.className = 'list-empty';
-    empty.textContent = '還沒有角色。點下方「+ 新增角色」開始。';
-    container.appendChild(empty);
+    empty.className = 'list-empty group-empty';
+    empty.textContent = '群聊即將推出';
+    body.appendChild(empty);
+    container.appendChild(shell);
     return;
   }
 
-  // 依 lastMessageAt 由新到舊排序。
-  const sorted = [...conversations].sort(
-    (a, b) => (b.lastMessageAt || 0) - (a.lastMessageAt || 0)
-  );
+  const direct = (state.conversations || [])
+    .filter((c) => c.type === 'direct')
+    .sort((a, b) => (b.lastMessageAt || b.updatedAt || b.createdAt || 0) - (a.lastMessageAt || a.updatedAt || a.createdAt || 0));
 
-  for (const conv of sorted) {
-    container.appendChild(renderItem(conv, state, handlers));
+  if (direct.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'list-empty';
+    empty.textContent = '還沒有角色。點「新增角色」開始。';
+    body.appendChild(empty);
+  } else {
+    for (const conv of direct) body.appendChild(renderItem(conv, state));
+    fillConversationPreviews(body, state);
   }
+
+  container.appendChild(shell);
 }
 
-function renderItem(conv, state, handlers) {
-  const item = document.createElement('div');
-  item.className = 'conv-item';
-  if (conv.id === state.currentConversationId) {
-    item.classList.add('active');
+function typeTabs(container, state, options) {
+  const tabs = document.createElement('div');
+  tabs.className = 'conversation-tabs';
+  for (const tab of [{ key: 'direct', label: '聊天' }, { key: 'group', label: '群聊' }]) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'conversation-tab' + (activeType === tab.key ? ' active' : '');
+    btn.textContent = tab.label;
+    btn.setAttribute('aria-pressed', activeType === tab.key ? 'true' : 'false');
+    btn.addEventListener('click', () => {
+      activeType = tab.key;
+      renderConversationList(container, state, options);
+    });
+    tabs.appendChild(btn);
   }
+  return tabs;
+}
 
-  // V0：direct conversation → 派生自角色。
-  const character = state.characters.find((c) => c.id === conv.primaryCharacterId);
+function renderItem(conv, state) {
+  const item = document.createElement('div');
+  item.tabIndex = 0;
+  item.setAttribute('role', 'button');
+  item.className = 'conv-item';
+  if (conv.id === state.currentConversationId) item.classList.add('active');
 
-  const avatar = document.createElement('div');
+  const character = (state.characters || []).find((c) => c.id === conv.primaryCharacterId);
+
+  const avatar = document.createElement('span');
   avatar.className = 'conv-avatar avatar';
   applyAvatar(avatar, character ? character.avatar : null);
 
-  const meta = document.createElement('div');
+  const meta = document.createElement('span');
   meta.className = 'conv-meta';
 
-  const name = document.createElement('div');
+  const top = document.createElement('span');
+  top.className = 'conv-topline';
+  const name = document.createElement('span');
   name.className = 'conv-name';
-  // direct title 派生自角色 name；group 未來用 conv.title。
   name.textContent = deriveTitle(conv, character);
+  const time = document.createElement('span');
+  time.className = 'conv-time';
+  time.dataset.convTime = conv.id;
+  time.textContent = conv.lastMessageAt ? formatRelative(conv.lastMessageAt) : '';
+  top.appendChild(name);
+  top.appendChild(time);
 
-  const desc = document.createElement('div');
+  const desc = document.createElement('span');
   desc.className = 'conv-desc';
-  desc.textContent = character ? (character.description || '') : '';
+  desc.dataset.convId = conv.id;
+  desc.textContent = '讀取最後一句…';
 
-  meta.appendChild(name);
+  meta.appendChild(top);
   meta.appendChild(desc);
 
   const del = document.createElement('button');
   del.className = 'conv-delete';
   del.type = 'button';
   del.title = '刪除角色';
-  del.textContent = '🗑';
+  del.setAttribute('aria-label', '刪除角色');
+  del.textContent = '×';
   del.addEventListener('click', (e) => {
     e.stopPropagation();
     if (!character) return;
     const ok = window.confirm(
       `確定要刪除角色「${character.name}」嗎？\n\n將同時刪除該角色的所有對話與聊天紀錄，此動作無法復原。`
     );
-    if (ok) {
-      deleteCharacter(character.id);
+    if (ok) deleteCharacter(character.id);
+  });
+
+  item.addEventListener('click', () => navigate(`/chat/${conv.id}`));
+  item.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      navigate(`/chat/${conv.id}`);
     }
   });
-
-  // 點擊導向 #/chat/:conversationId（指標同步由聊天頁 render 走 selectConversation）。
-  item.addEventListener('click', () => {
-    navigate(`/chat/${conv.id}`);
-  });
-
   item.appendChild(avatar);
   item.appendChild(meta);
   item.appendChild(del);
   return item;
 }
 
-function deriveTitle(conv, character) {
-  if (conv.type === 'group') {
-    return conv.title || '群組聊天';
+async function fillConversationPreviews(scope, state) {
+  let stats;
+  try {
+    stats = await getStats(state);
+  } catch (e) {
+    return;
   }
-  return character ? character.name : '（角色已不存在）';
+  scope.querySelectorAll('.conv-desc[data-conv-id]').forEach((node) => {
+    const last = stats.lastByConversation[node.dataset.convId];
+    node.textContent = last && last.snippet ? last.snippet : '還沒有對話';
+  });
+  scope.querySelectorAll('.conv-time[data-conv-time]').forEach((node) => {
+    const last = stats.lastByConversation[node.dataset.convTime];
+    node.textContent = last && last.createdAt ? formatRelative(last.createdAt) : node.textContent;
+  });
+}
+
+function deriveTitle(conv, character) {
+  if (conv.type === 'group') return conv.title || '群組聊天';
+  return character ? (character.name || '未命名角色') : '（角色已不存在）';
+}
+
+const DAY_MS = 86400000;
+
+function formatRelative(ts) {
+  if (!ts) return '';
+  const diff = Date.now() - ts;
+  if (diff < 60000) return '剛剛';
+  if (diff < DAY_MS) return `${Math.max(1, Math.floor(diff / 3600000))} 小時前`;
+  const days = Math.floor(diff / DAY_MS);
+  if (days < 30) return `${days} 天前`;
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
 }

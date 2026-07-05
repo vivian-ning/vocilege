@@ -1455,7 +1455,7 @@ export async function clearPendingGreeting() {
   notify();
 }
 
-export async function pickOldReplay() {
+export async function pickOldReplay(characterId = '') {
   const all = normalizeMessageList(await getAllMessages());
   const charByConv = {};
   for (const conv of (state.conversations || [])) {
@@ -1464,14 +1464,15 @@ export async function pickOldReplay() {
   const withChar = all
     .filter((m) => m && charByConv[m.conversationId] && m.createdAt)
     .map((m) => ({ message: m, characterId: charByConv[m.conversationId] }));
+  const scoped = characterId ? withChar.filter((x) => x.characterId === characterId) : withChar;
   const nowTs = now();
   const targetYear = nowTs - 365 * 86400000;
-  const yearHit = pickByWindow(withChar, targetYear, 3);
+  const yearHit = pickByWindow(scoped, targetYear, 3);
   if (yearHit) return replayRecord(yearHit);
   const target90 = nowTs - 90 * 86400000;
-  const ninetyHit = pickByWindow(withChar, target90, 7);
+  const ninetyHit = pickByWindow(scoped, target90, 7);
   if (ninetyHit) return replayRecord(ninetyHit);
-  const old = withChar.filter((x) => nowTs - x.message.createdAt >= 30 * 86400000);
+  const old = scoped.filter((x) => nowTs - x.message.createdAt >= 30 * 86400000);
   return old.length ? replayRecord(old[Math.floor(Math.random() * old.length)]) : null;
 }
 

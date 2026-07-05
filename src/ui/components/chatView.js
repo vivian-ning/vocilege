@@ -17,7 +17,8 @@ import {
   deleteMemory,
   sendStickerMessage,
   sendPhotoMessage,
-  exportConversationBook
+  exportConversationBook,
+  selectCharacter
 } from '../../state/store.js';
 import { usesMock } from '../../services/aiService.js';
 import { getObjectURL, saveImageAsset } from '../../services/assetService.js';
@@ -45,12 +46,20 @@ export function renderChatView(container, state) {
   // 標題
   const header = document.createElement('div');
   header.className = 'chat-header';
+  if (window.matchMedia && window.matchMedia('(max-width: 760px)').matches) {
+    const back = iconButton('left', '返回聊天列表', { className: 'icon-btn chat-back-btn', title: '返回' });
+    back.addEventListener('click', () => navigate('/chats'));
+    header.appendChild(back);
+  }
   const profileBtn = document.createElement('button');
   profileBtn.type = 'button';
   profileBtn.className = 'chat-header-profile';
-  profileBtn.setAttribute('aria-label', `開啟 ${character.name || '角色'} 的相處頁`);
-  profileBtn.title = `開啟 ${character.name || '角色'} 的相處頁`;
-  profileBtn.addEventListener('click', () => navigate(`/character/${character.id}`));
+  profileBtn.setAttribute('aria-label', `回到 ${character.name || '角色'} 的聲庭`);
+  profileBtn.title = `回到 ${character.name || '角色'} 的聲庭`;
+  profileBtn.addEventListener('click', async () => {
+    await selectCharacter(character.id);
+    navigate('/home');
+  });
 
   const avatar = document.createElement('span');
   avatar.className = 'chat-header-avatar avatar';

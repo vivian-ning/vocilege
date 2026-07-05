@@ -1,16 +1,14 @@
 // src/ui/components/homeView.js
 //
-// 首頁主控台（#/home，V2 任務二）：
-//   2.1 角色卡片牆（頭貼 / 名字 / 簡介 / 相識天數 / 最後對話時間 / 最後一句摘要）
-//   2.2 Token 消耗統計（今日 / 本月 / 累計）
-//   2.4 備份提醒（從未備份或距上次超過 14 天）
+// 首頁角色儀表板（V7）：全域提醒 + 角色選擇列 + 選中角色的相處紀錄。
 
-import { clearPendingGreeting, pickOldReplay } from '../../state/store.js';
+import { clearPendingGreeting, pickOldReplay, selectCharacter } from '../../state/store.js';
 import { getStats } from '../../services/statsService.js';
 import { createAvatarEl } from '../avatar.js';
 import { navigate } from '../router.js';
 import { setSettingsTab } from './settingsPage.js';
 import { openCharacterCreator } from './characterEditor.js';
+import { renderRecordTab, renderSettingsTab } from './characterPage.js';
 import { parseDateInput } from '../../utils/time.js';
 
 const DAY_MS = 86400000;
@@ -21,81 +19,208 @@ export function renderHomeView(container, state) {
   container.textContent = '';
 
   const page = document.createElement('div');
-  page.className = 'home-page';
+  page.className = 'home-page home-dashboard-page';
 
-  page.appendChild(buildHero(state));
-
-  // 2.4 備份提醒條（置頂）
   const reminder = buildBackupReminder(state);
   if (reminder) page.appendChild(reminder);
 
   const greeting = buildGreetingCard(state);
   if (greeting) page.appendChild(greeting);
 
-  // V3：紀念日提醒（3 天內含當天）
   const annivReminders = buildAnniversaryReminders(state);
   if (annivReminders) page.appendChild(annivReminders);
 
-  // 2.1 角色卡片牆
-  page.appendChild(sectionTitle('角色'));
-  page.appendChild(buildCharacterWall(state));
+  page.appendChild(buildCharacterRail(state));
 
-  page.appendChild(buildOldReplaySection());
-
-  // 2.2 Token 統計
-  page.appendChild(sectionTitle('Token 消耗統計'));
-  const statsBox = document.createElement('div');
-  statsBox.className = 'stats-box';
-  statsBox.textContent = '載入中…';
-  page.appendChild(statsBox);
-  fillStats(statsBox, state);
+  const selected = selectedCharacter(state);
+  if (!selected) {
+    page.appendChild(buildEmptyState());
+  } else {
+    page.appendChild(buildDashboard(state, selected));
+  }
 
   container.appendChild(page);
 }
 
-function buildHero(state) {
-  const hero = document.createElement('section');
-  hero.className = 'home-hero';
+function selectedCharacter(state) {
+  const chars = state.characters || [];
+  return chars.find((c) => c.id === state.currentCharacterId) || chars[0] || null;
+}
 
-  const focus = pickHeroCharacter(state);
-  const days = focus ? acquaintanceDays(focus) : totalCompanionDays(state);
+function buildCharacterRail(state) {
+  const wrap = document.createElement('section');
+  wrap.className = 'character-rail-section';
 
-  const label = document.createElement('div');
-  label.className = 'home-hero-label';
-  label.textContent = focus ? '最近同行' : '全部角色總相伴';
-  hero.appendChild(label);
-
+  const head = document.createElement('div');
+  head.className = 'section-head';
   const title = document.createElement('h1');
-  title.className = 'home-hero-title';
-  title.textContent = `相識 ${days} 天`;
-  hero.appendChild(title);
+  title.className = 'page-title';
+  title.textContent = '聲庭';
+  head.appendChild(title);
+  wrap.appendChild(head);
 
-  const sub = document.createElement('div');
-  sub.className = 'home-hero-sub';
-  if (focus) {
-    sub.textContent = `與 ${focus.name || '角色'} 同行 · ${formatDate(focus.createdAt || Date.now())}`;
-  } else {
-    sub.textContent = '建立第一位角色後，這裡會記下你們的相遇日。';
+  const rail = document.createElement('div');
+  rail.className = 'character-rail';
+  const chars = (state.characters || []).slice().sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+  for (const char of chars) rail.appendChild(characterRailItem(char, state.currentCharacterId === char.id));
+
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'character-rail-add';
+  add.textContent = '+ 新增角色';
+  add.addEventListener('click', () => openCharacterCreator());
+  rail.appendChild(add);
+
+  wrap.appendChild(rail);
+  return wrap;
+}
+
+function characterRailItem(character, active) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'character-rail-item' + (active ? ' active' : '');
+  btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  btn.appendChild(createAvatarEl(character.avatar, 'character-rail-avatar'));
+  const name = document.createElement('span');
+  name.textContent = character.name || '未命名角色';
+  btn.appendChild(name);
+  btn.addEventListener('click', () => selectCharacter(character.id));
+  return btn;
+}
+
+function buildEmptyState() {
+  const empty = document.createElement('div');
+  empty.className = 'home-empty';
+  const title = document.createElement('h2');
+  title.textContent = '還沒有角色';
+  const text = document.createElement('p');
+  text.textContent = '建立第一位角色後，聲痕、拾貝、節拍與約定會集中在這裡。';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn btn-primary';
+  btn.textContent = '新增角色';
+  btn.addEventListener('click', () => openCharacterCreator());
+  empty.appendChild(title);
+  empty.appendChild(text);
+  empty.appendChild(btn);
+  return empty;
+}
+
+function buildDashboard(state, character) {
+  const wrap = document.createElement('section');
+  wrap.className = 'character-dashboard';
+
+  const head = document.createElement('div');
+  head.className = 'character-dashboard-head';
+  head.appendChild(createAvatarEl(character.avatar, 'character-dashboard-avatar'));
+  const text = document.createElement('div');
+  const name = document.createElement('h2');
+  name.className = 'character-dashboard-name';
+  name.textContent = character.name || '未命名角色';
+  text.appendChild(name);
+  if (character.description) {
+    const desc = document.createElement('p');
+    desc.className = 'character-dashboard-desc';
+    desc.textContent = character.description;
+    text.appendChild(desc);
   }
-  hero.appendChild(sub);
+  head.appendChild(text);
+  wrap.appendChild(head);
 
-  return hero;
+  const grid = document.createElement('div');
+  grid.className = 'character-dashboard-grid';
+  const conv = (state.conversations || []).find((c) => c.type === 'direct' && c.primaryCharacterId === character.id);
+  renderRecordTab(grid, state, character);
+  grid.insertBefore(buildChatCard(state, character, conv), grid.children[1] || null);
+  appendOldReplay(grid, character.id);
+  wrap.appendChild(grid);
+
+  const edit = document.createElement('details');
+  edit.className = 'character-editor-details';
+  const summary = document.createElement('summary');
+  summary.textContent = '編輯角色';
+  edit.appendChild(summary);
+  const body = document.createElement('div');
+  body.className = 'character-editor-body';
+  renderSettingsTab(body, state, character);
+  edit.appendChild(body);
+  wrap.appendChild(edit);
+
+  fillChatPreview(wrap, state);
+  return wrap;
 }
 
-function pickHeroCharacter(state) {
-  const conv = (state.conversations || [])
-    .filter((c) => c && c.type === 'direct' && c.primaryCharacterId)
-    .sort((a, b) => (b.lastMessageAt || b.updatedAt || b.createdAt || 0) - (a.lastMessageAt || a.updatedAt || a.createdAt || 0))[0];
-  if (!conv) return null;
-  return (state.characters || []).find((c) => c.id === conv.primaryCharacterId) || null;
+function buildChatCard(state, character, conv) {
+  const card = sectionEl('聊天入口');
+  card.classList.add('dashboard-chat-entry');
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'chat-entry-card';
+  btn.disabled = !conv;
+  btn.addEventListener('click', () => { if (conv) navigate(`/chat/${conv.id}`); });
+  const title = document.createElement('div');
+  title.className = 'chat-entry-title';
+  title.textContent = `前往 ${character.name || '角色'} 的聊天`;
+  const snippet = document.createElement('div');
+  snippet.className = 'chat-entry-snippet';
+  snippet.dataset.convId = conv ? conv.id : '';
+  snippet.textContent = '讀取最後一句…';
+  const time = document.createElement('div');
+  time.className = 'chat-entry-time';
+  time.dataset.convTime = conv ? conv.id : '';
+  time.textContent = conv && conv.lastMessageAt ? formatRelative(conv.lastMessageAt) : '';
+  btn.appendChild(title);
+  btn.appendChild(snippet);
+  btn.appendChild(time);
+  card.appendChild(btn);
+  return card;
 }
 
-function acquaintanceDays(char) {
-  return Math.max(0, Math.floor((Date.now() - (char.createdAt || Date.now())) / DAY_MS));
+function appendOldReplay(grid, characterId) {
+  const host = document.createElement('div');
+  host.className = 'old-replay-host';
+  pickOldReplay(characterId)
+    .then((item) => {
+      if (!item) {
+        host.remove();
+        return;
+      }
+      host.textContent = '';
+      const sec = sectionEl('舊聲重播');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'old-replay-card';
+      btn.addEventListener('click', () => navigate(`/chat/${item.conversationId}`));
+      const meta = document.createElement('div');
+      meta.className = 'old-replay-meta';
+      meta.textContent = `${item.characterName} · ${formatDate(item.createdAt)}`;
+      const text = document.createElement('div');
+      text.className = 'old-replay-text';
+      text.textContent = item.snippet || '（沒有文字內容）';
+      btn.appendChild(meta);
+      btn.appendChild(text);
+      sec.appendChild(btn);
+      host.appendChild(sec);
+    })
+    .catch(() => host.remove());
+  grid.appendChild(host);
 }
 
-function totalCompanionDays(state) {
-  return (state.characters || []).reduce((sum, char) => sum + acquaintanceDays(char), 0);
+async function fillChatPreview(scope, state) {
+  let stats;
+  try {
+    stats = await getStats(state);
+  } catch (e) {
+    return;
+  }
+  scope.querySelectorAll('.chat-entry-snippet[data-conv-id]').forEach((node) => {
+    const last = stats.lastByConversation[node.dataset.convId];
+    node.textContent = last && last.snippet ? last.snippet : '還沒有對話';
+  });
+  scope.querySelectorAll('.chat-entry-time[data-conv-time]').forEach((node) => {
+    const last = stats.lastByConversation[node.dataset.convTime];
+    node.textContent = last && last.createdAt ? formatRelative(last.createdAt) : node.textContent;
+  });
 }
 
 function buildGreetingCard(state) {
@@ -139,37 +264,6 @@ function buildGreetingCard(state) {
   return card;
 }
 
-function buildOldReplaySection() {
-  const wrap = document.createElement('div');
-  wrap.className = 'old-replay-host';
-  pickOldReplay()
-    .then((item) => {
-      if (!item) {
-        wrap.remove();
-        return;
-      }
-      wrap.textContent = '';
-      const title = sectionTitle('舊聲重播');
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'old-replay-card';
-      btn.addEventListener('click', () => navigate(`/chat/${item.conversationId}`));
-      const meta = document.createElement('div');
-      meta.className = 'old-replay-meta';
-      meta.textContent = `${item.characterName} · ${formatDate(item.createdAt)}`;
-      const text = document.createElement('div');
-      text.className = 'old-replay-text';
-      text.textContent = item.snippet || '（沒有文字內容）';
-      btn.appendChild(meta);
-      btn.appendChild(text);
-      wrap.appendChild(title);
-      wrap.appendChild(btn);
-    })
-    .catch(() => wrap.remove());
-  return wrap;
-}
-
-// ---- 2.4 備份提醒 ----
 function buildBackupReminder(state) {
   const last = state.lastBackupAt || 0;
   const never = !last;
@@ -178,25 +272,20 @@ function buildBackupReminder(state) {
 
   const bar = document.createElement('div');
   bar.className = 'backup-reminder';
-
   const text = document.createElement('span');
   text.textContent = never
     ? '你還沒有備份過資料。本機資料存在瀏覽器中，清除瀏覽器資料就會消失，建議定期備份。'
     : `距離上次備份已超過 ${BACKUP_REMIND_DAYS} 天，建議再備份一次。`;
   bar.appendChild(text);
-
   const link = document.createElement('button');
   link.type = 'button';
   link.className = 'btn btn-primary';
   link.textContent = '前往備份';
   link.addEventListener('click', () => { setSettingsTab('data'); navigate('/settings'); });
   bar.appendChild(link);
-
   return bar;
 }
 
-// ---- V3 紀念日提醒 ----
-// 對每個紀念日計算「距離下一次發生的天數」，落在 0..3（含當天）時顯示提醒條。
 function buildAnniversaryReminders(state) {
   const charById = {};
   for (const c of (state.characters || [])) charById[c.id] = c;
@@ -207,7 +296,7 @@ function buildAnniversaryReminders(state) {
     if (days == null || days > ANNIVERSARY_REMIND_DAYS) continue;
     const char = charById[a.characterId];
     if (!char) continue;
-    hits.push({ days, name: char.name || '（角色）', title: a.title || '紀念日', charId: char.id });
+    hits.push({ days, name: char.name || '（角色）', title: a.title || '節拍', charId: char.id });
   }
   if (hits.length === 0) return null;
   hits.sort((x, y) => x.days - y.days);
@@ -219,16 +308,18 @@ function buildAnniversaryReminders(state) {
     bar.type = 'button';
     bar.className = 'anniv-reminder';
     bar.textContent = h.days === 0
-      ? `🎂 今天是與${h.name}的「${h.title}」`
-      : `🎂 ${h.days} 天後是與${h.name}的「${h.title}」`;
-    bar.title = '前往角色相處頁';
-    bar.addEventListener('click', () => navigate(`/character/${h.charId}`));
+      ? `今天是與${h.name}的「${h.title}」`
+      : `${h.days} 天後是與${h.name}的「${h.title}」`;
+    bar.title = '前往角色儀表板';
+    bar.addEventListener('click', async () => {
+      await selectCharacter(h.charId);
+      navigate('/home');
+    });
     box.appendChild(bar);
   }
   return box;
 }
 
-// 距離下一次紀念日的天數（本地時區，以「天」為單位）。過去的單次紀念日回傳 null。
 function daysUntilAnniversary(dateStr, repeat) {
   const base = parseDateInput(dateStr);
   if (!base) return null;
@@ -246,172 +337,26 @@ function daysUntilAnniversary(dateStr, repeat) {
     if (next < today) next = new Date(today.getFullYear(), today.getMonth() + 1, bd.getDate());
     return Math.round((next - today) / DAY_MS);
   }
-  // 單次：只在未來（含今天）時提醒。
   const oneShot = new Date(bd.getFullYear(), bd.getMonth(), bd.getDate());
   const d = Math.round((oneShot - today) / DAY_MS);
   return d < 0 ? null : d;
 }
 
-// ---- 2.1 角色卡片牆 ----
-function buildCharacterWall(state) {
-  const wall = document.createElement('div');
-  wall.className = 'card-wall';
-
-  const directConvs = (state.conversations || []).filter((c) => c.type === 'direct');
-  // 依角色 createdAt 排序（新到舊）。
-  const chars = (state.characters || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-
-  for (const char of chars) {
-    const conv = directConvs.find((c) => c.primaryCharacterId === char.id);
-    wall.appendChild(buildCharacterCard(char, conv));
-  }
-
-  // 「+ 新增角色」卡片
-  const addCard = document.createElement('button');
-  addCard.type = 'button';
-  addCard.className = 'char-card add-card';
-  addCard.textContent = '＋ 新增角色';
-  addCard.addEventListener('click', () => openCharacterCreator());
-  wall.appendChild(addCard);
-
-  return wall;
-}
-
-function buildCharacterCard(char, conv) {
-  const card = document.createElement('div');
-  card.className = 'char-card';
-
-  // 主體：點擊進入聊天
-  const main = document.createElement('div');
-  main.className = 'char-card-main';
-  main.addEventListener('click', () => {
-    if (conv) navigate(`/chat/${conv.id}`);
-  });
-
-  const avatar = createAvatarEl(char.avatar, 'card-avatar');
-  main.appendChild(avatar);
-
-  const info = document.createElement('div');
-  info.className = 'char-card-info';
-
-  const name = document.createElement('div');
-  name.className = 'char-card-name';
-  name.textContent = char.name || '未命名角色';
-  info.appendChild(name);
-
-  const desc = document.createElement('div');
-  desc.className = 'char-card-desc';
-  desc.textContent = char.description || '';
-  info.appendChild(desc);
-
-  // 相識天數
-  const days = Math.max(0, Math.floor((Date.now() - (char.createdAt || Date.now())) / DAY_MS));
-  const meta = document.createElement('div');
-  meta.className = 'char-card-meta';
-  meta.textContent = `相識 ${days} 天`;
-  if (conv && conv.lastMessageAt) {
-    meta.textContent += `　·　最後對話 ${formatRelative(conv.lastMessageAt)}`;
-  }
-  info.appendChild(meta);
-
-  // 最後一句摘要（單行截斷，由 stats 非同步填入）
-  const snippet = document.createElement('div');
-  snippet.className = 'char-card-snippet';
-  snippet.dataset.convId = conv ? conv.id : '';
-  info.appendChild(snippet);
-
-  main.appendChild(info);
-  card.appendChild(main);
-
-  // 「相處紀錄」入口（V3 啟用）→ 角色相處頁。
-  const recordBtn = document.createElement('button');
-  recordBtn.type = 'button';
-  recordBtn.className = 'char-card-record';
-  recordBtn.textContent = '相處紀錄 ›';
-  recordBtn.title = '相處紀錄與角色設定';
-  recordBtn.addEventListener('click', () => navigate(`/character/${char.id}`));
-  card.appendChild(recordBtn);
-
-  return card;
-}
-
-// ---- 2.2 Token 統計 ----
-async function fillStats(box, state) {
-  let stats;
-  try {
-    stats = await getStats(state);
-  } catch (e) {
-    box.textContent = 'Token 統計讀取失敗';
-    return;
-  }
-  box.textContent = '';
-
-  // 先把角色卡片的「最後一句摘要」補上（同一份 stats）。
-  fillCardSnippets(stats);
-
-  const grid = document.createElement('div');
-  grid.className = 'stats-grid';
-  grid.appendChild(statCard('今日', stats.today));
-  grid.appendChild(statCard('本月', stats.month));
-  grid.appendChild(statCard('累計', stats.total));
-  box.appendChild(grid);
-
-  const note = document.createElement('div');
-  note.className = 'form-hint';
-  note.textContent = '僅統計真 API 回覆（mock 模擬回覆不計入）。';
-  box.appendChild(note);
-}
-
-function fillCardSnippets(stats) {
-  const nodes = document.querySelectorAll('.char-card-snippet[data-conv-id]');
-  nodes.forEach((node) => {
-    const convId = node.dataset.convId;
-    const last = convId && stats.lastByConversation ? stats.lastByConversation[convId] : null;
-    node.textContent = last && last.snippet ? last.snippet : '還沒有對話';
-  });
-}
-
-function statCard(label, usage) {
-  const card = document.createElement('div');
-  card.className = 'stat-card';
-  const l = document.createElement('div');
-  l.className = 'stat-label';
-  l.textContent = label;
-  const total = (usage.prompt || 0) + (usage.completion || 0);
-  const v = document.createElement('div');
-  v.className = 'stat-value';
-  v.textContent = total.toLocaleString();
-  const detail = document.createElement('div');
-  detail.className = 'stat-detail';
-  detail.textContent = `↑${(usage.prompt || 0).toLocaleString()} ↓${(usage.completion || 0).toLocaleString()}`;
-  const bar = document.createElement('div');
-  bar.className = 'stat-bar';
-  const fill = document.createElement('span');
-  const baseline = label === '今日' ? 8000 : (label === '本月' ? 160000 : 0);
-  const pct = baseline ? Math.max(4, Math.min(100, Math.round((total / baseline) * 100))) : 0;
-  fill.style.width = pct ? `${pct}%` : '100%';
-  if (!pct) fill.className = 'stat-bar-soft';
-  bar.appendChild(fill);
-  card.appendChild(l);
-  card.appendChild(v);
-  card.appendChild(bar);
-  card.appendChild(detail);
-  return card;
-}
-
-// ---- 小工具 ----
-function sectionTitle(text) {
+function sectionEl(titleText) {
+  const wrap = document.createElement('section');
+  wrap.className = 'char-section';
   const h = document.createElement('h2');
   h.className = 'section-title';
-  h.textContent = text;
-  return h;
+  h.textContent = titleText;
+  wrap.appendChild(h);
+  return wrap;
 }
 
 function formatRelative(ts) {
   if (!ts) return '';
   const diff = Date.now() - ts;
   if (diff < 60000) return '剛剛';
-  if (diff < DAY_MS) return `${Math.floor(diff / 3600000)} 小時前`;
+  if (diff < DAY_MS) return `${Math.max(1, Math.floor(diff / 3600000))} 小時前`;
   const days = Math.floor(diff / DAY_MS);
   if (days < 30) return `${days} 天前`;
   return formatDate(ts);
@@ -422,10 +367,4 @@ function pad(n) { return String(n).padStart(2, '0'); }
 function formatDate(ts) {
   const d = new Date(ts);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function formatDateTime(ts) {
-  if (!ts) return '';
-  const d = new Date(ts);
-  return `${formatDate(ts)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }

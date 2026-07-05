@@ -9,9 +9,12 @@ import { renderPlayerEditor } from './playerEditor.js';
 import { renderBackupPanel } from './backupPanel.js';
 import { addSticker, updateSticker, deleteSticker, updateSettings } from '../../state/store.js';
 import { saveImageAsset, getObjectURL } from '../../services/assetService.js';
+import { getStats } from '../../services/statsService.js';
+import { createIcon } from '../icons.js';
 
-const SECTION_KEYS = new Set(['player', 'api', 'appearance', 'stickers', 'prompts', 'data']);
+const SECTION_KEYS = new Set(['player', 'api', 'appearance', 'stickers', 'prompts', 'usage', 'data']);
 let pendingScrollTarget = '';
+const expandedSections = new Set();
 
 // Kept for callers such as the home backup reminder. The page no longer has
 // tabs; this records the section that should be scrolled into view.
@@ -29,6 +32,7 @@ const THEME_PALETTES = [
 
 export function renderSettingsPage(container, state) {
   container.textContent = '';
+  if (pendingScrollTarget) expandedSections.add(pendingScrollTarget);
 
   const page = document.createElement('div');
   page.className = 'settings-page';
@@ -39,10 +43,11 @@ export function renderSettingsPage(container, state) {
   page.appendChild(title);
 
   page.appendChild(settingsSection('player', '玩家設定', (body) => renderPlayerProfile(body, state)));
-  page.appendChild(settingsSection('api', 'API 設定', (body) => renderApiSettingsEditor(body, state)));
+  page.appendChild(settingsSection('api', 'API', (body) => renderApiSettingsEditor(body, state)));
   page.appendChild(settingsSection('appearance', '外觀', (body) => renderAppearance(body, state)));
   page.appendChild(settingsSection('stickers', '貼圖', (body) => renderStickerManager(body, state)));
-  page.appendChild(settingsSection('prompts', 'Prompt 存放區', (body) => renderGlobalPromptsEditor(body, state)));
+  page.appendChild(settingsSection('prompts', 'Prompt', (body) => renderGlobalPromptsEditor(body, state)));
+  page.appendChild(settingsSection('usage', '聲量', (body) => renderUsageStats(body, state)));
   page.appendChild(settingsSection('data', '資料', (body) => renderBackupPanel(body)));
 
   container.appendChild(page);
@@ -72,14 +77,39 @@ function settingsSection(key, title, renderBody) {
   section.dataset.settingsSection = key;
   section.id = `settings-${key}`;
 
-  const heading = document.createElement('h2');
+  const expanded = expandedSections.has(key);
+  const heading = document.createElement('button');
+  heading.type = 'button';
   heading.className = 'settings-section-title';
-  heading.textContent = title;
+  heading.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  heading.setAttribute('aria-controls', `settings-panel-${key}`);
+  const text = document.createElement('span');
+  text.textContent = title;
+  heading.appendChild(text);
+  const icon = createIcon('chevron', { size: 18 });
+  icon.classList.add('settings-chevron');
+  heading.appendChild(icon);
+  heading.addEventListener('click', () => {
+    const next = !expandedSections.has(key);
+    if (next) expandedSections.add(key);
+    else expandedSections.delete(key);
+    heading.setAttribute('aria-expanded', next ? 'true' : 'false');
+    card.hidden = !next;
+    if (next && !card.dataset.rendered) {
+      renderBody(card);
+      card.dataset.rendered = 'true';
+    }
+  });
   section.appendChild(heading);
 
   const card = document.createElement('div');
-  card.className = 'settings-card';
-  renderBody(card);
+  card.className = 'settings-card settings-collapsible-card';
+  card.id = `settings-panel-${key}`;
+  card.hidden = !expanded;
+  if (expanded) {
+    renderBody(card);
+    card.dataset.rendered = 'true';
+  }
   section.appendChild(card);
 
   return section;
@@ -264,6 +294,50 @@ function renderStickerManager(container, state) {
     grid.appendChild(item);
   }
   container.appendChild(grid);
+}
+
+async function renderUsageStats(container, state) {
+  const box = document.createElement('div');
+  box.className = 'stats-box settings-usage-box';
+  box.textContent = '載入中…';
+  container.appendChild(box);
+  let stats;
+  try {
+    stats = await getStats(state);
+  } catch (e) {
+    box.textContent = '聲量讀取失敗';
+    return;
+  }
+  box.textContent = '';
+  const grid = document.createElement('div');
+  grid.className = 'stats-grid';
+  grid.appendChild(statCard('今日', stats.today));
+  grid.appendChild(statCard('本月', stats.month));
+  grid.appendChild(statCard('累計', stats.total));
+  box.appendChild(grid);
+  const note = document.createElement('div');
+  note.className = 'form-hint';
+  note.textContent = '統計聊天回覆與背景 AI 任務的真 API token；模擬回覆不計入。';
+  box.appendChild(note);
+}
+
+function statCard(label, usage) {
+  const card = document.createElement('div');
+  card.className = 'stat-card';
+  const l = document.createElement('div');
+  l.className = 'stat-label';
+  l.textContent = label;
+  const total = (usage.prompt || 0) + (usage.completion || 0);
+  const v = document.createElement('div');
+  v.className = 'stat-value';
+  v.textContent = total.toLocaleString();
+  const detail = document.createElement('div');
+  detail.className = 'stat-detail';
+  detail.textContent = `↑${(usage.prompt || 0).toLocaleString()} ↓${(usage.completion || 0).toLocaleString()}`;
+  card.appendChild(l);
+  card.appendChild(v);
+  card.appendChild(detail);
+  return card;
 }
 
 function wrapField(label, control) {

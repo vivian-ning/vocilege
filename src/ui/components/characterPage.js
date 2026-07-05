@@ -126,7 +126,7 @@ function backButton() {
 }
 
 // ---- 角色設定分頁 ----
-function renderSettingsTab(container, state, character) {
+export function renderSettingsTab(container, state, character) {
   container.textContent = '';
 
   const editorWrap = document.createElement('div');
@@ -164,7 +164,7 @@ function renderSettingsTab(container, state, character) {
 }
 
 // ---- 相處紀錄分頁 ----
-function renderRecordTab(container, state, character) {
+export function renderRecordTab(container, state, character) {
   container.textContent = '';
   const conv = (state.conversations || []).find(
     (c) => c.type === 'direct' && c.primaryCharacterId === character.id
