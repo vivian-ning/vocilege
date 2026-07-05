@@ -2,14 +2,26 @@
 //
 // 首頁角色儀表板（V7）：全域提醒 + 角色選擇列 + 選中角色的相處紀錄。
 
-import { clearPendingGreeting, pickOldReplay, selectCharacter } from '../../state/store.js';
+import {
+  clearPendingGreeting,
+  getRelationship,
+  pickOldReplay,
+  selectCharacter,
+  setFirstMetAt
+} from '../../state/store.js';
 import { getStats } from '../../services/statsService.js';
 import { createAvatarEl } from '../avatar.js';
 import { navigate } from '../router.js';
 import { setSettingsTab } from './settingsPage.js';
 import { openCharacterCreator } from './characterEditor.js';
-import { renderRecordTab, renderSettingsTab } from './characterPage.js';
-import { parseDateInput } from '../../utils/time.js';
+import {
+  buildAnniversarySection,
+  buildKeepsakeSection,
+  buildWishlistSection,
+  renderSettingsTab
+} from './characterPage.js';
+import { openMemoryDrawer } from './chatView.js';
+import { dateStamp, parseDateInput } from '../../utils/time.js';
 
 const DAY_MS = 86400000;
 const BACKUP_REMIND_DAYS = 14;
@@ -110,59 +122,64 @@ function buildDashboard(state, character) {
   const wrap = document.createElement('section');
   wrap.className = 'character-dashboard';
 
-  const head = document.createElement('div');
-  head.className = 'character-dashboard-head';
-  head.appendChild(createAvatarEl(character.avatar, 'character-dashboard-avatar'));
-  const text = document.createElement('div');
-  const name = document.createElement('h2');
-  name.className = 'character-dashboard-name';
-  name.textContent = character.name || '未命名角色';
-  text.appendChild(name);
-  if (character.description) {
-    const desc = document.createElement('p');
-    desc.className = 'character-dashboard-desc';
-    desc.textContent = character.description;
-    text.appendChild(desc);
-  }
-  head.appendChild(text);
-  wrap.appendChild(head);
+  wrap.appendChild(buildRelationshipHero(character));
 
   const grid = document.createElement('div');
-  grid.className = 'character-dashboard-grid';
+  grid.className = 'character-summary-grid';
   const conv = (state.conversations || []).find((c) => c.type === 'direct' && c.primaryCharacterId === character.id);
-  renderRecordTab(grid, state, character);
-  grid.insertBefore(buildChatCard(state, character, conv), grid.children[1] || null);
+  grid.appendChild(buildChatCard(state, character, conv));
+  grid.appendChild(summaryCard({
+    icon: '聲',
+    title: '聲痕',
+    summary: `${countByCharacter(state.memories, character.id)} 筆`,
+    onClick: () => openMemoryDrawer(state, character, conv)
+  }));
+  grid.appendChild(summaryCard({
+    icon: '貝',
+    title: '拾貝',
+    summary: `${countByCharacter(state.keepsakes, character.id)} 則`,
+    onClick: () => openCharacterModal('拾貝', (body) => body.appendChild(buildKeepsakeSection(state, character)))
+  }));
+  grid.appendChild(summaryCard({
+    icon: '拍',
+    title: '節拍',
+    summary: anniversarySummary(state, character.id),
+    onClick: () => openCharacterModal('節拍', (body) => body.appendChild(buildAnniversarySection(state, character)))
+  }));
+  grid.appendChild(summaryCard({
+    icon: '約',
+    title: '約定',
+    summary: wishlistSummary(state, character.id),
+    onClick: () => openCharacterModal('約定', (body) => body.appendChild(buildWishlistSection(state, character)))
+  }));
+  grid.appendChild(summaryCard({
+    icon: '編',
+    title: '編輯角色',
+    summary: '設定、頭貼與刪除',
+    onClick: () => openCharacterModal('編輯角色', (body, close) => renderSettingsTab(body, state, character, { onDelete: close }), 'character-edit-modal')
+  }));
   appendOldReplay(grid, character.id);
   wrap.appendChild(grid);
-
-  const edit = document.createElement('details');
-  edit.className = 'character-editor-details';
-  const summary = document.createElement('summary');
-  summary.textContent = '編輯角色';
-  edit.appendChild(summary);
-  const body = document.createElement('div');
-  body.className = 'character-editor-body';
-  renderSettingsTab(body, state, character);
-  edit.appendChild(body);
-  wrap.appendChild(edit);
 
   fillChatPreview(wrap, state);
   return wrap;
 }
 
 function buildChatCard(state, character, conv) {
-  const card = sectionEl('聊天入口');
-  card.classList.add('dashboard-chat-entry');
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = 'chat-entry-card';
+  btn.className = 'summary-card chat-entry-card';
   btn.disabled = !conv;
   btn.addEventListener('click', () => { if (conv) navigate(`/chat/${conv.id}`); });
+  const icon = document.createElement('div');
+  icon.className = 'summary-card-icon';
+  icon.textContent = '聊';
+  btn.appendChild(icon);
   const title = document.createElement('div');
-  title.className = 'chat-entry-title';
-  title.textContent = `前往 ${character.name || '角色'} 的聊天`;
+  title.className = 'summary-card-title chat-entry-title';
+  title.textContent = '聊天';
   const snippet = document.createElement('div');
-  snippet.className = 'chat-entry-snippet';
+  snippet.className = 'summary-card-summary chat-entry-snippet';
   snippet.dataset.convId = conv ? conv.id : '';
   snippet.textContent = '讀取最後一句…';
   const time = document.createElement('div');
@@ -172,8 +189,7 @@ function buildChatCard(state, character, conv) {
   btn.appendChild(title);
   btn.appendChild(snippet);
   btn.appendChild(time);
-  card.appendChild(btn);
-  return card;
+  return btn;
 }
 
 function appendOldReplay(grid, characterId) {
@@ -186,24 +202,156 @@ function appendOldReplay(grid, characterId) {
         return;
       }
       host.textContent = '';
-      const sec = sectionEl('舊聲重播');
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'old-replay-card';
+      btn.className = 'summary-card old-replay-card';
       btn.addEventListener('click', () => navigate(`/chat/${item.conversationId}`));
+      const icon = document.createElement('div');
+      icon.className = 'summary-card-icon';
+      icon.textContent = '重';
       const meta = document.createElement('div');
-      meta.className = 'old-replay-meta';
-      meta.textContent = `${item.characterName} · ${formatDate(item.createdAt)}`;
+      meta.className = 'summary-card-title old-replay-meta';
+      meta.textContent = '舊聲重播';
       const text = document.createElement('div');
-      text.className = 'old-replay-text';
-      text.textContent = item.snippet || '（沒有文字內容）';
+      text.className = 'summary-card-summary old-replay-text';
+      text.textContent = `${formatDate(item.createdAt)} · ${item.snippet || '（沒有文字內容）'}`;
+      btn.appendChild(icon);
       btn.appendChild(meta);
       btn.appendChild(text);
-      sec.appendChild(btn);
-      host.appendChild(sec);
+      host.appendChild(btn);
     })
     .catch(() => host.remove());
   grid.appendChild(host);
+}
+
+function buildRelationshipHero(character) {
+  const rel = getRelationship(character.id);
+  const base = rel.firstMetAt || character.createdAt || Date.now();
+  const days = Math.max(0, Math.floor((Date.now() - base) / DAY_MS));
+
+  const hero = document.createElement('div');
+  hero.className = 'home-hero relationship-hero';
+
+  const label = document.createElement('div');
+  label.className = 'home-hero-label';
+  label.textContent = '相識';
+  hero.appendChild(label);
+
+  const title = document.createElement('h2');
+  title.className = 'home-hero-title';
+  title.textContent = `相識 ${days} 天`;
+  hero.appendChild(title);
+
+  const sub = document.createElement('div');
+  sub.className = 'home-hero-sub relationship-hero-sub';
+  sub.appendChild(document.createTextNode(`與 ${character.name || '未命名角色'} 同行 · `));
+  const dateBtn = document.createElement('button');
+  dateBtn.type = 'button';
+  dateBtn.className = 'hero-date-edit';
+  dateBtn.textContent = dateStamp(base);
+  dateBtn.setAttribute('aria-expanded', 'false');
+  sub.appendChild(dateBtn);
+  hero.appendChild(sub);
+
+  const panel = document.createElement('form');
+  panel.className = 'hero-date-panel';
+  panel.hidden = true;
+  const input = document.createElement('input');
+  input.type = 'date';
+  input.className = 'form-control';
+  input.value = dateStamp(base);
+  const save = document.createElement('button');
+  save.type = 'submit';
+  save.className = 'btn btn-primary';
+  save.textContent = '儲存';
+  panel.appendChild(input);
+  panel.appendChild(save);
+  panel.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const ts = parseDateInput(input.value);
+    if (ts) setFirstMetAt(character.id, ts);
+  });
+  dateBtn.addEventListener('click', () => {
+    const next = panel.hidden;
+    panel.hidden = !next;
+    dateBtn.setAttribute('aria-expanded', next ? 'true' : 'false');
+    if (next) input.focus();
+  });
+  hero.appendChild(panel);
+  return hero;
+}
+
+function summaryCard({ icon, title, summary, onClick }) {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'summary-card';
+  card.addEventListener('click', onClick);
+  const iconEl = document.createElement('div');
+  iconEl.className = 'summary-card-icon';
+  iconEl.textContent = icon;
+  const titleEl = document.createElement('div');
+  titleEl.className = 'summary-card-title';
+  titleEl.textContent = title;
+  const summaryEl = document.createElement('div');
+  summaryEl.className = 'summary-card-summary';
+  summaryEl.textContent = summary;
+  card.appendChild(iconEl);
+  card.appendChild(titleEl);
+  card.appendChild(summaryEl);
+  return card;
+}
+
+function openCharacterModal(titleText, renderBody, extraClass) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const closeModal = () => overlay.remove();
+  const modal = document.createElement('div');
+  modal.className = 'modal dashboard-modal' + (extraClass ? ` ${extraClass}` : '');
+  const head = document.createElement('div');
+  head.className = 'dashboard-modal-head';
+  const title = document.createElement('h2');
+  title.className = 'modal-title';
+  title.textContent = titleText;
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-btn';
+  close.setAttribute('aria-label', '關閉');
+  close.title = '關閉';
+  close.textContent = '×';
+  close.addEventListener('click', closeModal);
+  head.appendChild(title);
+  head.appendChild(close);
+  modal.appendChild(head);
+  const body = document.createElement('div');
+  body.className = 'dashboard-modal-body';
+  renderBody(body, closeModal);
+  modal.appendChild(body);
+  overlay.appendChild(modal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+  document.body.appendChild(overlay);
+  const first = modal.querySelector('input, textarea, button');
+  if (first) first.focus();
+}
+
+function countByCharacter(items, characterId) {
+  return (items || []).filter((item) => item.characterId === characterId).length;
+}
+
+function anniversarySummary(state, characterId) {
+  const items = (state.anniversaries || []).filter((a) => a.characterId === characterId);
+  if (!items.length) return '0 個';
+  const next = items
+    .map((a) => ({ item: a, days: daysUntilAnniversary(a.date, a.repeat) }))
+    .filter((x) => x.days != null)
+    .sort((a, b) => a.days - b.days)[0];
+  if (!next) return `${items.length} 個`;
+  return `下一個：${next.item.date || '未定'} ${next.item.title || '節拍'}`;
+}
+
+function wishlistSummary(state, characterId) {
+  const items = (state.wishlists || []).filter((w) => w.characterId === characterId);
+  const undone = items.filter((w) => !w.done).length;
+  return `${items.length} 個・${undone} 待辦`;
 }
 
 async function fillChatPreview(scope, state) {
@@ -340,16 +488,6 @@ function daysUntilAnniversary(dateStr, repeat) {
   const oneShot = new Date(bd.getFullYear(), bd.getMonth(), bd.getDate());
   const d = Math.round((oneShot - today) / DAY_MS);
   return d < 0 ? null : d;
-}
-
-function sectionEl(titleText) {
-  const wrap = document.createElement('section');
-  wrap.className = 'char-section';
-  const h = document.createElement('h2');
-  h.className = 'section-title';
-  h.textContent = titleText;
-  wrap.appendChild(h);
-  return wrap;
 }
 
 function formatRelative(ts) {

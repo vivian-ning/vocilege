@@ -461,7 +461,7 @@ function personaField(label, type, value, placeholder) {
   return { el, getValue: () => control.value };
 }
 
-function openMemoryDrawer(state, character, conversation) {
+export function openMemoryDrawer(state, character, conversation) {
   const overlay = document.createElement('div');
   overlay.className = 'memory-drawer-overlay';
   const panel = document.createElement('div');
@@ -500,7 +500,10 @@ function openMemoryDrawer(state, character, conversation) {
   dreamBtn.type = 'button';
   dreamBtn.className = 'btn btn-primary memory-dream-btn';
   dreamBtn.textContent = `AI 總結近期 ${state.settings.dreamEveryMessages} 則對話`;
+  dreamBtn.disabled = !conversation;
+  if (!conversation) dreamBtn.title = '尚未建立對話，無法夢釀';
   dreamBtn.addEventListener('click', async () => {
+    if (!conversation) return;
     dreamBtn.disabled = true;
     try {
       const added = await maybeExtractDreamMemories(conversation.id, { automatic: false });

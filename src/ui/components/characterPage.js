@@ -126,7 +126,7 @@ function backButton() {
 }
 
 // ---- 角色設定分頁 ----
-export function renderSettingsTab(container, state, character) {
+export function renderSettingsTab(container, state, character, options = {}) {
   container.textContent = '';
 
   const editorWrap = document.createElement('div');
@@ -156,6 +156,7 @@ export function renderSettingsTab(container, state, character) {
     );
     if (!ok) return;
     await deleteCharacter(character.id);
+    if (typeof options.onDelete === 'function') options.onDelete();
     navigate('/home');
   });
   danger.appendChild(delBtn);
@@ -176,7 +177,7 @@ export function renderRecordTab(container, state, character) {
   container.appendChild(buildWishlistSection(state, character));
 }
 
-function buildKeepsakeSection(state, character) {
+export function buildKeepsakeSection(state, character) {
   const sec = sectionEl('拾貝');
   const list = document.createElement('div');
   list.className = 'keepsake-list';
@@ -527,7 +528,7 @@ function recallText(m) {
 }
 
 // ---- 紀念日 ----
-function buildAnniversarySection(state, character) {
+export function buildAnniversarySection(state, character) {
   const sec = sectionEl('紀念日');
 
   const form = document.createElement('form');
@@ -656,7 +657,7 @@ function buildAnniversaryItem(a) {
 }
 
 // ---- 想一起做的事 ----
-function buildWishlistSection(state, character) {
+export function buildWishlistSection(state, character) {
   const sec = sectionEl('想一起做的事');
 
   const form = document.createElement('form');

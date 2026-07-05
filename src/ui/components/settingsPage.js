@@ -42,7 +42,7 @@ export function renderSettingsPage(container, state) {
   title.textContent = '設定';
   page.appendChild(title);
 
-  page.appendChild(settingsSection('player', '玩家設定', (body) => renderPlayerProfile(body, state)));
+  page.appendChild(playerSettingsSection(state));
   page.appendChild(settingsSection('api', 'API', (body) => renderApiSettingsEditor(body, state)));
   page.appendChild(settingsSection('appearance', '外觀', (body) => renderAppearance(body, state)));
   page.appendChild(settingsSection('stickers', '貼圖', (body) => renderStickerManager(body, state)));
@@ -69,6 +69,46 @@ export function renderSettingsPage(container, state) {
       });
     }
   }
+}
+
+function playerSettingsSection(state) {
+  const key = 'player';
+  const section = document.createElement('section');
+  section.className = 'settings-section settings-player-section';
+  section.dataset.settingsSection = key;
+  section.id = `settings-${key}`;
+
+  const expanded = expandedSections.has(key);
+  const heading = buildPlayerProfileCard(state, true);
+  heading.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  heading.setAttribute('aria-controls', `settings-panel-${key}`);
+  const chevron = createIcon('chevron', { size: 18 });
+  chevron.classList.add('settings-chevron');
+  heading.appendChild(chevron);
+  section.appendChild(heading);
+
+  const card = document.createElement('div');
+  card.className = 'settings-card settings-collapsible-card settings-player-editor-card';
+  card.id = `settings-panel-${key}`;
+  card.hidden = !expanded;
+  if (expanded) {
+    renderPlayerEditor(card, state);
+    card.dataset.rendered = 'true';
+  }
+
+  heading.addEventListener('click', () => {
+    const next = !expandedSections.has(key);
+    if (next) expandedSections.add(key);
+    else expandedSections.delete(key);
+    heading.setAttribute('aria-expanded', next ? 'true' : 'false');
+    card.hidden = !next;
+    if (next && !card.dataset.rendered) {
+      renderPlayerEditor(card, state);
+      card.dataset.rendered = 'true';
+    }
+  });
+  section.appendChild(card);
+  return section;
 }
 
 function settingsSection(key, title, renderBody) {
@@ -115,9 +155,10 @@ function settingsSection(key, title, renderBody) {
   return section;
 }
 
-function renderPlayerProfile(container, state) {
-  const profile = document.createElement('div');
-  profile.className = 'settings-profile-card';
+function buildPlayerProfileCard(state, asButton = false) {
+  const profile = document.createElement(asButton ? 'button' : 'div');
+  profile.className = 'settings-profile-card' + (asButton ? ' settings-profile-header' : '');
+  if (asButton) profile.type = 'button';
   const avatar = document.createElement('div');
   avatar.className = 'settings-profile-avatar';
   const player = state.player || {};
@@ -145,8 +186,11 @@ function renderPlayerProfile(container, state) {
   text.appendChild(name);
   text.appendChild(desc);
   profile.appendChild(text);
-  container.appendChild(profile);
+  return profile;
+}
 
+function renderPlayerProfile(container, state) {
+  container.appendChild(buildPlayerProfileCard(state));
   const editor = document.createElement('div');
   editor.className = 'settings-card-inner';
   renderPlayerEditor(editor, state);
