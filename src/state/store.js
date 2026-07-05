@@ -27,7 +27,7 @@ import { createDefaultState, normalizeState } from './schema.js';
 import { migrateState } from './migrations.js';
 import { buildPrompt } from '../services/promptBuilder.js';
 import { generateReply, generateUtilityText, parseReplyToParts, usesMock } from '../services/aiService.js';
-import { deleteAvatarAsset } from '../services/assetService.js';
+import { deleteAvatarAsset, deleteStoredAsset } from '../services/assetService.js';
 import { invalidateStats } from '../services/statsService.js';
 import { generateId } from '../utils/id.js';
 import { now } from '../utils/time.js';
@@ -352,6 +352,14 @@ export async function selectCharacter(characterId, options = {}) {
   pendingError = null;
 
   await reloadCurrentMessages();
+  maybeExtractDreamMemories(conversation.id, { automatic: true })
+    .then((added) => {
+      if (added && added.length) emitToast('夢釀完成');
+    })
+    .catch((err) => {
+      // eslint-disable-next-line no-console
+      console.warn('夢釀進入對話檢查失敗', err);
+    });
 
   if (!options.silent) {
     await saveCurrentState();
@@ -364,9 +372,10 @@ export async function selectCharacter(characterId, options = {}) {
 // V1 錯誤處理原則：player message 一旦寫入就不因 API 失敗而消失。因此本函式先把
 // player message 寫入 DB 與記憶體並保存 state，再委派 runGeneration 產生回覆；
 // runGeneration 失敗只設定 pendingError（錯誤條），不動已存在的 player message。
-export async function sendPlayerMessage(text) {
+export async function sendPlayerMessage(text, extraParts = []) {
   const trimmed = (text || '').trim();
-  if (!trimmed) return;
+  const mediaParts = Array.isArray(extraParts) ? extraParts.filter(Boolean) : [];
+  if (!trimmed && !mediaParts.length) return;
 
   const conversation = getActiveConversation();
   const character = getActiveCharacter();
@@ -380,7 +389,10 @@ export async function sendPlayerMessage(text) {
     conversationId: conversation.id,
     senderType: 'player',
     senderId: 'player',
-    parts: [{ type: 'message', content: trimmed }]
+    parts: [
+      ...(trimmed ? [{ type: 'message', content: trimmed }] : []),
+      ...mediaParts
+    ]
   });
   await addMessage(playerMsg);
   messages.push(playerMsg);
@@ -389,7 +401,17 @@ export async function sendPlayerMessage(text) {
   await saveCurrentState();
 
   // 3~7) 產生回覆流程。
-  await runGeneration(conversation, character, trimmed);
+  await runGeneration(conversation, character, partsToPlainText(playerMsg.parts));
+}
+
+export async function sendStickerMessage(stickerId) {
+  if (!stickerId) return;
+  return sendPlayerMessage('', [{ type: 'sticker', stickerId }]);
+}
+
+export async function sendPhotoMessage(assetId, altText = '') {
+  if (!assetId) return;
+  return sendPlayerMessage('', [{ type: 'image', assetId, altText: String(altText || '').trim() }]);
 }
 
 // 重試：以最近一則 player message 重新走一次產生回覆流程（不重複插入 player message）。
@@ -434,7 +456,8 @@ async function runGeneration(conversation, character, userText) {
       mode: state.settings.messageDisplayMode,
       memoryInjectionLimit: state.settings.memoryInjectionLimit,
       settings: state.settings,
-      anniversaries: state.anniversaries
+      anniversaries: state.anniversaries,
+      stickers: state.stickers
     });
 
     // 記憶「被想起」：凡實際注入 prompt 的記憶（locked 與非 locked 都算），
@@ -476,7 +499,14 @@ async function runGeneration(conversation, character, userText) {
     conversation.lastMessageAt = replyMsg.createdAt;
     conversation.updatedAt = replyMsg.createdAt;
     await saveCurrentState();
-    maybeExtractDreamMemories(conversation.id, { automatic: true }).catch(() => {});
+    maybeExtractDreamMemories(conversation.id, { automatic: true })
+      .then((added) => {
+        if (added && added.length) emitToast('夢釀完成');
+      })
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.warn('夢釀自動觸發失敗', err);
+      });
   } catch (err) {
     // API 失敗：保留 player message，僅記錄可讀錯誤供錯誤條顯示。
     pendingError = {
@@ -493,7 +523,15 @@ async function runGeneration(conversation, character, userText) {
 
 function partsToPlainText(parts) {
   if (!Array.isArray(parts)) return '';
-  return parts.map((p) => (p && p.content ? String(p.content) : '')).join('\n').trim();
+  return parts.map((p) => {
+    if (!p) return '';
+    if (p.type === 'sticker') {
+      const sticker = (state.stickers || []).find((s) => s.id === p.stickerId);
+      return sticker ? `[小劇場] ${sticker.contextText || sticker.label}` : '[小劇場]';
+    }
+    if (p.type === 'image') return p.altText ? `[照片] ${p.altText}` : '[照片]';
+    return p.content ? String(p.content) : '';
+  }).join('\n').trim();
 }
 
 export async function updatePlayer(patch) {
@@ -713,6 +751,7 @@ export async function addMemory(characterId, data = {}) {
     importance: clampInt(data.importance, 1, 5, 3),
     emotionWeight: clampInt(data.emotionWeight, 1, 5, 3),
     locked: !!data.locked,
+    enabled: data.enabled !== false,
     lastRecalledAt: 0,
     recallCount: 0,
     status: 'active',
@@ -732,6 +771,7 @@ export async function updateMemory(id, patch) {
   if ('importance' in patch) m.importance = clampInt(patch.importance, 1, 5, m.importance);
   if ('emotionWeight' in patch) m.emotionWeight = clampInt(patch.emotionWeight, 1, 5, m.emotionWeight);
   if ('locked' in patch) m.locked = !!patch.locked;
+  if ('enabled' in patch) m.enabled = !!patch.enabled;
   m.updatedAt = now();
   await saveCurrentState();
   notify();
@@ -865,6 +905,47 @@ function windowAlert(message) {
   if (typeof window !== 'undefined' && window.alert) window.alert(message);
 }
 
+function emitToast(message) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('vocilege:toast', { detail: { message } }));
+}
+
+// ---- V6 stickers ----
+
+export async function addSticker({ assetId, label, contextText }) {
+  const item = {
+    id: generateId('sticker'),
+    assetId: String(assetId || ''),
+    label: String(label || '').trim(),
+    contextText: String(contextText || '').trim(),
+    createdAt: now()
+  };
+  if (!item.assetId || !item.label) return null;
+  state.stickers = state.stickers || [];
+  state.stickers.push(item);
+  await saveCurrentState();
+  notify();
+  return item;
+}
+
+export async function updateSticker(id, patch) {
+  const item = (state.stickers || []).find((s) => s.id === id);
+  if (!item) return null;
+  if ('label' in patch) item.label = String(patch.label || '').trim();
+  if ('contextText' in patch) item.contextText = String(patch.contextText || '').trim();
+  await saveCurrentState();
+  notify();
+  return item;
+}
+
+export async function deleteSticker(id) {
+  const item = (state.stickers || []).find((s) => s.id === id);
+  state.stickers = (state.stickers || []).filter((s) => s.id !== id);
+  if (item && item.assetId) await deleteStoredAsset(item.assetId);
+  await saveCurrentState();
+  notify();
+}
+
 // ---- V4 feed ----
 
 function characterBrief(character) {
@@ -879,7 +960,7 @@ function characterBrief(character) {
 
 function topMemoryText(characterId, limit = 3) {
   return (state.memories || [])
-    .filter((m) => m && m.characterId === characterId && (m.status || 'active') === 'active')
+    .filter((m) => m && m.characterId === characterId && (m.status || 'active') === 'active' && m.enabled !== false)
     .slice()
     .sort((a, b) => (b.importance || 0) - (a.importance || 0) || (b.updatedAt || 0) - (a.updatedAt || 0))
     .slice(0, limit)
@@ -917,7 +998,10 @@ export async function addPost({ authorType = 'player', authorId = 'player', cont
   await saveCurrentState();
   notify();
   if (post.authorType === 'player') {
-    triggerFeedReactions(post.id, { automatic: true }).catch(() => {});
+    triggerFeedReactions(post.id, { automatic: true }).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.warn('迴聲自動反應失敗', err);
+    });
   }
   return post;
 }
@@ -956,7 +1040,10 @@ export async function addPostComment(postId, { authorType = 'player', authorId =
   notify();
   if (authorType === 'player' && post.authorType === 'character' && !post.characterRepliedToPlayer && !usesMock(state.apiSettings)) {
     post.characterRepliedToPlayer = true;
-    triggerSingleFeedReaction(post.id, post.authorId, { automatic: true }).catch(() => {});
+    triggerSingleFeedReaction(post.id, post.authorId, { automatic: true }).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.warn('迴聲留言回覆失敗', err);
+    });
   }
   return comment;
 }
@@ -1050,10 +1137,15 @@ async function triggerSingleFeedReaction(postId, characterId, { automatic = fals
   return comment;
 }
 
-export async function inviteCharacterPost(characterId) {
-  if (!consumeDaily('feed', state.settings.feedDailyLimit, { manual: true })) return null;
+async function createScheduledCharacterPost(characterId) {
   const character = (state.characters || []).find((c) => c.id === characterId);
   if (!character) return null;
+  const conv = findConversationByCharacter(characterId);
+  const recentMessages = conv
+    ? normalizeMessageList(await getMessagesByConversation(conv.id)).slice(-12)
+    : [];
+  if (!recentMessages.length) return null;
+  if (!consumeDaily('feed', state.settings.feedDailyLimit, { manual: false })) return null;
   let content = '';
   if (!usesMock(state.apiSettings)) {
     const result = await generateUtilityText({
@@ -1061,11 +1153,14 @@ export async function inviteCharacterPost(characterId) {
       maxTokens: 160,
       system: [
         '你要以指定角色語氣在迴聲發一則短貼文。',
-        '取材於你與玩家的最近關係、記憶或想對玩家說的話。繁體中文，一到兩句，不要加角色名。',
+        '取材於你與玩家的最近對話、關係、聲痕或想對玩家說的話。繁體中文，一到兩句，不要加角色名。',
         characterBrief(character),
         topMemoryText(character.id) ? `聲痕：\n${topMemoryText(character.id)}` : ''
       ].filter(Boolean).join('\n\n'),
-      userText: '請寫一則適合發布在迴聲的短貼文。'
+      userText: [
+        '最近對話摘要：',
+        recentMessages.map((m) => `${m.senderType === 'player' ? '玩家' : '角色'}：${partsToPlainText(activeParts(m))}`).join('\n')
+      ].join('\n')
     });
     content = stripSpeakerName(result.text, character);
     pushUsageLog({ kind: 'feedPost', characterId: character.id, usage: result.usage });
@@ -1073,18 +1168,41 @@ export async function inviteCharacterPost(characterId) {
     content = '剛剛想起一些細小的片段，想把它留在這裡等你看見。';
   }
   if (!content) content = '今天也想把一點聲音留給你。';
-  return addPost({ authorType: 'character', authorId: character.id, content });
+  const post = await addPost({ authorType: 'character', authorId: character.id, content });
+  state.feedAutoPostLog = state.feedAutoPostLog || {};
+  state.feedAutoPostLog[character.id] = now();
+  await saveCurrentState();
+  return post;
 }
 
 export async function maybeAutoFeedPost() {
-  if (!state.settings.feedAutoPost) return null;
-  if (now() - (state.lastFeedAutoPostAt || 0) < 24 * 86400000) return null;
+  if (!state.settings.feedAutoPost) return [];
   if (!canUseDaily('feed', state.settings.feedDailyLimit)) return null;
-  const characters = shuffled(state.characters || []);
-  if (!characters.length) return null;
+  const current = new Date(now());
+  const today = localDayKey(now());
+  const out = [];
+  for (const character of state.characters || []) {
+    if (!character || !character.id) continue;
+    const last = state.feedAutoPostLog && state.feedAutoPostLog[character.id];
+    if (last && localDayKey(last) === today) continue;
+    const hour = scheduledFeedHour(character.id, today);
+    if (current.getHours() < hour) continue;
+    if (!canUseDaily('feed', state.settings.feedDailyLimit)) break;
+    const post = await createScheduledCharacterPost(character.id);
+    if (post) out.push(post);
+  }
   state.lastFeedAutoPostAt = now();
   await saveCurrentState();
-  return inviteCharacterPost(characters[0].id);
+  return out;
+}
+
+function scheduledFeedHour(characterId, dayKey) {
+  const source = `${characterId}:${dayKey}`;
+  let hash = 0;
+  for (let i = 0; i < source.length; i++) {
+    hash = ((hash * 31) + source.charCodeAt(i)) >>> 0;
+  }
+  return (hash % 14) + 8;
 }
 
 // ---- V4 keepsakes ----
@@ -1092,6 +1210,8 @@ export async function maybeAutoFeedPost() {
 export async function addKeepsakeFromMessage(messageId, note = '') {
   const msg = messages.find((m) => m.id === messageId);
   if (!msg) return null;
+  const existing = (state.keepsakes || []).find((k) => k.messageId === messageId);
+  if (existing) return existing;
   const conversation = state.conversations.find((c) => c.id === msg.conversationId);
   const characterId = conversation ? conversation.primaryCharacterId : state.currentCharacterId;
   const keepsake = {
@@ -1113,6 +1233,24 @@ export async function addKeepsakeFromMessage(messageId, note = '') {
   await saveCurrentState();
   notify();
   return keepsake;
+}
+
+export async function toggleKeepsakeFromMessage(messageId) {
+  const existing = (state.keepsakes || []).find((k) => k.messageId === messageId);
+  if (existing) {
+    await deleteKeepsake(existing.id);
+    return null;
+  }
+  return addKeepsakeFromMessage(messageId, '');
+}
+
+export async function updateKeepsakeNote(id, note = '') {
+  const item = (state.keepsakes || []).find((k) => k.id === id);
+  if (!item) return null;
+  item.note = String(note || '').trim();
+  await saveCurrentState();
+  notify();
+  return item;
 }
 
 export async function deleteKeepsake(id) {
@@ -1157,7 +1295,7 @@ export async function switchMessageVersion(messageId, dir) {
 export async function editMessageParts(messageId, text) {
   const msg = messages.find((m) => m.id === messageId);
   if (!msg) return;
-  msg.parts = parseReplyToParts((text || '').trim());
+  msg.parts = parseReplyToParts((text || '').trim(), state.stickers);
   msg.editedAt = now();
   if (msg.senderType === 'character') {
     msg.versions = Array.isArray(msg.versions) && msg.versions.length
@@ -1206,7 +1344,8 @@ export async function regenerateMessage(messageId) {
       mode: state.settings.messageDisplayMode,
       memoryInjectionLimit: state.settings.memoryInjectionLimit,
       settings: state.settings,
-      anniversaries: state.anniversaries
+      anniversaries: state.anniversaries,
+      stickers: state.stickers
     });
     const result = await generateReply({
       prompt,
@@ -1344,69 +1483,63 @@ export async function maybeExtractDreamMemories(conversationId, { automatic = fa
     ? messages
     : normalizeMessageList(await getMessagesByConversation(conversationId));
   const count = list.length;
-  if (count - (conv.lastDreamMessageCount || 0) < every) return [];
+  if (automatic && count - (conv.lastDreamMessageCount || 0) < every) return [];
   if (!consumeDaily('dream', state.settings.dreamDailyLimit, { manual: !automatic })) return [];
   const characterId = conv.primaryCharacterId;
-  const recent = list.slice(conv.lastDreamMessageCount || 0).slice(-Math.max(every, 30));
+  const recent = automatic
+    ? list.slice(conv.lastDreamMessageCount || 0).slice(-Math.max(every, 30))
+    : list.slice(-every);
   const text = recent.map((m) => {
     const speaker = m.senderType === 'player' ? '玩家' : '角色';
     return `${speaker}：${partsToPlainText(activeParts(m))}`;
   }).join('\n').trim();
   if (!text) return [];
-  const existing = (state.memories || [])
-    .filter((m) => m.characterId === characterId && (m.status || 'active') === 'active');
   let result;
   try {
     result = await generateUtilityText({
       apiSettings: state.apiSettings,
       maxTokens: 500,
       system: [
-        '你要從對話中萃取可長期保存的聲痕。',
-        '只記關於玩家的持久事實、雙方的約定、關係中的重要事件。',
-        '不要記寒暄、臨時情緒、普通閒聊或已存在資訊。繁體中文。',
-        '只輸出 JSON 陣列，0 到 3 筆。格式：[{ "content": "...", "summary": "...", "importance": 1-5, "emotionWeight": 1-5 }]。沒有值得記的輸出 []。',
-        existing.length ? `既有聲痕摘要：\n${existing.map((m) => `・${m.summary || m.content}`).join('\n')}` : ''
+        '你要把一段角色與玩家的對話整理成可長期保存的「日期對話摘要」聲痕。',
+        '請輸出繁體中文二到四句，事實與情感重點並重。',
+        '不要輸出 JSON、標題、項目符號或多餘說明；只輸出摘要內容。'
       ].filter(Boolean).join('\n\n'),
       userText: text
     });
   } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('夢釀 AI 呼叫失敗', e);
     return [];
   }
-  const rows = parseDreamJson(result.text);
-  if (!rows.length) {
+  const content = String(result.text || '').trim();
+  if (!content) {
     conv.lastDreamMessageCount = count;
     await saveCurrentState();
     return [];
   }
-  const added = [];
-  for (const row of rows.slice(0, 3)) {
-    const content = String(row.content || '').trim();
-    if (!content) continue;
-    const summary = String(row.summary || content.slice(0, 60)).trim();
-    if (isDuplicateMemory(content, existing.concat(added))) continue;
-    const memory = {
-      id: generateId('mem'),
-      characterId,
-      content,
-      summary,
-      importance: clampInt(row.importance, 1, 5, 3),
-      emotionWeight: clampInt(row.emotionWeight, 1, 5, 3),
-      locked: false,
-      lastRecalledAt: 0,
-      recallCount: 0,
-      status: 'active',
-      source: 'extracted',
-      createdAt: now(),
-      updatedAt: now()
-    };
-    state.memories.push(memory);
-    added.push(memory);
-  }
+  const ts = now();
+  const memory = {
+    id: generateId('mem'),
+    characterId,
+    content,
+    summary: `${localDayKey(ts)} 對話摘要`,
+    importance: 3,
+    emotionWeight: 3,
+    locked: false,
+    enabled: true,
+    lastRecalledAt: 0,
+    recallCount: 0,
+    status: 'active',
+    source: 'extracted',
+    createdAt: ts,
+    updatedAt: ts
+  };
+  state.memories.push(memory);
   conv.lastDreamMessageCount = count;
   if (result && result.usage) pushUsageLog({ kind: 'dream', characterId, usage: result.usage });
   await saveCurrentState();
   notify();
-  return added;
+  return [memory];
 }
 
 function parseDreamJson(text) {
@@ -1514,4 +1647,100 @@ export async function resetToState(newState) {
 
 export function getConfig() {
   return config;
+}
+
+export async function exportConversationBook(format = 'html') {
+  const conversation = getActiveConversation();
+  const character = getActiveCharacter();
+  if (!conversation || !character) return null;
+  const list = conversation.id === state.currentConversationId
+    ? messages
+    : normalizeMessageList(await getMessagesByConversation(conversation.id));
+  const active = list.map((m) => ({ ...m, parts: activeParts(m) }));
+  const title = `${character.name || '角色'} 與 ${(state.player && state.player.playerName) || '你'} 的聲書`;
+  const range = dateRangeText(active);
+  const body = format === 'markdown'
+    ? bookMarkdown(title, range, active, character)
+    : bookHtml(title, range, active, character);
+  const blob = new Blob([body], { type: format === 'markdown' ? 'text/markdown;charset=utf-8' : 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${safeFilename(title)}.${format === 'markdown' ? 'md' : 'html'}`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return { ok: true };
+}
+
+function dateRangeText(list) {
+  const times = (list || []).map((m) => m.createdAt || 0).filter(Boolean).sort((a, b) => a - b);
+  if (!times.length) return '';
+  const first = localDayKey(times[0]);
+  const last = localDayKey(times[times.length - 1]);
+  return first === last ? first : `${first} - ${last}`;
+}
+
+function speakerName(message, character) {
+  return message.senderType === 'player'
+    ? ((state.player && state.player.playerName) || '你')
+    : (character.name || '角色');
+}
+
+function bookPartText(part) {
+  if (!part) return '';
+  if (part.type === 'sticker') {
+    const sticker = (state.stickers || []).find((s) => s.id === part.stickerId);
+    return `（貼圖：${sticker ? sticker.label : '缺失'}）`;
+  }
+  if (part.type === 'image') return `（照片：${part.altText || '未命名'}）`;
+  return part.content ? String(part.content) : '';
+}
+
+function bookMarkdown(title, range, list, character) {
+  const lines = [`# ${title}`, '', range ? `日期：${range}` : '', ''].filter((x) => x !== '');
+  for (const message of list) {
+    const name = speakerName(message, character);
+    for (const part of message.parts || []) {
+      const text = bookPartText(part);
+      if (!text) continue;
+      if (part.type === 'narration') lines.push(`*${text}*`, '');
+      else lines.push(`**${name}**：「${text}」`, '');
+    }
+  }
+  return lines.join('\n');
+}
+
+function bookHtml(title, range, list, character) {
+  const rows = [];
+  for (const message of list) {
+    const name = escapeHtml(speakerName(message, character));
+    for (const part of message.parts || []) {
+      const text = escapeHtml(bookPartText(part));
+      if (!text) continue;
+      const cls = part.type === 'narration' ? 'narration' : 'line';
+      rows.push(`<section class="${cls}"><div class="speaker">${name}</div><p>${text}</p></section>`);
+    }
+  }
+  return [
+    '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">',
+    `<title>${escapeHtml(title)}</title>`,
+    '<style>body{font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif;max-width:760px;margin:40px auto;padding:0 20px;line-height:1.8;color:#2d2926;background:#fffdf8}.meta{color:#81756b}.speaker{font-size:13px;color:#8a5a44;font-weight:700;margin-top:18px}.line p{margin:4px 0 12px}.narration{color:#8a8178;font-style:italic;text-align:center}.narration .speaker{display:none}</style>',
+    '</head><body>',
+    `<h1>${escapeHtml(title)}</h1>`,
+    range ? `<div class="meta">${escapeHtml(range)}</div>` : '',
+    rows.join('\n'),
+    '</body></html>'
+  ].join('');
+}
+
+function escapeHtml(text) {
+  return String(text || '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
+function safeFilename(text) {
+  return String(text || 'book').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
 }

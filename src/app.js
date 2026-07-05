@@ -34,7 +34,16 @@ async function boot() {
     await initDB();
     const state = await initStore(config);
     await maybeCreateGreeting();
-    maybeAutoFeedPost().catch(() => {});
+    maybeAutoFeedPost().catch((err) => {
+      // eslint-disable-next-line no-console
+      console.warn('迴聲自動發文檢查失敗', err);
+    });
+    window.setInterval(() => {
+      maybeAutoFeedPost().catch((err) => {
+        // eslint-disable-next-line no-console
+        console.warn('迴聲自動發文檢查失敗', err);
+      });
+    }, 15 * 60 * 1000);
     await markAppOpened();
 
     // 掛載外層骨架（頂部導航 + 內容容器），之後每次 render 只更新內容。

@@ -101,6 +101,10 @@ export function renderApiSettingsEditor(container, state) {
   rememberWrap.appendChild(rememberText);
   form.appendChild(rememberWrap);
 
+  const visionInput = checkboxInput(api.visionEnabled === true);
+  const visionField = wrapField('visionEnabled（開啟後照片會隨請求送出，token / 圖片成本會增加）', visionInput);
+  form.appendChild(visionField);
+
   // temperature（0–2）
   const tempInput = document.createElement('input');
   tempInput.type = 'number';
@@ -177,6 +181,7 @@ export function renderApiSettingsEditor(container, state) {
     baseUrl: baseUrlInput.value.trim(),
     apiKey: apiKeyInput.value,
     rememberApiKey: rememberInput.checked,
+    visionEnabled: visionInput.checked,
     temperature: clampNum(tempInput.value, 0, 2, 1),
     maxTokens: Math.max(1, Math.round(clampNum(maxTokInput.value, 1, 1000000, 1024)))
   });

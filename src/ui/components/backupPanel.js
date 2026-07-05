@@ -2,7 +2,7 @@
 //
 // 右欄「資料」分頁（第八、十三、十五節）。匯出 / 匯入 / 清空，並提醒本機資料風險。
 
-import { exportData, importData, clearData } from '../../services/backupService.js';
+import { exportData, exportFullArchive, importData, clearData } from '../../services/backupService.js';
 
 export function renderBackupPanel(container) {
   container.textContent = '';
@@ -15,7 +15,13 @@ export function renderBackupPanel(container) {
     const btn = button('匯出 JSON', 'btn-primary', async () => {
       await exportData();
     });
-    return [btn];
+    const full = button('封聲', 'btn', async () => {
+      await exportFullArchive();
+    });
+    const hint = document.createElement('div');
+    hint.className = 'form-hint';
+    hint.textContent = '封聲會包含貼圖、照片與所有 assets，檔案可能很大。';
+    return [btn, full, hint];
   }));
 
   // 匯入

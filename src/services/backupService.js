@@ -8,7 +8,8 @@ import {
   saveState,
   bulkAddMessages,
   getAsset,
-  putAsset
+  putAsset,
+  getAllAssets
 } from '../db/indexeddb.js';
 import { createDefaultState, normalizeState } from '../state/schema.js';
 import { migrateState, CURRENT_SCHEMA_VERSION } from '../state/migrations.js';
@@ -84,6 +85,50 @@ export async function exportData() {
   return { ok: true };
 }
 
+export async function exportFullArchive() {
+  const state = getState();
+  const allMessages = await getAllMessages();
+  const exportState = {
+    ...state,
+    apiSettings: {
+      ...state.apiSettings,
+      apiKey: ''
+    }
+  };
+  const assets = [];
+  for (const asset of await getAllAssets()) {
+    if (!asset || !asset.id || !asset.blob) continue;
+    assets.push({
+      id: asset.id,
+      kind: asset.kind || 'asset',
+      mime: asset.mime || 'application/octet-stream',
+      createdAt: asset.createdAt || Date.now(),
+      dataBase64: await blobToBase64(asset.blob)
+    });
+  }
+  const payload = {
+    app: 'local-character-chat',
+    archiveKind: 'full',
+    exportedAt: Date.now(),
+    schemaVersion: exportState.schemaVersion,
+    state: exportState,
+    messages: allMessages,
+    assets
+  };
+  const json = JSON.stringify(payload, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `local-character-chat-full-archive-${dateStamp()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  await markBackupDone();
+  return { ok: true };
+}
+
 // ---- 匯入 ----
 // all-or-nothing：驗證 + migration 全部在記憶體完成且成功後，才開始寫入 IndexedDB。
 // 任何一步失敗即丟出錯誤，現有資料不得有任何變動。
@@ -133,7 +178,8 @@ export async function importData(rawText) {
   // 6) 頭貼相容（V2 任務 4.3）：
   //    - 缺 avatarAssets 或個別 asset 缺漏「不得整筆失敗」：對應 image 頭貼 fallback 回 emoji。
   //    - 舊備份（v1 / v2）沒有 avatarAssets 與 image 型頭貼，這裡自然不動任何東西。
-  const avatarAssets = Array.isArray(data.avatarAssets) ? data.avatarAssets : [];
+  const fullAssets = Array.isArray(data.assets) ? data.assets : null;
+  const avatarAssets = fullAssets || (Array.isArray(data.avatarAssets) ? data.avatarAssets : []);
   const presentIds = new Set(avatarAssets.map((a) => a && a.id).filter(Boolean));
   const fallbackMissingAvatar = (avatar) => {
     if (avatar && avatar.type === 'image' && !presentIds.has(avatar.assetId)) {
@@ -155,8 +201,7 @@ export async function importData(rawText) {
   await saveState(nextState);
   await bulkAddMessages(nextMessages);
 
-  // 還原頭貼 asset（base64 → Blob → assets store）。個別 asset 解碼失敗只略過該張，
-  // 不影響其餘匯入（對應角色的 fallback 已在上面處理）。
+  // 還原 asset（base64 → Blob → assets store）。個別 asset 解碼失敗只略過該張。
   for (const a of avatarAssets) {
     if (!a || !a.id || !a.dataBase64) continue;
     try {

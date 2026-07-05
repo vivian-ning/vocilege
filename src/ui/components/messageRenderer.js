@@ -17,11 +17,12 @@
 import { formatTime } from '../../utils/time.js';
 import { createAvatarEl } from '../avatar.js';
 import {
-  addKeepsakeFromMessage,
+  toggleKeepsakeFromMessage,
   regenerateMessage,
   editMessageParts,
   switchMessageVersion
 } from '../../state/store.js';
+import { getObjectURL } from '../../services/assetService.js';
 
 export function renderMessage(message, context) {
   const wrap = document.createElement('div');
@@ -47,9 +48,7 @@ export function renderMessage(message, context) {
     wrap.appendChild(usageEl);
   }
 
-  if (message.senderType === 'character') {
-    wrap.appendChild(renderMessageTools(message, context));
-  }
+  wrap.appendChild(renderMessageTools(message, context));
 
   return wrap;
 }
@@ -58,16 +57,15 @@ function renderMessageTools(message, context) {
   const tools = document.createElement('div');
   tools.className = 'msg-tools';
 
-  const keepsake = toolBtn('拾貝');
-  keepsake.addEventListener('click', () => {
-    const note = window.prompt('替這段拾貝加一點備註（可留白）', '');
-    if (note === null) return;
-    addKeepsakeFromMessage(message.id, note);
-  });
+  const saved = (context.keepsakes || []).some((k) => k.messageId === message.id);
+  const keepsake = toolBtn(saved ? '♥' : '♡');
+  keepsake.title = saved ? '取消拾貝' : '拾貝';
+  if (saved) keepsake.classList.add('active');
+  keepsake.addEventListener('click', () => toggleKeepsakeFromMessage(message.id));
   tools.appendChild(keepsake);
 
   const isLastCharacter = context && context.lastCharacterMessageId === message.id;
-  if (isLastCharacter) {
+  if (message.senderType === 'character' && isLastCharacter) {
     const regen = toolBtn('再說一次');
     regen.addEventListener('click', () => regenerateMessage(message.id));
     tools.appendChild(regen);
@@ -173,6 +171,14 @@ export function renderMessagePart(part, message, context) {
     return row;
   }
 
+  if (type === 'sticker') {
+    return renderMediaPart(part, message, context, 'sticker');
+  }
+
+  if (type === 'image') {
+    return renderMediaPart(part, message, context, 'image');
+  }
+
   // 預設：message 泡泡
   const isPlayer = message.senderType === 'player';
   const row = document.createElement('div');
@@ -214,4 +220,74 @@ export function renderMessagePart(part, message, context) {
     row.appendChild(bubble);
   }
   return row;
+}
+
+function renderMediaPart(part, message, context, kind) {
+  const isPlayer = message.senderType === 'player';
+  const row = document.createElement('div');
+  row.className = `bubble-row ${isPlayer ? 'from-player' : 'from-character'}`;
+  const avatarSource = isPlayer
+    ? (context && context.playerAvatar)
+    : (context && context.characterAvatar);
+  const avatarEl = createAvatarEl(avatarSource, 'bubble-avatar');
+  const bubble = document.createElement('div');
+  bubble.className = `bubble media-bubble ${isPlayer ? 'bubble-player' : 'bubble-character'}`;
+  const img = document.createElement('button');
+  img.type = 'button';
+  img.className = kind === 'sticker' ? 'sticker-thumb' : 'photo-thumb';
+  const label = mediaLabel(part, context, kind);
+  img.textContent = label;
+  const assetId = kind === 'sticker'
+    ? stickerAssetId(part.stickerId, context)
+    : part.assetId;
+  if (assetId) {
+    getObjectURL(assetId).then((url) => {
+      if (!url) return;
+      img.textContent = '';
+      const image = document.createElement('img');
+      image.src = url;
+      image.alt = label;
+      img.appendChild(image);
+      img.addEventListener('click', () => openLightbox(url, label));
+    });
+  }
+  bubble.appendChild(img);
+  if (kind === 'image' && part.altText) {
+    const alt = document.createElement('div');
+    alt.className = 'media-alt';
+    alt.textContent = part.altText;
+    bubble.appendChild(alt);
+  }
+  if (isPlayer) {
+    row.appendChild(bubble);
+    row.appendChild(avatarEl);
+  } else {
+    row.appendChild(avatarEl);
+    row.appendChild(bubble);
+  }
+  return row;
+}
+
+function stickerAssetId(stickerId, context) {
+  const sticker = (context.stickers || []).find((s) => s.id === stickerId);
+  return sticker && sticker.assetId;
+}
+
+function mediaLabel(part, context, kind) {
+  if (kind === 'sticker') {
+    const sticker = (context.stickers || []).find((s) => s.id === part.stickerId);
+    return sticker ? `（貼圖：${sticker.label}）` : '（貼圖缺失）';
+  }
+  return part.altText ? `（照片：${part.altText}）` : '（照片）';
+}
+
+function openLightbox(url, label) {
+  const overlay = document.createElement('div');
+  overlay.className = 'media-lightbox';
+  const img = document.createElement('img');
+  img.src = url;
+  img.alt = label || '';
+  overlay.appendChild(img);
+  overlay.addEventListener('click', () => overlay.remove());
+  document.body.appendChild(overlay);
 }

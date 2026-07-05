@@ -22,6 +22,7 @@ import { selectConversation, getState } from '../state/store.js';
 let refs = null;
 let appName = 'Vocilège';
 let appNameLatin = '';
+let toastReady = false;
 
 export function setAppName(name, latin) {
   if (name) appName = name;
@@ -44,7 +45,22 @@ export function mountLayout(root, state) {
   root.appendChild(content);
 
   refs = { root, nav, content };
+  installToastHost(root);
   return refs;
+}
+
+function installToastHost(root) {
+  if (toastReady) return;
+  toastReady = true;
+  window.addEventListener('vocilege:toast', (event) => {
+    const message = event && event.detail ? event.detail.message : '';
+    if (!message) return;
+    const toast = document.createElement('div');
+    toast.className = 'app-toast';
+    toast.textContent = message;
+    root.appendChild(toast);
+    window.setTimeout(() => toast.remove(), 2400);
+  });
 }
 
 export function render(state) {

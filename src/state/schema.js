@@ -65,6 +65,7 @@ export function createDefaultState(config) {
     journals: [],
     globalPrompts: [createExampleGlobalPrompt()],
     posts: [],
+    stickers: [],
     heartVoices: [],
     keepsakes: [],
     relationshipData: [],
@@ -77,6 +78,7 @@ export function createDefaultState(config) {
     lastOpenedAt: 0,
     lastGreetingAt: 0,
     lastFeedAutoPostAt: 0,
+    feedAutoPostLog: {},
     // V2 新增：上次成功匯出備份的時間戳（0 = 從未備份），供首頁備份提醒使用。
     lastBackupAt: 0,
     settings: {
@@ -93,7 +95,7 @@ export function createDefaultState(config) {
       feedDailyLimit: typeof defaultSettings.feedDailyLimit === 'number'
         ? defaultSettings.feedDailyLimit
         : 20,
-      feedAutoPost: !!defaultSettings.feedAutoPost,
+      feedAutoPost: defaultSettings.feedAutoPost !== false,
       greetingAfterDays: typeof defaultSettings.greetingAfterDays === 'number'
         ? defaultSettings.greetingAfterDays
         : 3,
@@ -114,7 +116,8 @@ export function createDefaultState(config) {
       utilityModel: '',
       // V1 新增：temperature（0–2，預設 1）、maxTokens（預設 1024）。
       temperature: 1,
-      maxTokens: 1024
+      maxTokens: 1024,
+      visionEnabled: false
     }
   };
 }
@@ -156,7 +159,7 @@ export function normalizeState(state) {
   const arrayFields = [
     'characters', 'conversations', 'memories', 'worldbooks',
     'journals', 'globalPrompts', 'posts', 'heartVoices', 'keepsakes', 'relationshipData',
-    'wishlists', 'anniversaries', 'notifications', 'usageLog'
+    'wishlists', 'anniversaries', 'notifications', 'usageLog', 'stickers'
   ];
   for (const f of arrayFields) {
     if (!Array.isArray(merged[f])) merged[f] = [];
@@ -185,10 +188,14 @@ export function normalizeState(state) {
   merged.settings.timeAwareness = merged.settings.timeAwareness !== false;
   merged.settings.feedAutoPost = !!merged.settings.feedAutoPost;
   merged.settings.dreamEnabled = merged.settings.dreamEnabled !== false;
+  merged.apiSettings.visionEnabled = merged.apiSettings.visionEnabled === true;
 
   if (typeof merged.lastOpenedAt !== 'number') merged.lastOpenedAt = 0;
   if (typeof merged.lastGreetingAt !== 'number') merged.lastGreetingAt = 0;
   if (typeof merged.lastFeedAutoPostAt !== 'number') merged.lastFeedAutoPostAt = 0;
+  if (!merged.feedAutoPostLog || typeof merged.feedAutoPostLog !== 'object' || Array.isArray(merged.feedAutoPostLog)) {
+    merged.feedAutoPostLog = {};
+  }
   if (!merged.pendingGreeting || typeof merged.pendingGreeting !== 'object') merged.pendingGreeting = null;
   if (!merged.dailyCounters || typeof merged.dailyCounters !== 'object') {
     merged.dailyCounters = { date: '', feed: 0, dream: 0, background: 0 };
@@ -211,6 +218,21 @@ export function normalizeState(state) {
     }
     return c;
   });
+
+  merged.memories = merged.memories.map((m) => {
+    if (!m || typeof m !== 'object') return m;
+    return { ...m, enabled: m.enabled !== false };
+  });
+
+  merged.stickers = merged.stickers
+    .filter((s) => s && typeof s === 'object')
+    .map((s) => ({
+      id: String(s.id || generateId('sticker')),
+      assetId: String(s.assetId || ''),
+      label: String(s.label || '').trim(),
+      contextText: String(s.contextText || '').trim(),
+      createdAt: typeof s.createdAt === 'number' ? s.createdAt : Date.now()
+    }));
 
   if (typeof merged.lastBackupAt !== 'number') merged.lastBackupAt = 0;
 

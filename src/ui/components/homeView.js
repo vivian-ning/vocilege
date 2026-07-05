@@ -2,8 +2,7 @@
 //
 // 首頁主控台（#/home，V2 任務二）：
 //   2.1 角色卡片牆（頭貼 / 名字 / 簡介 / 相識天數 / 最後對話時間 / 最後一句摘要）
-//   2.2 Token 消耗統計（今日 / 本月 / 累計 + 每角色）
-//   2.3 迴聲摘要（最新 2 則貼文 + 入口；V4 起獨白併入迴聲牆）
+//   2.2 Token 消耗統計（今日 / 本月 / 累計）
 //   2.4 備份提醒（從未備份或距上次超過 14 天）
 
 import { clearPendingGreeting, pickOldReplay } from '../../state/store.js';
@@ -53,10 +52,6 @@ export function renderHomeView(container, state) {
   statsBox.textContent = '載入中…';
   page.appendChild(statsBox);
   fillStats(statsBox, state);
-
-  // 2.3 迴聲摘要（V4：獨白已併入迴聲牆）
-  page.appendChild(sectionTitle('迴聲'));
-  page.appendChild(buildFeedSummary(state));
 
   container.appendChild(page);
 }
@@ -319,49 +314,10 @@ async function fillStats(box, state) {
   grid.appendChild(statCard('累計', stats.total));
   box.appendChild(grid);
 
-  const split = document.createElement('div');
-  split.className = 'stats-split';
-  split.appendChild(statCard('聊天', stats.chatTotal || { prompt: 0, completion: 0 }));
-  split.appendChild(statCard('背景', stats.backgroundTotal || { prompt: 0, completion: 0 }));
-  box.appendChild(split);
-
   const note = document.createElement('div');
   note.className = 'form-hint';
   note.textContent = '僅統計真 API 回覆（mock 模擬回覆不計入）。';
   box.appendChild(note);
-
-  // 每角色累計
-  const perTitle = document.createElement('div');
-  perTitle.className = 'stats-subtitle';
-  perTitle.textContent = '每角色累計用量';
-  box.appendChild(perTitle);
-
-  const perList = document.createElement('div');
-  perList.className = 'stats-per-character';
-  const entries = Object.keys(stats.perCharacter || {});
-  if (entries.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'form-hint';
-    empty.textContent = '尚無真 API 回覆的用量紀錄。';
-    perList.appendChild(empty);
-  } else {
-    for (const charId of entries) {
-      const char = (state.characters || []).find((c) => c.id === charId);
-      const u = stats.perCharacter[charId];
-      const row = document.createElement('div');
-      row.className = 'stats-per-row';
-      const nm = document.createElement('span');
-      nm.className = 'stats-per-name';
-      nm.textContent = char ? (char.name || '未命名') : '（已刪除角色）';
-      const val = document.createElement('span');
-      val.className = 'stats-per-val';
-      val.textContent = `↑${u.prompt.toLocaleString()} ↓${u.completion.toLocaleString()}（合計 ${(u.prompt + u.completion).toLocaleString()}）`;
-      row.appendChild(nm);
-      row.appendChild(val);
-      perList.appendChild(row);
-    }
-  }
-  box.appendChild(perList);
 }
 
 function fillCardSnippets(stats) {
@@ -390,58 +346,6 @@ function statCard(label, usage) {
   card.appendChild(v);
   card.appendChild(detail);
   return card;
-}
-
-// ---- 2.3 迴聲摘要（V4：獨白已併入迴聲牆）----
-function buildFeedSummary(state) {
-  const box = document.createElement('div');
-  box.className = 'journal-box';
-
-  const recent = (state.posts || [])
-    .slice()
-    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-    .slice(0, 2);
-
-  if (recent.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'form-hint';
-    empty.textContent = '迴聲牆還很安靜。去說點什麼吧。';
-    box.appendChild(empty);
-  } else {
-    for (const p of recent) {
-      const entry = document.createElement('div');
-      entry.className = 'journal-entry';
-
-      const head = document.createElement('div');
-      head.className = 'journal-entry-head';
-      const date = document.createElement('span');
-      date.className = 'journal-date';
-      date.textContent = `${feedAuthorName(state, p)}　${formatDateTime(p.createdAt)}${p.mood ? `　${p.mood}` : ''}`;
-      head.appendChild(date);
-      entry.appendChild(head);
-
-      const content = document.createElement('div');
-      content.className = 'journal-content';
-      content.textContent = p.content || '';
-      entry.appendChild(content);
-      box.appendChild(entry);
-    }
-  }
-
-  const go = document.createElement('button');
-  go.type = 'button';
-  go.className = 'btn';
-  go.textContent = '前往迴聲牆 ›';
-  go.addEventListener('click', () => navigate('#/feed'));
-  box.appendChild(go);
-
-  return box;
-}
-
-function feedAuthorName(state, post) {
-  if (post.authorType === 'player') return (state.player && state.player.playerName) || '你';
-  const character = (state.characters || []).find((c) => c.id === post.authorId);
-  return character ? character.name || '角色' : '角色';
 }
 
 // ---- 小工具 ----

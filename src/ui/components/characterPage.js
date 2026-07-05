@@ -21,6 +21,7 @@ import {
   updateMemory,
   deleteMemory,
   deleteKeepsake,
+  updateKeepsakeNote,
   collectKeepsakeAsMemory,
   maybeExtractDreamMemories,
   deleteCharacter
@@ -201,9 +202,16 @@ function buildKeepsakeItem(item) {
   text.textContent = partsToText(item.snapshot && item.snapshot.parts);
   row.appendChild(text);
   if (item.note) {
-    const note = document.createElement('div');
-    note.className = 'keepsake-note';
-    note.textContent = item.note;
+    const note = document.createElement('input');
+    note.className = 'form-control keepsake-note';
+    note.value = item.note;
+    note.addEventListener('change', () => updateKeepsakeNote(item.id, note.value));
+    row.appendChild(note);
+  } else {
+    const note = document.createElement('input');
+    note.className = 'form-control keepsake-note';
+    note.placeholder = '備註（選填）';
+    note.addEventListener('change', () => updateKeepsakeNote(item.id, note.value));
     row.appendChild(note);
   }
   const actions = document.createElement('div');
@@ -351,6 +359,12 @@ function buildMemoryItem(m) {
   // 頭列：星等 / 情感 / locked 徽章 + 動作
   const head = document.createElement('div');
   head.className = 'mem-item-head';
+  const enabled = document.createElement('input');
+  enabled.type = 'checkbox';
+  enabled.checked = m.enabled !== false;
+  enabled.title = '是否注入 prompt';
+  enabled.addEventListener('change', () => updateMemory(m.id, { enabled: enabled.checked }));
+  head.appendChild(enabled);
 
   const badges = document.createElement('div');
   badges.className = 'mem-badges';
@@ -384,7 +398,7 @@ function buildMemoryItem(m) {
   if (m.summary) {
     const summary = document.createElement('div');
     summary.className = 'mem-summary';
-    summary.textContent = `摘要：${m.summary}`;
+    summary.textContent = `摘要：${m.source === 'extracted' ? `${dateStamp(m.createdAt)} 對話摘要` : m.summary}`;
     item.appendChild(summary);
   }
 

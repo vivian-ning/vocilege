@@ -10,7 +10,7 @@
 
 import { createExampleGlobalPrompt } from './schema.js';
 
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 // 逐版升級函式表。key = 來源版本，value = 把該版 state 升到「下一版」的函式。
 const migrators = {
@@ -88,7 +88,7 @@ const migrators = {
     if (typeof settings.timeAwareness !== 'boolean') settings.timeAwareness = true;
     if (typeof settings.feedReactorsPerPost !== 'number') settings.feedReactorsPerPost = 2;
     if (typeof settings.feedDailyLimit !== 'number') settings.feedDailyLimit = 20;
-    if (typeof settings.feedAutoPost !== 'boolean') settings.feedAutoPost = false;
+    if (typeof settings.feedAutoPost !== 'boolean') settings.feedAutoPost = true;
     if (typeof settings.greetingAfterDays !== 'number') settings.greetingAfterDays = 3;
     if (typeof settings.dreamEnabled !== 'boolean') settings.dreamEnabled = true;
     if (typeof settings.dreamEveryMessages !== 'number') settings.dreamEveryMessages = 20;
@@ -108,6 +108,35 @@ const migrators = {
     }
 
     s.schemaVersion = 5;
+    return s;
+  },
+
+  // v5 -> v6: V5 media / stickers / dream toggles / Threads-style auto feed.
+  5: (s) => {
+    if (!Array.isArray(s.stickers)) s.stickers = [];
+    if (!s.feedAutoPostLog || typeof s.feedAutoPostLog !== 'object' || Array.isArray(s.feedAutoPostLog)) {
+      s.feedAutoPostLog = {};
+    }
+
+    const settings = (s.settings && typeof s.settings === 'object') ? { ...s.settings } : {};
+    // V4/V5 曾錯把 feedAutoPost 預設關閉，導致角色自主發文沉默；升 v6 依規格強制打開。
+    settings.feedAutoPost = true;
+    if (typeof settings.dreamEveryMessages !== 'number') settings.dreamEveryMessages = 20;
+    s.settings = settings;
+
+    const api = (s.apiSettings && typeof s.apiSettings === 'object') ? { ...s.apiSettings } : {};
+    if (typeof api.visionEnabled !== 'boolean') api.visionEnabled = false;
+    s.apiSettings = api;
+
+    if (Array.isArray(s.memories)) {
+      s.memories = s.memories.map((m) => (
+        m && typeof m === 'object' && typeof m.enabled !== 'boolean'
+          ? { ...m, enabled: true }
+          : m
+      ));
+    }
+
+    s.schemaVersion = 6;
     return s;
   },
 };

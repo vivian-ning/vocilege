@@ -2,9 +2,7 @@ import {
   addPost,
   deletePost,
   togglePostLike,
-  addPostComment,
-  triggerFeedReactions,
-  inviteCharacterPost
+  addPostComment
 } from '../../state/store.js';
 import { createAvatarEl } from '../avatar.js';
 
@@ -65,28 +63,6 @@ function buildComposer(state) {
   row.appendChild(submit);
   form.appendChild(row);
 
-  const inviteRow = document.createElement('div');
-  inviteRow.className = 'feed-invite-row';
-  const select = document.createElement('select');
-  select.className = 'form-control feed-character-select';
-  for (const c of (state.characters || [])) {
-    const opt = document.createElement('option');
-    opt.value = c.id;
-    opt.textContent = c.name || '未命名角色';
-    select.appendChild(opt);
-  }
-  const invite = document.createElement('button');
-  invite.type = 'button';
-  invite.className = 'btn';
-  invite.textContent = '邀請 TA 說說話';
-  invite.disabled = !select.options.length;
-  invite.addEventListener('click', () => {
-    if (select.value) inviteCharacterPost(select.value);
-  });
-  inviteRow.appendChild(select);
-  inviteRow.appendChild(invite);
-  form.appendChild(inviteRow);
-
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!textarea.value.trim()) return;
@@ -114,7 +90,7 @@ function buildPost(post, state) {
   meta.appendChild(name);
   const time = document.createElement('div');
   time.className = 'feed-time';
-  time.textContent = formatDateTime(post.createdAt) + (post.mood ? ` · ${post.mood}` : '');
+  time.textContent = formatRelative(post.createdAt) + (post.mood ? ` · ${post.mood}` : '');
   meta.appendChild(time);
   head.appendChild(meta);
 
@@ -142,16 +118,9 @@ function buildPost(post, state) {
   const like = document.createElement('button');
   like.type = 'button';
   like.className = 'btn' + (liked ? ' active' : '');
-  like.textContent = `喜歡 ${(post.likes || []).length}`;
+  like.textContent = `${liked ? '♥' : '♡'} ${(post.likes || []).length}`;
   like.addEventListener('click', () => togglePostLike(post.id));
   actions.appendChild(like);
-
-  const react = document.createElement('button');
-  react.type = 'button';
-  react.className = 'btn';
-  react.textContent = '呼喚迴聲';
-  react.addEventListener('click', () => triggerFeedReactions(post.id));
-  actions.appendChild(react);
   card.appendChild(actions);
 
   const comments = document.createElement('div');
@@ -226,4 +195,15 @@ function formatDateTime(ts) {
   if (!ts) return '';
   const d = new Date(ts);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatRelative(ts) {
+  if (!ts) return '';
+  const diff = Date.now() - ts;
+  if (diff < 60000) return '剛剛';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)} 分鐘前`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小時前`;
+  const days = Math.floor(diff / 86400000);
+  if (days < 30) return `${days} 天前`;
+  return formatDateTime(ts);
 }

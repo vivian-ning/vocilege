@@ -22,6 +22,8 @@
 
 import { generateReply as mockGenerateReply } from './mockAIService.js';
 import { systemBlocksToString } from './promptBuilder.js';
+import { getAsset } from '../db/indexeddb.js';
+import { blobToBase64 } from './assetService.js';
 
 const REQUEST_TIMEOUT_MS = 60000; // 逾時 60 秒。
 
@@ -132,8 +134,8 @@ async function callOpenAICompatible(args, { stream = false } = {}) {
   const systemText = systemBlocksToString(prompt && prompt.systemBlocks);
   const messages = [];
   if (systemText) messages.push({ role: 'system', content: systemText });
-  for (const m of (prompt && prompt.messages) || []) {
-    messages.push({ role: m.role, content: m.content });
+  for (const m of await buildOpenAIMessages((prompt && prompt.messages) || [], apiSettings)) {
+    messages.push(m);
   }
 
   const body = {
@@ -159,7 +161,7 @@ async function callOpenAICompatible(args, { stream = false } = {}) {
     model: (data && data.model) || apiSettings.model || ''
   };
 
-  const parts = parseReplyToParts(text);
+  const parts = parseReplyToParts(text, prompt && prompt.meta && prompt.meta.stickers);
   parts.usage = usage;
   return parts;
 }
@@ -198,7 +200,7 @@ async function callAnthropic(args, { stream = false } = {}) {
   const url = `${base}/v1/messages`;
 
   // Anthropic：system 為獨立頂層欄位；messages 只放 user / assistant，且需以 user 開頭。
-  const messages = sanitizeAnthropicMessages((prompt && prompt.messages) || []);
+  const messages = await sanitizeAnthropicMessages((prompt && prompt.messages) || [], apiSettings);
 
   const body = {
     model: apiSettings.model || '',
@@ -234,7 +236,7 @@ async function callAnthropic(args, { stream = false } = {}) {
   if (u.cache_read_input_tokens != null) usage.cacheRead = intOr(u.cache_read_input_tokens, 0);
   if (u.cache_creation_input_tokens != null) usage.cacheWrite = intOr(u.cache_creation_input_tokens, 0);
 
-  const parts = parseReplyToParts(text);
+  const parts = parseReplyToParts(text, prompt && prompt.meta && prompt.meta.stickers);
   parts.usage = usage;
   return parts;
 }
@@ -250,7 +252,7 @@ async function callAnthropicUtility(args) {
   }, {
     model: apiSettings.model || '',
     system: systemBlocksToString(prompt.systemBlocks) || ' ',
-    messages: sanitizeAnthropicMessages(prompt.messages),
+    messages: await sanitizeAnthropicMessages(prompt.messages, apiSettings),
     temperature: clampNumber(apiSettings.temperature, 0, 1, 1),
     max_tokens: clampNumber(apiSettings.maxTokens, 1, 1000000, 512),
     stream: false
@@ -292,6 +294,15 @@ function withHistoryCacheBreakpoint(messages) {
   if (list.length < 2) return list;
   const idx = list.length - 2;
   const m = list[idx];
+  if (Array.isArray(m.content)) {
+    const content = m.content.map((block, i) => (
+      i === 0 && block && block.type === 'text'
+        ? { ...block, cache_control: { type: 'ephemeral' } }
+        : block
+    ));
+    list[idx] = { role: m.role, content };
+    return list;
+  }
   list[idx] = {
     role: m.role,
     content: [{ type: 'text', text: String(m.content || ''), cache_control: { type: 'ephemeral' } }]
@@ -306,7 +317,7 @@ async function callGemini(args, { stream = false } = {}) {
   const url = `${base}/v1beta/models/${encodeURIComponent(apiSettings.model || '')}:generateContent`;
 
   // Gemini：system 為獨立的 systemInstruction；對話放 contents，role 為 user / model。
-  const contents = geminiContents((prompt && prompt.messages) || []);
+  const contents = await geminiContents((prompt && prompt.messages) || [], apiSettings);
 
   const body = {
     contents,
@@ -333,7 +344,7 @@ async function callGemini(args, { stream = false } = {}) {
     model: (data && data.modelVersion) || apiSettings.model || ''
   };
 
-  const parts = parseReplyToParts(text);
+  const parts = parseReplyToParts(text, prompt && prompt.meta && prompt.meta.stickers);
   parts.usage = usage;
   return parts;
 }
@@ -377,18 +388,19 @@ function extractGeminiText(data) {
 }
 
 // Gemini 的 contents：role 為 user / model（assistant→model）；合併連續同 role、丟棄開頭 model。
-function geminiContents(list) {
+async function geminiContents(list, apiSettings) {
   const cleaned = [];
   for (const m of list) {
     if (!m || (m.role !== 'user' && m.role !== 'assistant')) continue;
-    const content = (m.content == null ? '' : String(m.content)).trim();
-    if (!content) continue;
+    const text = (m.content == null ? '' : String(m.content)).trim();
+    const parts = await buildGeminiParts(m, apiSettings, text);
+    if (!parts.length) continue;
     const role = m.role === 'assistant' ? 'model' : 'user';
     const last = cleaned[cleaned.length - 1];
     if (last && last.role === role) {
-      last.parts[0].text += '\n' + content;
+      last.parts = last.parts.concat(parts);
     } else {
-      cleaned.push({ role, parts: [{ text: content }] });
+      cleaned.push({ role, parts });
     }
   }
   while (cleaned.length && cleaned[0].role === 'model') cleaned.shift();
@@ -406,15 +418,16 @@ function extractAnthropicText(data) {
 }
 
 // Anthropic 要求 messages 以 user 開頭、內容非空；合併連續同 role，並丟棄開頭的 assistant。
-function sanitizeAnthropicMessages(list) {
+async function sanitizeAnthropicMessages(list, apiSettings) {
   const cleaned = [];
   for (const m of list) {
     if (!m || (m.role !== 'user' && m.role !== 'assistant')) continue;
-    const content = (m.content == null ? '' : String(m.content)).trim();
-    if (!content) continue;
+    const text = (m.content == null ? '' : String(m.content)).trim();
+    const content = await buildAnthropicContent(m, apiSettings, text);
+    if (!content.length) continue;
     const last = cleaned[cleaned.length - 1];
     if (last && last.role === m.role) {
-      last.content += '\n' + content; // 合併連續同 role。
+      last.content = asAnthropicBlocks(last.content).concat(content);
     } else {
       cleaned.push({ role: m.role, content });
     }
@@ -424,6 +437,79 @@ function sanitizeAnthropicMessages(list) {
   // 極端情況：全空 → 塞一則最小 user 訊息，避免 400。
   if (!cleaned.length) cleaned.push({ role: 'user', content: '（開始對話）' });
   return cleaned;
+}
+
+async function buildOpenAIMessages(list, apiSettings) {
+  const out = [];
+  for (const m of list) {
+    if (!m || (m.role !== 'user' && m.role !== 'assistant')) continue;
+    const text = (m.content == null ? '' : String(m.content)).trim();
+    const images = await collectImageParts(m, apiSettings);
+    if (!text && !images.length) continue;
+    if (!images.length) {
+      out.push({ role: m.role, content: text });
+      continue;
+    }
+    out.push({
+      role: m.role,
+      content: [
+        { type: 'text', text: text || '（照片）' },
+        ...images.map((img) => ({
+          type: 'image_url',
+          image_url: { url: `data:${img.mime};base64,${img.data}` }
+        }))
+      ]
+    });
+  }
+  return out;
+}
+
+async function buildAnthropicContent(message, apiSettings, text) {
+  const images = await collectImageParts(message, apiSettings);
+  if (!images.length) return text ? [{ type: 'text', text }] : [];
+  return [
+    { type: 'text', text: text || '（照片）' },
+    ...images.map((img) => ({
+      type: 'image',
+      source: { type: 'base64', media_type: img.mime, data: img.data }
+    }))
+  ];
+}
+
+async function buildGeminiParts(message, apiSettings, text) {
+  const images = await collectImageParts(message, apiSettings);
+  const parts = [];
+  if (text) parts.push({ text });
+  for (const img of images) {
+    parts.push({ inlineData: { mimeType: img.mime, data: img.data } });
+  }
+  return parts;
+}
+
+function asAnthropicBlocks(content) {
+  if (Array.isArray(content)) return content;
+  const text = String(content || '').trim();
+  return text ? [{ type: 'text', text }] : [];
+}
+
+async function collectImageParts(message, apiSettings) {
+  if (!apiSettings || apiSettings.visionEnabled !== true) return [];
+  const parts = Array.isArray(message && message.parts) ? message.parts : [];
+  const out = [];
+  for (const part of parts) {
+    if (!part || part.type !== 'image' || !part.assetId) continue;
+    try {
+      const asset = await getAsset(part.assetId);
+      if (!asset || !asset.blob) continue;
+      out.push({
+        mime: asset.mime || 'image/webp',
+        data: await blobToBase64(asset.blob)
+      });
+    } catch (e) {
+      // 缺圖時略過；文字 altText 已由 promptBuilder 注入。
+    }
+  }
+  return out;
 }
 
 // ---- 共用 fetch（帶逾時與錯誤分類）----
@@ -516,7 +602,7 @@ function intOr(v, fallback) {
 //     整段都解析不出來時，回傳單一 message part。
 //
 // 放在獨立、無副作用的函式以便測試。
-export function parseReplyToParts(text) {
+export function parseReplyToParts(text, stickers = []) {
   const raw = text == null ? '' : String(text);
   const trimmedAll = raw.trim();
   if (!trimmedAll) {
@@ -533,6 +619,11 @@ export function parseReplyToParts(text) {
   const parts = [];
 
   for (const block of source) {
+    const sticker = matchSticker(block, stickers);
+    if (sticker) {
+      parts.push({ type: 'sticker', stickerId: sticker.id });
+      continue;
+    }
     const narration = matchNarration(block);
     if (narration != null) {
       parts.push({ type: 'narration', content: narration });
@@ -551,6 +642,13 @@ export function parseReplyToParts(text) {
     return [{ type: 'message', content: trimmedAll }];
   }
   return parts;
+}
+
+function matchSticker(block, stickers) {
+  const m = /^\[貼圖:([^\]]+)\]$/.exec(String(block || '').trim());
+  if (!m) return null;
+  const label = m[1].trim();
+  return (stickers || []).find((s) => s && String(s.label || '').trim() === label) || null;
 }
 
 // 若整段被全形 ＊…＊ 或半形 *…* 完整包裹，回傳去掉星號後的內容；否則回傳 null。

@@ -40,7 +40,8 @@ export function buildPrompt({
   mode,
   memoryInjectionLimit, // V3：非 locked 記憶注入上限（預設 10）
   settings,
-  anniversaries
+  anniversaries,
+  stickers
 }) {
   const character = activeCharacter || {};
   const p = player || {};
@@ -84,6 +85,8 @@ export function buildPrompt({
 
   // 5) 輸出模式 + 輸出格式要求（穩定，放靜態區末尾）。
   staticParts.push(`【輸出模式】${describeMode(mode)}`);
+  const stickerText = stickersToInstruction(stickers);
+  if (stickerText) staticParts.push(stickerText);
   staticParts.push(OUTPUT_FORMAT_INSTRUCTION);
 
   const staticText = staticParts.join('\n\n');
@@ -108,7 +111,7 @@ export function buildPrompt({
   const recent = (messages || []).slice(-RECENT_LIMIT);
   const history = recent
     .filter((m) => m && (m.role === 'user' || m.role === 'assistant'))
-    .map((m) => ({ role: m.role, content: partsToText(m.parts) }))
+    .map((m) => ({ role: m.role, content: partsToText(m.parts, stickers), parts: m.parts || [] }))
     .filter((m) => m.content && m.content.trim());
 
   return {
@@ -122,7 +125,8 @@ export function buildPrompt({
       conversationId: conversation ? conversation.id : '',
       characterName: character.name || '',
       playerName,
-      injectedMemoryIds
+      injectedMemoryIds,
+      stickers: normalizeStickers(stickers)
     }
   };
 }
@@ -133,7 +137,7 @@ export function buildPrompt({
 //   - general（非 locked）：依 importance 由高到低、同分以 updatedAt 新者優先，取前 limit 筆
 export function selectInjectedMemories(memories, characterId, limit) {
   const all = (memories || []).filter(
-    (m) => m && m.characterId === characterId && (m.status || 'active') === 'active'
+    (m) => m && m.characterId === characterId && (m.status || 'active') === 'active' && m.enabled !== false
   );
   const locked = all.filter((m) => m.locked);
   const general = all
@@ -248,7 +252,39 @@ function daysUntil(a, today) {
   return a.repeat === 'none' && days < 0 ? null : days;
 }
 
-function partsToText(parts) {
+function normalizeStickers(stickers) {
+  return (stickers || [])
+    .filter((s) => s && s.label)
+    .map((s) => ({
+      id: s.id || '',
+      assetId: s.assetId || '',
+      label: String(s.label || '').trim(),
+      contextText: String(s.contextText || '').trim()
+    }));
+}
+
+function stickersToInstruction(stickers) {
+  const list = normalizeStickers(stickers);
+  if (!list.length) return '';
+  return [
+    '【小劇場貼圖】',
+    '你可以在回覆中單獨一行輸出「[貼圖:label]」來使用貼圖；label 必須完全符合下列清單。',
+    ...list.map((s) => `- ${s.label}：${s.contextText || '（無語境文字）'}`)
+  ].join('\n');
+}
+
+function partsToText(parts, stickers) {
   if (!Array.isArray(parts)) return '';
-  return parts.map((part) => (part && part.content ? String(part.content) : '')).join('\n');
+  const stickerById = new Map(normalizeStickers(stickers).map((s) => [s.id, s]));
+  return parts.map((part) => {
+    if (!part) return '';
+    if (part.type === 'sticker') {
+      const sticker = stickerById.get(part.stickerId);
+      return sticker ? `[小劇場] ${sticker.contextText || sticker.label}` : '[小劇場]';
+    }
+    if (part.type === 'image') {
+      return part.altText ? `[照片] ${part.altText}` : '[照片]';
+    }
+    return part.content ? String(part.content) : '';
+  }).join('\n');
 }

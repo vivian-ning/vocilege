@@ -65,11 +65,54 @@ function resizeToAvatarBlob(file) {
   });
 }
 
+function resizeToMaxSideBlob(file, maxSide) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, maxSide / Math.max(img.width || 1, img.height || 1));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(objectUrl);
+        canvas.toBlob((blob) => {
+          if (blob) {
+            resolve({ blob, mime: 'image/webp' });
+            return;
+          }
+          canvas.toBlob((jpeg) => {
+            if (jpeg) resolve({ blob: jpeg, mime: 'image/jpeg' });
+            else reject(new Error('影像編碼失敗'));
+          }, 'image/jpeg', WEBP_QUALITY);
+        }, 'image/webp', WEBP_QUALITY);
+      } catch (err) {
+        URL.revokeObjectURL(objectUrl);
+        reject(err);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('無法讀取圖片檔'));
+    };
+    img.src = objectUrl;
+  });
+}
+
 // 上傳並存入 assets store，回傳新的 assetId。
 export async function saveAvatarAsset(file) {
   const { blob, mime } = await resizeToAvatarBlob(file);
   const id = generateId('asset');
   await putAsset({ id, kind: 'avatar', blob, mime, createdAt: Date.now() });
+  return id;
+}
+
+export async function saveImageAsset(file, kind, maxSide) {
+  const { blob, mime } = await resizeToMaxSideBlob(file, maxSide);
+  const id = generateId('asset');
+  await putAsset({ id, kind: kind || 'photo', blob, mime, createdAt: Date.now() });
   return id;
 }
 
@@ -107,6 +150,16 @@ export async function deleteAvatarAsset(assetId) {
     await deleteAsset(assetId);
   } catch (e) {
     // 刪不到就算了（可能已不存在）；不阻斷主流程。
+  }
+}
+
+export async function deleteStoredAsset(assetId) {
+  if (!assetId) return;
+  revokeObjectURL(assetId);
+  try {
+    await deleteAsset(assetId);
+  } catch (e) {
+    // 刪不到就算了（可能已不存在）。
   }
 }
 

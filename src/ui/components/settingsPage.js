@@ -13,10 +13,13 @@ import { renderApiSettingsEditor } from './apiSettingsEditor.js';
 import { renderGlobalPromptsEditor } from './globalPromptsEditor.js';
 import { renderPlayerEditor } from './playerEditor.js';
 import { renderBackupPanel } from './backupPanel.js';
+import { addSticker, updateSticker, deleteSticker } from '../../state/store.js';
+import { saveImageAsset, getObjectURL } from '../../services/assetService.js';
 
 const TABS = [
   { key: 'api', label: 'API 設定' },
   { key: 'prompts', label: 'Prompt 存放區' },
+  { key: 'stickers', label: '小劇場' },
   { key: 'player', label: '玩家設定' },
   { key: 'data', label: '資料' }
 ];
@@ -60,6 +63,8 @@ export function renderSettingsPage(container, state) {
 
   if (activeTab === 'prompts') {
     renderGlobalPromptsEditor(body, state);
+  } else if (activeTab === 'stickers') {
+    renderStickerManager(body, state);
   } else if (activeTab === 'player') {
     renderPlayerEditor(body, state);
   } else if (activeTab === 'data') {
@@ -69,4 +74,101 @@ export function renderSettingsPage(container, state) {
   }
 
   container.appendChild(page);
+}
+
+function renderStickerManager(container, state) {
+  container.textContent = '';
+  const form = document.createElement('form');
+  form.className = 'char-form';
+  const file = document.createElement('input');
+  file.type = 'file';
+  file.accept = 'image/*';
+  form.appendChild(wrapField('貼圖圖片', file));
+  const label = document.createElement('input');
+  label.type = 'text';
+  label.className = 'form-control';
+  label.placeholder = '短名，例如：轉圈';
+  form.appendChild(wrapField('label', label));
+  const context = document.createElement('input');
+  context.type = 'text';
+  context.className = 'form-control';
+  context.placeholder = '（開心地轉圈圈）';
+  form.appendChild(wrapField('語境文字', context));
+  const submit = document.createElement('button');
+  submit.type = 'submit';
+  submit.className = 'btn btn-primary';
+  submit.textContent = '新增小劇場';
+  form.appendChild(submit);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = file.files && file.files[0];
+    if (!f || !label.value.trim()) return;
+    submit.disabled = true;
+    const assetId = await saveImageAsset(f, 'sticker', 512);
+    await addSticker({ assetId, label: label.value, contextText: context.value });
+    file.value = '';
+    label.value = '';
+    context.value = '';
+    submit.disabled = false;
+  });
+  container.appendChild(form);
+
+  const grid = document.createElement('div');
+  grid.className = 'sticker-admin-grid';
+  for (const sticker of (state.stickers || [])) {
+    const item = document.createElement('div');
+    item.className = 'sticker-admin-item';
+    const preview = document.createElement('div');
+    preview.className = 'sticker-admin-preview';
+    preview.textContent = sticker.label || '貼圖';
+    getObjectURL(sticker.assetId).then((url) => {
+      if (!url) return;
+      preview.textContent = '';
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = sticker.label || '';
+      preview.appendChild(img);
+    });
+    item.appendChild(preview);
+    const labelInput = document.createElement('input');
+    labelInput.type = 'text';
+    labelInput.className = 'form-control';
+    labelInput.value = sticker.label || '';
+    item.appendChild(labelInput);
+    const ctxInput = document.createElement('input');
+    ctxInput.type = 'text';
+    ctxInput.className = 'form-control';
+    ctxInput.value = sticker.contextText || '';
+    item.appendChild(ctxInput);
+    const actions = document.createElement('div');
+    actions.className = 'form-actions';
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'btn';
+    save.textContent = '儲存';
+    save.addEventListener('click', () => updateSticker(sticker.id, { label: labelInput.value, contextText: ctxInput.value }));
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn btn-danger';
+    del.textContent = '刪除';
+    del.addEventListener('click', () => {
+      if (window.confirm('刪除這張小劇場貼圖？')) deleteSticker(sticker.id);
+    });
+    actions.appendChild(save);
+    actions.appendChild(del);
+    item.appendChild(actions);
+    grid.appendChild(item);
+  }
+  container.appendChild(grid);
+}
+
+function wrapField(label, control) {
+  const el = document.createElement('label');
+  el.className = 'form-field';
+  const span = document.createElement('span');
+  span.className = 'form-label';
+  span.textContent = label;
+  el.appendChild(span);
+  el.appendChild(control);
+  return el;
 }
