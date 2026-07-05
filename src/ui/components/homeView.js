@@ -23,6 +23,8 @@ export function renderHomeView(container, state) {
   const page = document.createElement('div');
   page.className = 'home-page';
 
+  page.appendChild(buildHero(state));
+
   // 2.4 備份提醒條（置頂）
   const reminder = buildBackupReminder(state);
   if (reminder) page.appendChild(reminder);
@@ -33,11 +35,6 @@ export function renderHomeView(container, state) {
   // V3：紀念日提醒（3 天內含當天）
   const annivReminders = buildAnniversaryReminders(state);
   if (annivReminders) page.appendChild(annivReminders);
-
-  const title = document.createElement('h1');
-  title.className = 'page-title';
-  title.textContent = '主控台';
-  page.appendChild(title);
 
   // 2.1 角色卡片牆
   page.appendChild(sectionTitle('角色'));
@@ -54,6 +51,51 @@ export function renderHomeView(container, state) {
   fillStats(statsBox, state);
 
   container.appendChild(page);
+}
+
+function buildHero(state) {
+  const hero = document.createElement('section');
+  hero.className = 'home-hero';
+
+  const focus = pickHeroCharacter(state);
+  const days = focus ? acquaintanceDays(focus) : totalCompanionDays(state);
+
+  const label = document.createElement('div');
+  label.className = 'home-hero-label';
+  label.textContent = focus ? '最近同行' : '全部角色總相伴';
+  hero.appendChild(label);
+
+  const title = document.createElement('h1');
+  title.className = 'home-hero-title';
+  title.textContent = `相識 ${days} 天`;
+  hero.appendChild(title);
+
+  const sub = document.createElement('div');
+  sub.className = 'home-hero-sub';
+  if (focus) {
+    sub.textContent = `與 ${focus.name || '角色'} 同行 · ${formatDate(focus.createdAt || Date.now())}`;
+  } else {
+    sub.textContent = '建立第一位角色後，這裡會記下你們的相遇日。';
+  }
+  hero.appendChild(sub);
+
+  return hero;
+}
+
+function pickHeroCharacter(state) {
+  const conv = (state.conversations || [])
+    .filter((c) => c && c.type === 'direct' && c.primaryCharacterId)
+    .sort((a, b) => (b.lastMessageAt || b.updatedAt || b.createdAt || 0) - (a.lastMessageAt || a.updatedAt || a.createdAt || 0))[0];
+  if (!conv) return null;
+  return (state.characters || []).find((c) => c.id === conv.primaryCharacterId) || null;
+}
+
+function acquaintanceDays(char) {
+  return Math.max(0, Math.floor((Date.now() - (char.createdAt || Date.now())) / DAY_MS));
+}
+
+function totalCompanionDays(state) {
+  return (state.characters || []).reduce((sum, char) => sum + acquaintanceDays(char), 0);
 }
 
 function buildGreetingCard(state) {
@@ -342,8 +384,17 @@ function statCard(label, usage) {
   const detail = document.createElement('div');
   detail.className = 'stat-detail';
   detail.textContent = `↑${(usage.prompt || 0).toLocaleString()} ↓${(usage.completion || 0).toLocaleString()}`;
+  const bar = document.createElement('div');
+  bar.className = 'stat-bar';
+  const fill = document.createElement('span');
+  const baseline = label === '今日' ? 8000 : (label === '本月' ? 160000 : 0);
+  const pct = baseline ? Math.max(4, Math.min(100, Math.round((total / baseline) * 100))) : 0;
+  fill.style.width = pct ? `${pct}%` : '100%';
+  if (!pct) fill.className = 'stat-bar-soft';
+  bar.appendChild(fill);
   card.appendChild(l);
   card.appendChild(v);
+  card.appendChild(bar);
   card.appendChild(detail);
   return card;
 }

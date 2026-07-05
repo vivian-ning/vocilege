@@ -9,6 +9,7 @@
 // 我們在陣列物件上掛兩個非列舉語意的屬性（陣列本身仍是 MessagePart[]）：
 //   - result.usage  ：{ promptTokens, completionTokens, model }（只有真 API 回覆才有）
 //   - result.isMock ：true 代表這是 mock 回覆（未設定 provider / apiKey）
+//   - result.thinking：模型思考文字（僅 showThinking 且 provider 支援時）
 //
 // V1：依 apiSettings.provider 分派——
 //   - 未設定 provider 或 apiKey → 委派給 mockAIService（附 isMock 標記）
@@ -81,6 +82,10 @@ export async function generateReply(args) {
     const parts = await mockGenerateReply(args);
     const result = Array.isArray(parts) ? parts : [{ type: 'message', content: '……' }];
     result.isMock = true;
+    if (apiSettings && apiSettings.showThinking) {
+      const name = args && args.character && args.character.name ? args.character.name : '角色';
+      result.thinking = `（${name}斟酌了一下該怎麼回應。）`;
+    }
     return result;
   }
 
@@ -99,6 +104,10 @@ export async function generateReply(args) {
   const parts = await mockGenerateReply(args);
   const result = Array.isArray(parts) ? parts : [{ type: 'message', content: '……' }];
   result.isMock = true;
+  if (apiSettings && apiSettings.showThinking) {
+    const name = args && args.character && args.character.name ? args.character.name : '角色';
+    result.thinking = `（${name}斟酌了一下該怎麼回應。）`;
+  }
   return result;
 }
 
@@ -151,10 +160,11 @@ async function callOpenAICompatible(args, { stream = false } = {}) {
     'Content-Type': 'application/json'
   }, body);
 
-  const text =
-    data && data.choices && data.choices[0] && data.choices[0].message
-      ? String(data.choices[0].message.content || '')
-      : '';
+  const message = data && data.choices && data.choices[0] && data.choices[0].message;
+  const text = message ? String(message.content || '') : '';
+  const thinking = message
+    ? String(message.reasoning_content || message.reasoning || '').trim()
+    : '';
   const usage = {
     promptTokens: intOr(data && data.usage && data.usage.prompt_tokens, 0),
     completionTokens: intOr(data && data.usage && data.usage.completion_tokens, 0),
@@ -163,6 +173,7 @@ async function callOpenAICompatible(args, { stream = false } = {}) {
 
   const parts = parseReplyToParts(text, prompt && prompt.meta && prompt.meta.stickers);
   parts.usage = usage;
+  if (thinking) parts.thinking = thinking;
   return parts;
 }
 
@@ -202,6 +213,13 @@ async function callAnthropic(args, { stream = false } = {}) {
   // Anthropic：system 為獨立頂層欄位；messages 只放 user / assistant，且需以 user 開頭。
   const messages = await sanitizeAnthropicMessages((prompt && prompt.messages) || [], apiSettings);
 
+  const thinkingEnabled = apiSettings.showThinking === true;
+  const thinkingBudget = Math.max(1024, Math.floor(Number(apiSettings.thinkingBudget) || 1024));
+  const maxTokens = Math.max(
+    thinkingEnabled ? thinkingBudget + 256 : 1,
+    Math.round(clampNumber(apiSettings.maxTokens, 1, 1000000, 1024))
+  );
+
   const body = {
     model: apiSettings.model || '',
     // 快取分區（任務五）：system 改為 block 陣列，靜態 block 帶 cache_control 讓穩定
@@ -211,11 +229,15 @@ async function callAnthropic(args, { stream = false } = {}) {
     system: buildAnthropicSystem(prompt && prompt.systemBlocks),
     // 對話歷史增量快取：歷史 ≥ 2 則時，在倒數第二則加 cache_control，讓歷史逐輪命中。
     messages: withHistoryCacheBreakpoint(messages),
-    // Anthropic temperature 範圍 0–1，超出會 400，這裡夾住。
-    temperature: clampNumber(apiSettings.temperature, 0, 1, 1),
-    max_tokens: clampNumber(apiSettings.maxTokens, 1, 1000000, 1024),
+    max_tokens: maxTokens,
     stream // V1 恆為 false；預留未來 SSE。
   };
+  if (thinkingEnabled) {
+    body.thinking = { type: 'enabled', budget_tokens: thinkingBudget };
+  } else {
+    // Anthropic extended thinking 開啟時不可自訂 temperature；未開啟才送既有設定。
+    body.temperature = clampNumber(apiSettings.temperature, 0, 1, 1);
+  }
 
   const data = await postJson(url, {
     'x-api-key': apiSettings.apiKey,
@@ -226,6 +248,7 @@ async function callAnthropic(args, { stream = false } = {}) {
   }, body);
 
   const text = extractAnthropicText(data);
+  const thinking = extractAnthropicThinking(data);
   const u = (data && data.usage) || {};
   const usage = {
     promptTokens: intOr(u.input_tokens, 0),
@@ -238,6 +261,7 @@ async function callAnthropic(args, { stream = false } = {}) {
 
   const parts = parseReplyToParts(text, prompt && prompt.meta && prompt.meta.stickers);
   parts.usage = usage;
+  if (thinking) parts.thinking = thinking;
   return parts;
 }
 
@@ -415,6 +439,15 @@ function extractAnthropicText(data) {
     .filter((b) => b && b.type === 'text' && typeof b.text === 'string')
     .map((b) => b.text)
     .join('\n');
+}
+
+function extractAnthropicThinking(data) {
+  if (!data || !Array.isArray(data.content)) return '';
+  return data.content
+    .filter((b) => b && b.type === 'thinking' && typeof b.thinking === 'string')
+    .map((b) => b.thinking)
+    .join('\n')
+    .trim();
 }
 
 // Anthropic 要求 messages 以 user 開頭、內容非空；合併連續同 role，並丟棄開頭的 assistant。

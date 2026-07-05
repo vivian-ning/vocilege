@@ -181,10 +181,10 @@ function renderChatPage(container, state, conversationId) {
   container.appendChild(layout);
 }
 
-// 主題 = 配色（blue/pink/brown）×明暗（light/dark）。
+// 主題 = 配色（blue/pink/green/violet）×明暗（light/dark）。
 // 舊值（cream/night 等）由 migration 轉換；此處仍防禦性映射一次。
 const LEGACY_THEME_MAP = {
-  cream: ['brown', 'light'], warm: ['brown', 'light'],
+  cream: ['violet', 'light'], warm: ['violet', 'light'], brown: ['violet', 'light'],
   night: ['blue', 'dark'], sea: ['blue', 'light'],
   fog: ['blue', 'light'], rose: ['pink', 'light']
 };
@@ -197,7 +197,7 @@ function applyTheme(theme, themeMode) {
     palette = mapped[0];
     if (!themeMode) mode = mapped[1];
   }
-  if (!['blue', 'pink', 'brown'].includes(palette)) palette = 'blue';
+  if (!['blue', 'pink', 'green', 'violet'].includes(palette)) palette = 'blue';
   document.documentElement.setAttribute('data-theme', `${palette}-${mode}`);
 }
 

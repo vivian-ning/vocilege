@@ -24,6 +24,7 @@ import { getObjectURL, saveImageAsset } from '../../services/assetService.js';
 import { applyAvatar } from '../avatar.js';
 import { navigate } from '../router.js';
 import { createWaveBars } from '../wave.js';
+import { iconButton } from '../icons.js';
 
 export function renderChatView(container, state) {
   container.textContent = '';
@@ -43,6 +44,13 @@ export function renderChatView(container, state) {
   // 標題
   const header = document.createElement('div');
   header.className = 'chat-header';
+  const profileBtn = document.createElement('button');
+  profileBtn.type = 'button';
+  profileBtn.className = 'chat-header-profile';
+  profileBtn.setAttribute('aria-label', `開啟 ${character.name || '角色'} 的相處頁`);
+  profileBtn.title = `開啟 ${character.name || '角色'} 的相處頁`;
+  profileBtn.addEventListener('click', () => navigate(`/character/${character.id}`));
+
   const avatar = document.createElement('span');
   avatar.className = 'chat-header-avatar avatar';
   applyAvatar(avatar, character.avatar);
@@ -61,52 +69,25 @@ export function renderChatView(container, state) {
     titleWrap.appendChild(mockHint);
   }
 
-  header.appendChild(avatar);
-  header.appendChild(titleWrap);
+  profileBtn.appendChild(avatar);
+  profileBtn.appendChild(titleWrap);
+  header.appendChild(profileBtn);
 
-  // 標題列動作按鈕（靠右）：角色頁 / 此對話的我。
   const headerActions = document.createElement('div');
   headerActions.className = 'chat-header-actions';
 
-  const charPageBtn = document.createElement('button');
-  charPageBtn.type = 'button';
-  charPageBtn.className = 'chat-header-btn';
-  charPageBtn.textContent = '角色頁';
-  charPageBtn.title = '相處紀錄與角色設定';
-  charPageBtn.addEventListener('click', () => navigate(`/character/${character.id}`));
-  headerActions.appendChild(charPageBtn);
-
   const enabledMemCount = (state.memories || []).filter((m) => m.characterId === character.id && (m.status || 'active') === 'active' && m.enabled !== false).length;
-  const memoryBtn = document.createElement('button');
-  memoryBtn.type = 'button';
-  memoryBtn.className = 'chat-header-btn';
-  memoryBtn.textContent = `聲痕 ${enabledMemCount}`;
-  memoryBtn.title = '記憶抽屜';
+  const memoryBtn = iconButton('brain', `開啟聲痕（${enabledMemCount} 筆）`, { className: 'icon-btn chat-icon-btn', title: '聲痕' });
+  const badge = document.createElement('span');
+  badge.className = 'icon-badge';
+  badge.textContent = String(enabledMemCount);
+  memoryBtn.appendChild(badge);
   memoryBtn.addEventListener('click', () => openMemoryDrawer(state, character, conversation));
   headerActions.appendChild(memoryBtn);
 
-  const bookHtml = document.createElement('button');
-  bookHtml.type = 'button';
-  bookHtml.className = 'chat-header-btn';
-  bookHtml.textContent = '成書 HTML';
-  bookHtml.addEventListener('click', () => exportConversationBook('html'));
-  headerActions.appendChild(bookHtml);
-
-  const bookMd = document.createElement('button');
-  bookMd.type = 'button';
-  bookMd.className = 'chat-header-btn';
-  bookMd.textContent = 'Markdown';
-  bookMd.addEventListener('click', () => exportConversationBook('markdown'));
-  headerActions.appendChild(bookMd);
-
-  const personaBtn = document.createElement('button');
-  personaBtn.type = 'button';
-  personaBtn.className = 'chat-header-btn';
-  personaBtn.textContent = '此對話的我';
-  personaBtn.title = '為這個對話設定專屬的玩家人設（選填）';
-  if (conversation.playerPersona) personaBtn.classList.add('active');
-  personaBtn.addEventListener('click', () => openPersonaPanel(conversation));
-  headerActions.appendChild(personaBtn);
+  const moreBtn = iconButton('ellipsis', '開啟更多聊天操作', { className: 'icon-btn chat-icon-btn', title: '更多' });
+  moreBtn.addEventListener('click', () => openChatOverflowMenu(moreBtn, conversation));
+  headerActions.appendChild(moreBtn);
 
   header.appendChild(headerActions);
   container.appendChild(header);
@@ -183,10 +164,8 @@ export function renderChatView(container, state) {
   textarea.title = 'Enter 送出，Shift+Enter 換行';
   textarea.rows = 1;
 
-  const sendBtn = document.createElement('button');
+  const sendBtn = iconButton('send', '送出訊息', { className: 'icon-btn chat-send', title: '送出' });
   sendBtn.type = 'submit';
-  sendBtn.className = 'chat-send';
-  sendBtn.textContent = '送出';
 
   // 等待回覆期間停用輸入框與送出鈕。
   if (typingNow) {
@@ -194,10 +173,7 @@ export function renderChatView(container, state) {
     sendBtn.disabled = true;
   }
 
-  const stickerBtn = document.createElement('button');
-  stickerBtn.type = 'button';
-  stickerBtn.className = 'chat-send';
-  stickerBtn.textContent = '小劇場';
+  const stickerBtn = iconButton('smile', '選擇小劇場貼圖', { className: 'icon-btn chat-send', title: '小劇場' });
   stickerBtn.disabled = typingNow || !(state.stickers || []).length;
   stickerBtn.addEventListener('click', () => openStickerMenu(state.stickers || []));
 
@@ -205,10 +181,7 @@ export function renderChatView(container, state) {
   photoInput.type = 'file';
   photoInput.accept = 'image/*';
   photoInput.style.display = 'none';
-  const photoBtn = document.createElement('button');
-  photoBtn.type = 'button';
-  photoBtn.className = 'chat-send';
-  photoBtn.textContent = '照片';
+  const photoBtn = iconButton('image', '加入照片', { className: 'icon-btn chat-send', title: '照片' });
   photoBtn.disabled = typingNow;
   photoBtn.addEventListener('click', () => photoInput.click());
   photoInput.addEventListener('change', async () => {
@@ -244,6 +217,57 @@ export function renderChatView(container, state) {
   inputBar.appendChild(textarea);
   inputBar.appendChild(sendBtn);
   container.appendChild(inputBar);
+
+  function openChatOverflowMenu(anchor, conv) {
+    closeChatOverflowMenu();
+    const menu = document.createElement('div');
+    menu.className = 'chat-overflow-menu';
+    menu.setAttribute('role', 'menu');
+    menu.tabIndex = -1;
+    const rect = anchor.getBoundingClientRect();
+    menu.style.top = `${Math.min(window.innerHeight - 12, rect.bottom + 8)}px`;
+    menu.style.right = `${Math.max(12, window.innerWidth - rect.right)}px`;
+
+    const addItem = (label, onClick, active = false) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'chat-overflow-item' + (active ? ' active' : '');
+      btn.setAttribute('role', 'menuitem');
+      btn.textContent = label;
+      btn.addEventListener('click', () => {
+        closeChatOverflowMenu();
+        onClick();
+      });
+      menu.appendChild(btn);
+    };
+    addItem('成書（HTML）', () => exportConversationBook('html'));
+    addItem('成書（Markdown）', () => exportConversationBook('markdown'));
+    addItem('此對話的我', () => openPersonaPanel(conv), !!conv.playerPersona);
+
+    const closeOnPointer = (event) => {
+      if (!menu.contains(event.target) && event.target !== anchor) closeChatOverflowMenu();
+    };
+    const closeOnKey = (event) => {
+      if (event.key === 'Escape') closeChatOverflowMenu();
+    };
+    menu._cleanup = () => {
+      document.removeEventListener('pointerdown', closeOnPointer);
+      document.removeEventListener('keydown', closeOnKey);
+    };
+    document.body.appendChild(menu);
+    requestAnimationFrame(() => {
+      document.addEventListener('pointerdown', closeOnPointer);
+      document.addEventListener('keydown', closeOnKey);
+      menu.focus();
+    });
+  }
+
+  function closeChatOverflowMenu() {
+    const old = document.querySelector('.chat-overflow-menu');
+    if (!old) return;
+    if (typeof old._cleanup === 'function') old._cleanup();
+    old.remove();
+  }
 
   function openStickerMenu(stickers) {
     const overlay = document.createElement('div');
@@ -441,13 +465,18 @@ function openMemoryDrawer(state, character, conversation) {
   const addBtn = document.createElement('button');
   addBtn.type = 'button';
   addBtn.className = 'btn';
-  addBtn.textContent = '＋';
+  addBtn.className = 'icon-btn';
+  addBtn.setAttribute('aria-label', '手動新增聲痕');
   addBtn.title = '手動新增聲痕';
+  addBtn.appendChild(document.createTextNode('+'));
   addBtn.addEventListener('click', () => openMemoryEditor(character.id));
   const close = document.createElement('button');
   close.type = 'button';
   close.className = 'btn';
-  close.textContent = '關閉';
+  close.className = 'icon-btn';
+  close.setAttribute('aria-label', '關閉聲痕抽屜');
+  close.title = '關閉';
+  close.appendChild(document.createTextNode('×'));
   const closeMemoryDrawer = () => {
     window.removeEventListener('hashchange', closeMemoryDrawer);
     overlay.remove();
@@ -521,12 +550,16 @@ function memoryDrawerItem(m, characterId) {
   const edit = document.createElement('button');
   edit.type = 'button';
   edit.className = 'msg-tool-btn';
+  edit.setAttribute('aria-label', '編輯聲痕');
+  edit.title = '編輯聲痕';
   edit.textContent = '✎';
   edit.addEventListener('click', () => openMemoryEditor(characterId, m));
   const del = document.createElement('button');
   del.type = 'button';
   del.className = 'msg-tool-btn';
-  del.textContent = '🗑';
+  del.setAttribute('aria-label', '刪除聲痕');
+  del.title = '刪除聲痕';
+  del.textContent = '×';
   del.addEventListener('click', () => {
     if (window.confirm('確定要刪除這筆聲痕嗎？')) deleteMemory(m.id);
   });

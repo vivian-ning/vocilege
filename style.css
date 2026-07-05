@@ -1,7 +1,7 @@
-/* style.css — 拾聲 Vocilège 視覺系統（美化版）
+/* style.css — 拾聲 Vocilège 視覺系統（Liquid Glass 版）
  *
- * 概念：聲波。三種配色取自聲學的「噪音顏色」——藍噪 / 粉噪 / 褐噪，
- * 各有明暗兩版，共 6 個主題變體（data-theme="blue-light" 等）。
+ * 概念：聲波。四種配色取自聲學的「噪音顏色」——藍噪 / 粉噪 / 綠噪 / 紫噪，
+ * 各有明暗兩版，共 8 個主題變體（data-theme="blue-light" 等）。
  *
  * 設計原則（impeccable / ui-ux-pro-max）：
  * - 顏色一律走語意變數；元件不寫死色碼
@@ -12,155 +12,253 @@
  */
 
 /* =====================================================================
-   1. 主題（3 配色 × 明暗）
+   1. 主題（4 配色 × 明暗）
    ===================================================================== */
 
 /* —— 藍噪（預設）：清晨廣播的冷靜 —— */
 :root,
 :root[data-theme="blue-light"] {
-  --bg: #eef1f4;
-  --surface: #f9fafb;
-  --surface-2: #e3e9ee;
-  --chat-bg: #e6edf2;
-  --text: #1f2933;
-  --muted: #5b6b7a;
-  --border: #d3dbe3;
-  --hairline: #e2e7ec;
-  --primary: #2e6e8e;
+  --bg: #eef4f8;
+  --surface: #fbfdff;
+  --surface-2: #e1edf3;
+  --chat-bg: #e6f0f6;
+  --text: #172633;
+  --muted: #526879;
+  --border: #cbdbe5;
+  --hairline: #dbe7ee;
+  --primary: #2f6f8f;
   --on-primary: #ffffff;
-  --primary-soft: #dcE9f0;
-  --bubble-player: #c9dfe9;
-  --bubble-player-text: #16303d;
+  --primary-soft: #d8eaf3;
+  --bubble-player: #d4e7ef;
+  --bubble-player-text: #143142;
   --bubble-character: #ffffff;
-  --narration: #74828f;
+  --narration: #607383;
   --danger: #bb5145;
-  --ok: #3d8a58;
+  --ok: #357f52;
   --shadow-1: 0 1px 2px rgba(31, 41, 51, .06);
   --shadow-2: 0 4px 16px rgba(31, 41, 51, .08);
   --shadow-3: 0 16px 48px rgba(31, 41, 51, .18);
   --scrim: rgba(23, 32, 41, .45);
+  --glass-bg: color-mix(in srgb, var(--surface) 82%, transparent);
+  --glass-border: rgba(255, 255, 255, .7);
+  --hero-gradient:
+    radial-gradient(circle at 18% 18%, rgba(120, 191, 225, .36), transparent 34%),
+    radial-gradient(circle at 82% 20%, rgba(99, 102, 241, .16), transparent 28%),
+    linear-gradient(135deg, #f8fcff 0%, #d9ebf5 58%, #edf6fb 100%);
 }
 
 :root[data-theme="blue-dark"] {
-  --bg: #14181d;
-  --surface: #1c222a;
-  --surface-2: #252d37;
-  --chat-bg: #10151a;
-  --text: #e4e9ee;
-  --muted: #93a3b3;
-  --border: #2e3945;
-  --hairline: #262f3a;
-  --primary: #74b7d6;
-  --on-primary: #0d1b23;
-  --primary-soft: #22343f;
-  --bubble-player: #2c5a72;
-  --bubble-player-text: #e6f1f7;
-  --bubble-character: #232b35;
-  --narration: #8494a4;
+  --bg: #101923;
+  --surface: #172331;
+  --surface-2: #203244;
+  --chat-bg: #0d151e;
+  --text: #eef6fb;
+  --muted: #a8bdcc;
+  --border: #2b4054;
+  --hairline: #223547;
+  --primary: #78bfe1;
+  --on-primary: #09202f;
+  --primary-soft: #213d50;
+  --bubble-player: #294f66;
+  --bubble-player-text: #f0f9fd;
+  --bubble-character: #1b2a3a;
+  --narration: #9db0bf;
   --danger: #d4746a;
   --ok: #6cbf87;
   --shadow-1: 0 1px 2px rgba(0, 0, 0, .3);
   --shadow-2: 0 4px 16px rgba(0, 0, 0, .35);
   --shadow-3: 0 16px 48px rgba(0, 0, 0, .5);
   --scrim: rgba(0, 0, 0, .6);
+  --glass-bg: color-mix(in srgb, var(--surface) 80%, transparent);
+  --glass-border: rgba(205, 234, 250, .2);
+  --hero-gradient:
+    radial-gradient(circle at 24% 24%, rgba(120, 191, 225, .42), transparent 34%),
+    radial-gradient(circle at 80% 18%, rgba(95, 111, 255, .22), transparent 32%),
+    linear-gradient(140deg, #0d151e 0%, #142338 56%, #0f1b25 100%);
 }
 
 /* —— 粉噪：溫柔的傍晚 —— */
 :root[data-theme="pink-light"] {
-  --bg: #f3edef;
-  --surface: #fbf8f9;
-  --surface-2: #eadfe4;
-  --chat-bg: #eee4e8;
-  --text: #33282f;
-  --muted: #7d6a75;
-  --border: #ddccd4;
-  --hairline: #e8dce2;
-  --primary: #a4526e;
+  --bg: #f7eef3;
+  --surface: #fffbfd;
+  --surface-2: #f0dfe8;
+  --chat-bg: #f2e5ec;
+  --text: #31212b;
+  --muted: #765b6a;
+  --border: #dfc8d5;
+  --hairline: #ead9e2;
+  --primary: #a94f76;
   --on-primary: #ffffff;
-  --primary-soft: #f0dee6;
-  --bubble-player: #ecd2dc;
+  --primary-soft: #f2dce7;
+  --bubble-player: #f1d5e2;
   --bubble-player-text: #45222f;
   --bubble-character: #ffffff;
-  --narration: #8d7a85;
+  --narration: #7d6874;
   --danger: #b8503f;
   --ok: #4b8a5e;
   --shadow-1: 0 1px 2px rgba(51, 40, 47, .06);
   --shadow-2: 0 4px 16px rgba(51, 40, 47, .08);
   --shadow-3: 0 16px 48px rgba(51, 40, 47, .18);
   --scrim: rgba(40, 28, 35, .45);
+  --glass-bg: color-mix(in srgb, var(--surface) 82%, transparent);
+  --glass-border: rgba(255, 255, 255, .72);
+  --hero-gradient:
+    radial-gradient(circle at 22% 20%, rgba(224, 138, 173, .34), transparent 34%),
+    radial-gradient(circle at 82% 24%, rgba(250, 204, 210, .42), transparent 30%),
+    linear-gradient(135deg, #fff9fc 0%, #f2dae7 58%, #f8eef5 100%);
 }
 
 :root[data-theme="pink-dark"] {
-  --bg: #1b1519;
-  --surface: #241c21;
-  --surface-2: #2f242b;
-  --chat-bg: #171114;
-  --text: #ece2e7;
-  --muted: #a98f9c;
-  --border: #3c2f37;
-  --hairline: #32272e;
-  --primary: #d78ba4;
+  --bg: #21151d;
+  --surface: #2a1b25;
+  --surface-2: #382532;
+  --chat-bg: #1a1017;
+  --text: #f5eaf0;
+  --muted: #c1a2b1;
+  --border: #463443;
+  --hairline: #382a35;
+  --primary: #e08aad;
   --on-primary: #26141c;
-  --primary-soft: #3a2a33;
-  --bubble-player: #5c3a49;
+  --primary-soft: #463040;
+  --bubble-player: #63384e;
   --bubble-player-text: #f3e4ea;
   --bubble-character: #2b2127;
-  --narration: #9c8591;
+  --narration: #b498a7;
   --danger: #d97f6f;
   --ok: #7bbb90;
   --shadow-1: 0 1px 2px rgba(0, 0, 0, .3);
   --shadow-2: 0 4px 16px rgba(0, 0, 0, .35);
   --shadow-3: 0 16px 48px rgba(0, 0, 0, .5);
   --scrim: rgba(0, 0, 0, .6);
+  --glass-bg: color-mix(in srgb, var(--surface) 80%, transparent);
+  --glass-border: rgba(255, 210, 230, .2);
+  --hero-gradient:
+    radial-gradient(circle at 24% 20%, rgba(224, 138, 173, .4), transparent 34%),
+    radial-gradient(circle at 82% 22%, rgba(168, 85, 247, .18), transparent 30%),
+    linear-gradient(140deg, #1a1017 0%, #2b1725 58%, #1f1620 100%);
 }
 
-/* —— 褐噪：爐邊的低頻（舊 cream 使用者的家）—— */
-:root[data-theme="brown-light"] {
-  --bg: #ece4d6;
-  --surface: #f7f2e9;
-  --surface-2: #e2d7c3;
-  --chat-bg: #e6dccb;
-  --text: #352c1f;
-  --muted: #75664f;
-  --border: #d5c8b0;
-  --hairline: #e0d5c1;
-  --primary: #8f6234;
+/* —— 綠噪：靜謐的森林 —— */
+:root[data-theme="green-light"] {
+  --bg: #eef6f0;
+  --surface: #fbfefc;
+  --surface-2: #dfecdf;
+  --chat-bg: #e5f1e8;
+  --text: #18291f;
+  --muted: #536e5d;
+  --border: #c9dccf;
+  --hairline: #d9e8dd;
+  --primary: #387a57;
   --on-primary: #ffffff;
-  --primary-soft: #ecdfc9;
-  --bubble-player: #e0cba4;
-  --bubble-player-text: #3c2c14;
-  --bubble-character: #fdfaf3;
-  --narration: #85775f;
-  --danger: #b25038;
-  --ok: #5d8a4a;
-  --shadow-1: 0 1px 2px rgba(53, 44, 31, .07);
-  --shadow-2: 0 4px 16px rgba(53, 44, 31, .09);
-  --shadow-3: 0 16px 48px rgba(53, 44, 31, .2);
-  --scrim: rgba(40, 32, 21, .45);
+  --primary-soft: #d9ecdf;
+  --bubble-player: #d5eadb;
+  --bubble-player-text: #173823;
+  --bubble-character: #ffffff;
+  --narration: #617765;
+  --danger: #b8503f;
+  --ok: #2f7f50;
+  --shadow-1: 0 1px 2px rgba(24, 41, 31, .06);
+  --shadow-2: 0 4px 16px rgba(24, 41, 31, .08);
+  --shadow-3: 0 16px 48px rgba(24, 41, 31, .18);
+  --scrim: rgba(18, 31, 23, .45);
+  --glass-bg: color-mix(in srgb, var(--surface) 82%, transparent);
+  --glass-border: rgba(255, 255, 255, .7);
+  --hero-gradient:
+    radial-gradient(circle at 20% 18%, rgba(122, 201, 156, .35), transparent 34%),
+    radial-gradient(circle at 78% 22%, rgba(72, 187, 120, .18), transparent 30%),
+    linear-gradient(135deg, #f8fdf9 0%, #d8ecdf 58%, #eef7f1 100%);
 }
 
-:root[data-theme="brown-dark"] {
-  --bg: #191512;
-  --surface: #221c16;
-  --surface-2: #2c251c;
-  --chat-bg: #151110;
-  --text: #eae3d9;
-  --muted: #a6957c;
-  --border: #3a3126;
-  --hairline: #2f2820;
-  --primary: #ce9c5f;
-  --on-primary: #241a0d;
-  --primary-soft: #382e20;
-  --bubble-player: #4e3d28;
-  --bubble-player-text: #f1e8da;
-  --bubble-character: #292219;
-  --narration: #9b8b73;
-  --danger: #d47f5e;
-  --ok: #8cba74;
+:root[data-theme="green-dark"] {
+  --bg: #101d18;
+  --surface: #17261f;
+  --surface-2: #21372c;
+  --chat-bg: #0d1713;
+  --text: #edf8f1;
+  --muted: #a8c4b2;
+  --border: #2e4939;
+  --hairline: #243a2e;
+  --primary: #7ac99c;
+  --on-primary: #0b2416;
+  --primary-soft: #244635;
+  --bubble-player: #2c5d45;
+  --bubble-player-text: #effaf3;
+  --bubble-character: #1c2d24;
+  --narration: #9fb8a8;
+  --danger: #d97f6f;
+  --ok: #7ac99c;
   --shadow-1: 0 1px 2px rgba(0, 0, 0, .3);
   --shadow-2: 0 4px 16px rgba(0, 0, 0, .35);
   --shadow-3: 0 16px 48px rgba(0, 0, 0, .5);
   --scrim: rgba(0, 0, 0, .6);
+  --glass-bg: color-mix(in srgb, var(--surface) 80%, transparent);
+  --glass-border: rgba(190, 245, 210, .2);
+  --hero-gradient:
+    radial-gradient(circle at 24% 22%, rgba(122, 201, 156, .42), transparent 34%),
+    radial-gradient(circle at 82% 18%, rgba(45, 212, 191, .18), transparent 30%),
+    linear-gradient(140deg, #0d1713 0%, #173222 58%, #101d18 100%);
+}
+
+/* —— 紫噪：深夜的紫煙 —— */
+:root[data-theme="violet-light"] {
+  --bg: #f3effb;
+  --surface: #fdfbff;
+  --surface-2: #e7def5;
+  --chat-bg: #ece5f7;
+  --text: #251f35;
+  --muted: #65577d;
+  --border: #d8c9ec;
+  --hairline: #e5dcf2;
+  --primary: #7552b8;
+  --on-primary: #ffffff;
+  --primary-soft: #e5dcf6;
+  --bubble-player: #e1d6f5;
+  --bubble-player-text: #2d1f4b;
+  --bubble-character: #ffffff;
+  --narration: #6f6381;
+  --danger: #b8503f;
+  --ok: #3d8a58;
+  --shadow-1: 0 1px 2px rgba(37, 31, 53, .06);
+  --shadow-2: 0 4px 16px rgba(37, 31, 53, .08);
+  --shadow-3: 0 16px 48px rgba(37, 31, 53, .18);
+  --scrim: rgba(31, 24, 45, .45);
+  --glass-bg: color-mix(in srgb, var(--surface) 82%, transparent);
+  --glass-border: rgba(255, 255, 255, .72);
+  --hero-gradient:
+    radial-gradient(circle at 18% 20%, rgba(181, 156, 255, .36), transparent 34%),
+    radial-gradient(circle at 78% 18%, rgba(236, 72, 153, .18), transparent 28%),
+    linear-gradient(135deg, #fffaff 0%, #e1d6f5 58%, #f4effb 100%);
+}
+
+:root[data-theme="violet-dark"] {
+  --bg: #181425;
+  --surface: #211b31;
+  --surface-2: #2e2444;
+  --chat-bg: #130f1e;
+  --text: #f3edf9;
+  --muted: #b9a8d5;
+  --border: #3d3158;
+  --hairline: #332846;
+  --primary: #b59cff;
+  --on-primary: #1c1331;
+  --primary-soft: #392d56;
+  --bubble-player: #433060;
+  --bubble-player-text: #f6f0ff;
+  --bubble-character: #251d36;
+  --narration: #aa9abc;
+  --danger: #d97f6f;
+  --ok: #7bbb90;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, .35);
+  --shadow-3: 0 16px 48px rgba(0, 0, 0, .5);
+  --scrim: rgba(0, 0, 0, .62);
+  --glass-bg: color-mix(in srgb, var(--surface) 80%, transparent);
+  --glass-border: rgba(221, 210, 255, .22);
+  --hero-gradient:
+    radial-gradient(circle at 26% 20%, rgba(181, 156, 255, .45), transparent 35%),
+    radial-gradient(circle at 78% 24%, rgba(236, 72, 153, .22), transparent 30%),
+    radial-gradient(circle at 52% 88%, rgba(99, 102, 241, .18), transparent 36%),
+    linear-gradient(140deg, #130f1e 0%, #251739 54%, #181425 100%);
 }
 
 /* 舊變數別名（既有元件引用過）＋通用尺寸 token */
@@ -405,8 +503,25 @@ button { touch-action: manipulation; }
   gap: 10px;
   padding: 12px 20px;
   border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(18px);
 }
+.chat-header-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  border-radius: var(--r-m);
+  padding: 4px 8px 4px 4px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+}
+.chat-header-profile:hover { background: var(--primary-soft); border-color: var(--hairline); }
 .chat-header-avatar {
   width: 36px; height: 36px; flex: 0 0 36px;
   border-radius: 50%;
@@ -416,21 +531,66 @@ button { touch-action: manipulation; }
 .chat-header-titlewrap { display: flex; flex-direction: column; min-width: 0; }
 .chat-header-title { font-weight: 700; font-size: 15px; }
 .chat-header-mock { font-size: 11px; color: var(--muted); margin-top: 1px; }
-.chat-header-actions { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-.chat-header-btn {
+.chat-header-actions { margin-left: auto; display: flex; gap: 6px; justify-content: flex-end; }
+.icon-btn {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 7px 10px;
-  border-radius: 999px;
+  border-radius: 50%;
   cursor: pointer;
-  transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  font-family: inherit;
+  position: relative;
+  transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
 }
-.chat-header-btn:hover { background: var(--surface-2); color: var(--text); }
-.chat-header-btn.active { color: var(--primary); background: var(--primary-soft); }
+.icon-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+.icon-btn:active:not(:disabled) { transform: scale(.96); }
+.icon-btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+.chat-icon-btn { border-color: var(--hairline); background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.icon-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: 10px;
+  line-height: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.chat-overflow-menu {
+  position: fixed;
+  z-index: var(--z-modal);
+  min-width: 190px;
+  padding: 6px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-m);
+  box-shadow: var(--shadow-3);
+  backdrop-filter: blur(22px) saturate(130%);
+}
+.chat-overflow-item {
+  width: 100%;
+  min-height: 40px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  border-radius: var(--r-s);
+  padding: 8px 10px;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+}
+.chat-overflow-item:hover, .chat-overflow-item.active { background: var(--primary-soft); color: var(--primary); }
 
 /* 訊息流 */
 .chat-messages {
@@ -546,11 +706,14 @@ button { touch-action: manipulation; }
 .msg-tools:focus-within { opacity: .95; }
 .msg-group:has(.from-player) .msg-tools { justify-content: flex-end; margin-left: 0; margin-right: 4px; }
 .msg-tool-btn {
-  border: none;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
-  border-radius: 999px;
-  padding: 4px 9px;
+  border-radius: 50%;
+  padding: 0;
   font-size: 12px;
   font-family: inherit;
   cursor: pointer;
@@ -560,6 +723,49 @@ button { touch-action: manipulation; }
 .msg-tool-btn:disabled { opacity: .4; cursor: default; }
 .msg-tool-btn.active { color: var(--primary); font-weight: 700; }
 .msg-version-tag { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+.thinking-card {
+  align-self: flex-start;
+  width: min(560px, calc(100% - 44px));
+  margin-left: 44px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  border-radius: var(--r-m);
+  box-shadow: var(--shadow-1);
+  backdrop-filter: blur(18px) saturate(125%);
+  overflow: hidden;
+}
+.thinking-toggle {
+  width: 100%;
+  min-height: 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 9px 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.thinking-label {
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.thinking-action { font-size: 12px; }
+.thinking-body {
+  display: none;
+  padding: 0 12px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+  font-style: italic;
+  white-space: pre-wrap;
+}
+.thinking-card.expanded .thinking-body { display: block; }
 
 /* 錯誤條 */
 .error-bar {
@@ -612,7 +818,7 @@ button { touch-action: manipulation; }
 }
 .chat-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .chat-input:disabled, .chat-send:disabled { opacity: .55; cursor: not-allowed; }
-.chat-send { border-radius: 999px; min-height: 42px; }
+.chat-send { flex: 0 0 44px; background: color-mix(in srgb, var(--surface) 72%, transparent); border-color: var(--hairline); }
 
 /* =====================================================================
    6. 通用元件：按鈕、表單、分頁、Modal
@@ -708,7 +914,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
   animation: fade-in var(--t-fast) var(--ease);
 }
 .modal {
-  background: var(--surface);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-l);
   padding: 22px;
   width: 100%;
@@ -716,6 +923,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
   max-height: 90dvh;
   overflow-y: auto;
   box-shadow: var(--shadow-3);
+  backdrop-filter: blur(22px) saturate(130%);
   animation: rise-in var(--t-med) var(--ease);
 }
 .modal-title { margin: 0 0 14px; font-size: 17px; }
@@ -743,7 +951,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
    7. 聲庭（首頁）
    ===================================================================== */
 
-.page-title { margin: 0 0 14px; font-size: 21px; font-weight: 700; letter-spacing: .01em; }
+.page-title { margin: 0 0 14px; font-size: 21px; font-weight: 700; letter-spacing: 0; }
 .section-title {
   display: flex;
   align-items: center;
@@ -761,13 +969,45 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
   background: var(--primary);
 }
 
-.home-page { max-width: 900px; margin: 0 auto; padding: 26px 24px 60px; }
+.home-page { max-width: 960px; margin: 0 auto; padding: 24px 24px 60px; }
+.home-hero {
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 42px 24px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-l);
+  background: var(--hero-gradient);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+}
+.home-hero-label {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+.home-hero-title {
+  margin: 0;
+  color: var(--text);
+  font-family: Georgia, "Times New Roman", "Noto Serif TC", serif;
+  font-size: 56px;
+  line-height: 1.05;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-wrap: balance;
+}
+.home-hero-sub { color: var(--muted); font-size: 14px; }
 
 .backup-reminder {
   display: flex;
   align-items: center;
   gap: 14px;
-  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+  background: color-mix(in srgb, var(--danger) 8%, var(--glass-bg));
   border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
   color: var(--text);
   border-radius: var(--r-m);
@@ -780,14 +1020,15 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 .greeting-card,
 .old-replay-card {
   width: 100%;
-  border: 1px solid var(--border);
-  background: var(--surface);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
   border-radius: var(--r-l);
   padding: 14px 16px;
   display: flex;
   gap: 12px;
   align-items: center;
   box-shadow: var(--shadow-1);
+  backdrop-filter: blur(18px) saturate(125%);
 }
 .greeting-card { margin-bottom: 16px; }
 .greeting-avatar { width: 44px; height: 44px; flex: 0 0 44px; border-radius: 50%; font-size: 24px; }
@@ -806,8 +1047,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 .anniv-reminder {
   text-align: left;
   width: 100%;
-  background: var(--primary-soft);
-  border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border));
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
   color: var(--text);
   border-radius: var(--r-m);
   padding: 11px 14px;
@@ -824,11 +1065,12 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 .char-card {
   display: flex;
   flex-direction: column;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-l);
   overflow: hidden;
   box-shadow: var(--shadow-1);
+  backdrop-filter: blur(18px) saturate(125%);
   transition: box-shadow var(--t-med) var(--ease), transform var(--t-med) var(--ease);
 }
 .char-card:hover { box-shadow: var(--shadow-2); transform: translateY(-1px); }
@@ -875,15 +1117,30 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 /* 聲量 */
 .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .stat-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-m);
   padding: 16px 14px;
   text-align: center;
+  backdrop-filter: blur(18px) saturate(125%);
 }
 .stat-label { font-size: 12px; color: var(--muted); }
 .stat-value { font-size: 26px; font-weight: 700; margin: 4px 0; font-variant-numeric: tabular-nums; }
 .stat-detail { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.stat-bar {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface-2));
+  margin: 8px 0 6px;
+}
+.stat-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 55%, var(--bubble-player)));
+}
+.stat-bar .stat-bar-soft { opacity: .35; }
 .stats-subtitle { font-size: 13px; font-weight: 700; margin: 16px 0 8px; }
 .stats-per-character { display: flex; flex-direction: column; gap: 4px; }
 .stats-per-row {
@@ -1112,7 +1369,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
   transition: border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
 }
 .theme-mode-btn.active { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
-.theme-swatches { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.theme-swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .theme-swatch {
   display: flex; flex-direction: column; gap: 8px; align-items: center;
   padding: 14px 10px;
@@ -1268,12 +1525,15 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
   .stat-card:first-child { grid-column: span 2; }
   .mem-form-row { grid-template-columns: 1fr; }
   .theme-swatches { grid-template-columns: 1fr; }
+  .home-hero { min-height: 210px; padding: 34px 18px; }
+  .home-hero-title { font-size: 40px; }
   .top-nav { padding: 0 10px; gap: 8px; overflow-x: auto; }
   .nav-link { padding: 9px 11px; font-size: 13px; }
   .home-page, .settings-page, .character-page { padding-left: 16px; padding-right: 16px; }
   .bubble { max-width: 82%; }
   .bubble-name { margin-left: 40px; }
   .msg-tools { margin-left: 40px; opacity: .9; } /* 觸控裝置沒有 hover：常駐微透明 */
+  .thinking-card { width: calc(100% - 40px); margin-left: 40px; }
   .feed-content, .feed-actions, .feed-comments, .feed-comment-form { margin-left: 0; }
   .feed-comments { padding-left: 10px; }
 }

@@ -178,6 +178,19 @@ function activeUsage(message) {
   return message.versions[idx] && message.versions[idx].usage ? message.versions[idx].usage : null;
 }
 
+function activeThinking(message) {
+  if (!message || !Array.isArray(message.versions) || message.versions.length === 0) {
+    return message && typeof message.thinking === 'string' ? message.thinking : '';
+  }
+  const idx = Math.min(
+    message.versions.length - 1,
+    Math.max(0, Number(message.activeVersion) || 0)
+  );
+  return message.versions[idx] && typeof message.versions[idx].thinking === 'string'
+    ? message.versions[idx].thinking
+    : '';
+}
+
 function normalizeMessageRecord(message) {
   if (!message || typeof message !== 'object') return message;
   const parts = Array.isArray(message.parts) ? message.parts : [];
@@ -193,15 +206,20 @@ function normalizeMessageRecord(message) {
       ? message.versions[activeVersion].parts
       : parts;
     const usage = message.versions[activeVersion].usage || message.usage;
-    return { ...message, activeVersion, parts: nextParts, usage };
+    const thinking = typeof message.versions[activeVersion].thinking === 'string'
+      ? message.versions[activeVersion].thinking
+      : (typeof message.thinking === 'string' ? message.thinking : '');
+    return { ...message, activeVersion, parts: nextParts, usage, thinking };
   }
   return {
     ...message,
     parts,
+    thinking: typeof message.thinking === 'string' ? message.thinking : '',
     activeVersion: 0,
     versions: [{
       parts,
       usage: message.usage || null,
+      thinking: typeof message.thinking === 'string' ? message.thinking : '',
       createdAt: message.createdAt || now()
     }]
   };
@@ -480,6 +498,7 @@ async function runGeneration(conversation, character, userText) {
       : [{ type: 'message', content: '……' }];
     // 只有真 API 回覆會帶 usage；mock 不帶（保持 undefined）。
     const usage = result && result.usage ? result.usage : null;
+    const thinking = result && typeof result.thinking === 'string' ? result.thinking : '';
 
     // 5) 新增 character message
     const replyMsg = makeMessage({
@@ -487,7 +506,8 @@ async function runGeneration(conversation, character, userText) {
       senderType: 'character',
       senderId: character.id,
       parts,
-      usage
+      usage,
+      thinking
     });
     await addMessage(replyMsg);
     messages.push(replyMsg);
@@ -1287,6 +1307,7 @@ export async function switchMessageVersion(messageId, dir) {
   msg.activeVersion = next;
   msg.parts = activeParts(msg);
   msg.usage = activeUsage(msg);
+  msg.thinking = activeThinking(msg);
   await updateMessage(msg);
   invalidateStats();
   notify();
@@ -1300,7 +1321,7 @@ export async function editMessageParts(messageId, text) {
   if (msg.senderType === 'character') {
     msg.versions = Array.isArray(msg.versions) && msg.versions.length
       ? msg.versions
-      : [{ parts: msg.parts, usage: msg.usage || null, createdAt: msg.createdAt || now() }];
+      : [{ parts: msg.parts, usage: msg.usage || null, thinking: msg.thinking || '', createdAt: msg.createdAt || now() }];
     const idx = Math.min(msg.versions.length - 1, Math.max(0, Number(msg.activeVersion) || 0));
     msg.versions[idx] = { ...msg.versions[idx], parts: msg.parts, editedAt: msg.editedAt };
   }
@@ -1357,12 +1378,14 @@ export async function regenerateMessage(messageId) {
     });
     const parts = Array.isArray(result) && result.length ? result : [{ type: 'message', content: '' }];
     const usage = result && result.usage ? result.usage : null;
+    const thinking = result && typeof result.thinking === 'string' ? result.thinking : '';
     msg.versions = Array.isArray(msg.versions) && msg.versions.length
       ? msg.versions
-      : [{ parts: msg.parts || [], usage: msg.usage || null, createdAt: msg.createdAt || now() }];
-    msg.versions.push({ parts, usage, createdAt: now() });
+      : [{ parts: msg.parts || [], usage: msg.usage || null, thinking: msg.thinking || '', createdAt: msg.createdAt || now() }];
+    msg.versions.push({ parts, usage, thinking, createdAt: now() });
     msg.activeVersion = msg.versions.length - 1;
     msg.parts = parts;
+    msg.thinking = thinking;
     if (usage) msg.usage = usage;
     await updateMessage(msg);
     invalidateStats();
@@ -1598,7 +1621,7 @@ function isDuplicateMemory(content, list) {
 //
 // role 對應未來 AI API 的 message role；senderType + senderId 用於區分「群聊中多個
 // 角色都是 assistant」的情境（未來群聊時，靠 senderId 分辨是哪個角色）。
-function makeMessage({ conversationId, senderType, senderId, parts, usage }) {
+function makeMessage({ conversationId, senderType, senderId, parts, usage, thinking }) {
   const createdAt = now();
   let role;
   if (senderType === 'player') role = 'user';
@@ -1627,10 +1650,12 @@ function makeMessage({ conversationId, senderType, senderId, parts, usage }) {
     if (usage.cacheWrite != null) msg.usage.cacheWrite = Number(usage.cacheWrite) || 0;
   }
   if (senderType === 'character') {
+    msg.thinking = typeof thinking === 'string' ? thinking : '';
     msg.activeVersion = 0;
     msg.versions = [{
       parts: msg.parts,
       usage: msg.usage || null,
+      thinking: msg.thinking,
       createdAt
     }];
   }

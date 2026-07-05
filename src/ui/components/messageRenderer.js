@@ -23,6 +23,7 @@ import {
   switchMessageVersion
 } from '../../state/store.js';
 import { getObjectURL } from '../../services/assetService.js';
+import { iconButton } from '../icons.js';
 
 export function renderMessage(message, context) {
   const wrap = document.createElement('div');
@@ -30,6 +31,9 @@ export function renderMessage(message, context) {
   wrap.dataset.messageId = message.id;
 
   const parts = Array.isArray(message.parts) ? message.parts : [];
+  if (message.senderType === 'character' && message.thinking) {
+    wrap.appendChild(renderThinkingBlock(message.thinking));
+  }
   for (const part of parts) {
     const el = renderMessagePart(part, message, context);
     if (el) wrap.appendChild(el);
@@ -58,26 +62,25 @@ function renderMessageTools(message, context) {
   tools.className = 'msg-tools';
 
   const saved = (context.keepsakes || []).some((k) => k.messageId === message.id);
-  const keepsake = toolBtn(saved ? '♥' : '♡');
-  keepsake.title = saved ? '取消拾貝' : '拾貝';
+  const keepsake = toolBtn('heart', saved ? '取消拾貝' : '拾貝');
   if (saved) keepsake.classList.add('active');
   keepsake.addEventListener('click', () => toggleKeepsakeFromMessage(message.id));
   tools.appendChild(keepsake);
 
   const isLastCharacter = context && context.lastCharacterMessageId === message.id;
   if (message.senderType === 'character' && isLastCharacter) {
-    const regen = toolBtn('再說一次');
+    const regen = toolBtn('refresh', '再說一次');
     regen.addEventListener('click', () => regenerateMessage(message.id));
     tools.appendChild(regen);
 
-    const edit = toolBtn('修飾');
+    const edit = toolBtn('edit', '修飾');
     edit.addEventListener('click', () => openEditModal(message));
     tools.appendChild(edit);
   }
 
   const versions = Array.isArray(message.versions) ? message.versions.length : 0;
   if (versions > 1) {
-    const prev = toolBtn('上一版');
+    const prev = toolBtn('left', '上一版');
     prev.disabled = (Number(message.activeVersion) || 0) <= 0;
     prev.addEventListener('click', () => switchMessageVersion(message.id, -1));
     tools.appendChild(prev);
@@ -87,7 +90,7 @@ function renderMessageTools(message, context) {
     tag.textContent = `${(Number(message.activeVersion) || 0) + 1}/${versions}`;
     tools.appendChild(tag);
 
-    const next = toolBtn('下一版');
+    const next = toolBtn('right', '下一版');
     next.disabled = (Number(message.activeVersion) || 0) >= versions - 1;
     next.addEventListener('click', () => switchMessageVersion(message.id, 1));
     tools.appendChild(next);
@@ -145,12 +148,43 @@ function openEditModal(message) {
   ta.focus();
 }
 
-function toolBtn(text) {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'msg-tool-btn';
-  btn.textContent = text;
-  return btn;
+function toolBtn(icon, label) {
+  return iconButton(icon, label || icon, { className: 'msg-tool-btn icon-btn msg-icon-btn', size: 17, title: label || icon });
+}
+
+function renderThinkingBlock(text) {
+  const card = document.createElement('div');
+  card.className = 'thinking-card collapsed';
+
+  const head = document.createElement('button');
+  head.type = 'button';
+  head.className = 'thinking-toggle';
+  head.setAttribute('aria-expanded', 'false');
+
+  const label = document.createElement('span');
+  label.className = 'thinking-label';
+  label.textContent = 'THINKING';
+  head.appendChild(label);
+
+  const action = document.createElement('span');
+  action.className = 'thinking-action';
+  action.textContent = '展開思考';
+  head.appendChild(action);
+  card.appendChild(head);
+
+  const body = document.createElement('div');
+  body.className = 'thinking-body';
+  body.textContent = text;
+  card.appendChild(body);
+
+  head.addEventListener('click', () => {
+    const open = card.classList.toggle('expanded');
+    card.classList.toggle('collapsed', !open);
+    head.setAttribute('aria-expanded', open ? 'true' : 'false');
+    action.textContent = open ? '收起' : '展開思考';
+  });
+
+  return card;
 }
 
 export function renderMessagePart(part, message, context) {

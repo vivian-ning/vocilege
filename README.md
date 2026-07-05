@@ -2,6 +2,8 @@
 
 個人用、本機優先的多角色 AI 互動工具。原生 HTML / CSS / JavaScript（ES Modules）+ IndexedDB，**無後端、無框架、無打包工具、無 CDN、無第三方套件**。
 
+V5.6 起外觀提供藍噪、粉噪、綠噪、紫噪四組配色與明暗模式。新用戶預設為藍噪亮版；若想要更接近深夜陪伴感，可在「設定 → 外觀」切換為紫噪暗版。
+
 **V1 相較 V0 的變化**：把 mock 換成可接真 AI API（Anthropic、OpenAI 相容服務、Google Gemini），並記錄 token 用量。未設定 API 時仍會 fallback 到內建 mock，因此不填金鑰也能完整體驗介面。
 
 ---
@@ -255,8 +257,8 @@ schema 已預留：
 
 ## schema / 版本
 
-- 目前 `schemaVersion = 2`。
-- 匯入時：v1 舊備份會先跑 1→2 migration（補齊 `apiSettings.temperature` / `maxTokens`）再還原；大於 2 的備份會被拒絕。
+- 目前 `schemaVersion = 8`。
+- 匯入時：v1–v7 舊備份會依序 migration 後還原；舊 `theme=brown` 會轉為 `violet`，大於 8 的備份會被拒絕。
 - Message 的 `usage` 為選填欄位，只有真 API 回覆的 assistant message 會寫入，結構固定為 `{ promptTokens, completionTokens, model }`（未來 token 統計儀表板的資料來源）。
 
 ---

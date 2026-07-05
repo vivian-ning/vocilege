@@ -10,7 +10,7 @@
 
 import { createExampleGlobalPrompt } from './schema.js';
 
-export const CURRENT_SCHEMA_VERSION = 7;
+export const CURRENT_SCHEMA_VERSION = 8;
 
 // 逐版升級函式表。key = 來源版本，value = 把該版 state 升到「下一版」的函式。
 const migrators = {
@@ -161,6 +161,27 @@ const migrators = {
     if (settings.themeMode !== 'dark' && settings.themeMode !== 'light') settings.themeMode = 'light';
     s.settings = settings;
     s.schemaVersion = 7;
+    return s;
+  },
+
+  // v7 -> v8（V5.6）：四配色、移除 brown，新增思考串設定。
+  7: (s) => {
+    const settings = (s.settings && typeof s.settings === 'object') ? { ...s.settings } : {};
+    if (settings.theme === 'brown') {
+      settings.theme = 'violet';
+    } else if (!['blue', 'pink', 'green', 'violet'].includes(settings.theme)) {
+      settings.theme = 'blue';
+    }
+    if (settings.themeMode !== 'dark' && settings.themeMode !== 'light') settings.themeMode = 'light';
+    s.settings = settings;
+
+    const api = (s.apiSettings && typeof s.apiSettings === 'object') ? { ...s.apiSettings } : {};
+    if (typeof api.showThinking !== 'boolean') api.showThinking = false;
+    if (typeof api.thinkingBudget !== 'number') api.thinkingBudget = 1024;
+    api.thinkingBudget = Math.max(1024, Math.floor(api.thinkingBudget));
+    s.apiSettings = api;
+
+    s.schemaVersion = 8;
     return s;
   },
 };

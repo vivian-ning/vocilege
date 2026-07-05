@@ -83,7 +83,7 @@ export function createDefaultState(config) {
     // V2 新增：上次成功匯出備份的時間戳（0 = 從未備份），供首頁備份提醒使用。
     lastBackupAt: 0,
     settings: {
-      // V5.5 美化版：theme = 配色（blue 藍噪 / pink 粉噪 / brown 褐噪），
+      // V5.6：theme = 配色（blue 藍噪 / pink 粉噪 / green 綠噪 / violet 紫噪），
       // themeMode = 明暗（light / dark）。舊主題值由 migration 6→7 轉換。
       theme: defaultSettings.theme || 'blue',
       themeMode: defaultSettings.themeMode === 'dark' ? 'dark' : 'light',
@@ -121,7 +121,9 @@ export function createDefaultState(config) {
       // V1 新增：temperature（0–2，預設 1）、maxTokens（預設 1024）。
       temperature: 1,
       maxTokens: 1024,
-      visionEnabled: false
+      visionEnabled: false,
+      showThinking: false,
+      thinkingBudget: 1024
     }
   };
 }
@@ -193,6 +195,16 @@ export function normalizeState(state) {
   merged.settings.feedAutoPost = !!merged.settings.feedAutoPost;
   merged.settings.dreamEnabled = merged.settings.dreamEnabled !== false;
   merged.apiSettings.visionEnabled = merged.apiSettings.visionEnabled === true;
+  merged.apiSettings.showThinking = merged.apiSettings.showThinking === true;
+  if (typeof merged.apiSettings.thinkingBudget !== 'number' ||
+      !Number.isFinite(merged.apiSettings.thinkingBudget)) {
+    merged.apiSettings.thinkingBudget = 1024;
+  }
+  merged.apiSettings.thinkingBudget = Math.max(1024, Math.floor(merged.apiSettings.thinkingBudget));
+
+  if (merged.settings.theme === 'brown') merged.settings.theme = 'violet';
+  if (!['blue', 'pink', 'green', 'violet'].includes(merged.settings.theme)) merged.settings.theme = 'blue';
+  merged.settings.themeMode = merged.settings.themeMode === 'dark' ? 'dark' : 'light';
 
   if (typeof merged.lastOpenedAt !== 'number') merged.lastOpenedAt = 0;
   if (typeof merged.lastGreetingAt !== 'number') merged.lastGreetingAt = 0;

@@ -25,11 +25,12 @@ const TABS = [
   { key: 'data', label: '資料' }
 ];
 
-// 三種配色取自聲學的「噪音顏色」；swatch 圓點 = 該主題的 bg / primary / bubble。
+// 四種配色取自聲學的「噪音顏色」；swatch 圓點 = 該主題的 bg / primary / bubble。
 const THEME_PALETTES = [
-  { key: 'blue', label: '藍噪', hint: '清晨廣播的冷靜', dots: { light: ['#eef1f4', '#2e6e8e', '#c9dfe9'], dark: ['#14181d', '#74b7d6', '#2c5a72'] } },
-  { key: 'pink', label: '粉噪', hint: '溫柔的傍晚', dots: { light: ['#f3edef', '#a4526e', '#ecd2dc'], dark: ['#1b1519', '#d78ba4', '#5c3a49'] } },
-  { key: 'brown', label: '褐噪', hint: '爐邊的低頻', dots: { light: ['#ece4d6', '#8f6234', '#e0cba4'], dark: ['#191512', '#ce9c5f', '#4e3d28'] } }
+  { key: 'blue', label: '藍噪', hint: '清晨廣播的冷靜', dots: { light: ['#eef4f8', '#2f6f8f', '#d4e7ef'], dark: ['#101923', '#78bfe1', '#294f66'] } },
+  { key: 'pink', label: '粉噪', hint: '溫柔的傍晚', dots: { light: ['#f7eef3', '#a94f76', '#f1d5e2'], dark: ['#21151d', '#e08aad', '#63384e'] } },
+  { key: 'green', label: '綠噪', hint: '靜謐的森林', dots: { light: ['#eef6f0', '#387a57', '#d5eadb'], dark: ['#101d18', '#7ac99c', '#2c5d45'] } },
+  { key: 'violet', label: '紫噪', hint: '深夜的紫煙', dots: { light: ['#f3effb', '#7552b8', '#e1d6f5'], dark: ['#181425', '#b59cff', '#433060'] } }
 ];
 
 let activeTab = 'api';
@@ -86,7 +87,7 @@ export function renderSettingsPage(container, state) {
   container.appendChild(page);
 }
 
-// ---- 外觀：三配色 × 明暗 ----
+// ---- 外觀：四配色 × 明暗 ----
 function renderAppearance(container, state) {
   container.textContent = '';
 
@@ -95,7 +96,7 @@ function renderAppearance(container, state) {
 
   const desc = document.createElement('p');
   desc.className = 'gp-desc';
-  desc.textContent = '拾聲的三種配色取自聲學的「噪音顏色」——藍噪、粉噪、褐噪，各有明暗兩版。';
+  desc.textContent = '拾聲的四種配色取自聲學的「噪音顏色」——藍噪、粉噪、綠噪、紫噪，各有明暗兩版。新用戶預設藍噪亮版，也可切到紫噪暗版。';
   wrap.appendChild(desc);
 
   const currentTheme = state.settings.theme || 'blue';

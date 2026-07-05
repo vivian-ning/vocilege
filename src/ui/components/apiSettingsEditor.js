@@ -105,6 +105,23 @@ export function renderApiSettingsEditor(container, state) {
   const visionField = wrapField('visionEnabled（開啟後照片會隨請求送出，token / 圖片成本會增加）', visionInput);
   form.appendChild(visionField);
 
+  const thinkingInput = checkboxInput(api.showThinking === true);
+  const thinkingField = wrapField('顯示思考過程（需模型支援；會增加 token 消耗，思考內容計入聲量）', thinkingInput);
+  form.appendChild(thinkingField);
+
+  const thinkingBudgetInput = document.createElement('input');
+  thinkingBudgetInput.type = 'number';
+  thinkingBudgetInput.className = 'form-control';
+  thinkingBudgetInput.min = '1024';
+  thinkingBudgetInput.step = '1';
+  thinkingBudgetInput.value = api.thinkingBudget != null ? String(api.thinkingBudget) : '1024';
+  const syncThinkingBudget = () => {
+    thinkingBudgetInput.disabled = !thinkingInput.checked;
+  };
+  thinkingInput.addEventListener('change', syncThinkingBudget);
+  syncThinkingBudget();
+  form.appendChild(wrapField('思考預算（tokens）', thinkingBudgetInput));
+
   // temperature（0–2）
   const tempInput = document.createElement('input');
   tempInput.type = 'number';
@@ -182,6 +199,8 @@ export function renderApiSettingsEditor(container, state) {
     apiKey: apiKeyInput.value,
     rememberApiKey: rememberInput.checked,
     visionEnabled: visionInput.checked,
+    showThinking: thinkingInput.checked,
+    thinkingBudget: Math.max(1024, Math.round(clampNum(thinkingBudgetInput.value, 1024, 1000000, 1024))),
     temperature: clampNum(tempInput.value, 0, 2, 1),
     maxTokens: Math.max(1, Math.round(clampNum(maxTokInput.value, 1, 1000000, 1024)))
   });
