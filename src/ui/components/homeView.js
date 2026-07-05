@@ -11,6 +11,7 @@ import {
 } from '../../state/store.js';
 import { getStats } from '../../services/statsService.js';
 import { createAvatarEl } from '../avatar.js';
+import { createIcon } from '../icons.js';
 import { navigate } from '../router.js';
 import { setSettingsTab } from './settingsPage.js';
 import { openCharacterCreator } from './characterEditor.js';
@@ -129,31 +130,31 @@ function buildDashboard(state, character) {
   const conv = (state.conversations || []).find((c) => c.type === 'direct' && c.primaryCharacterId === character.id);
   grid.appendChild(buildChatCard(state, character, conv));
   grid.appendChild(summaryCard({
-    icon: '聲',
+    icon: 'brain',
     title: '聲痕',
     summary: `${countByCharacter(state.memories, character.id)} 筆`,
     onClick: () => openMemoryDrawer(state, character, conv)
   }));
   grid.appendChild(summaryCard({
-    icon: '貝',
+    icon: 'heart',
     title: '拾貝',
     summary: `${countByCharacter(state.keepsakes, character.id)} 則`,
     onClick: () => openCharacterModal('拾貝', (body) => body.appendChild(buildKeepsakeSection(state, character)))
   }));
   grid.appendChild(summaryCard({
-    icon: '拍',
+    icon: 'calendar',
     title: '節拍',
     summary: anniversarySummary(state, character.id),
     onClick: () => openCharacterModal('節拍', (body) => body.appendChild(buildAnniversarySection(state, character)))
   }));
   grid.appendChild(summaryCard({
-    icon: '約',
+    icon: 'checklist',
     title: '約定',
     summary: wishlistSummary(state, character.id),
     onClick: () => openCharacterModal('約定', (body) => body.appendChild(buildWishlistSection(state, character)))
   }));
   grid.appendChild(summaryCard({
-    icon: '編',
+    icon: 'edit',
     title: '編輯角色',
     summary: '設定、頭貼與刪除',
     onClick: () => openCharacterModal('編輯角色', (body, close) => renderSettingsTab(body, state, character, { onDelete: close }), 'character-edit-modal')
@@ -173,7 +174,7 @@ function buildChatCard(state, character, conv) {
   btn.addEventListener('click', () => { if (conv) navigate(`/chat/${conv.id}`); });
   const icon = document.createElement('div');
   icon.className = 'summary-card-icon';
-  icon.textContent = '聊';
+  icon.appendChild(createIcon('chat', { size: 23 }));
   btn.appendChild(icon);
   const title = document.createElement('div');
   title.className = 'summary-card-title chat-entry-title';
@@ -208,7 +209,7 @@ function appendOldReplay(grid, characterId) {
       btn.addEventListener('click', () => navigate(`/chat/${item.conversationId}`));
       const icon = document.createElement('div');
       icon.className = 'summary-card-icon';
-      icon.textContent = '重';
+      icon.appendChild(createIcon('refresh', { size: 23 }));
       const meta = document.createElement('div');
       meta.className = 'summary-card-title old-replay-meta';
       meta.textContent = '舊聲重播';
@@ -231,11 +232,6 @@ function buildRelationshipHero(character) {
 
   const hero = document.createElement('div');
   hero.className = 'home-hero relationship-hero';
-
-  const label = document.createElement('div');
-  label.className = 'home-hero-label';
-  label.textContent = '相識';
-  hero.appendChild(label);
 
   const title = document.createElement('h2');
   title.className = 'home-hero-title';
@@ -288,7 +284,7 @@ function summaryCard({ icon, title, summary, onClick }) {
   card.addEventListener('click', onClick);
   const iconEl = document.createElement('div');
   iconEl.className = 'summary-card-icon';
-  iconEl.textContent = icon;
+  iconEl.appendChild(createIcon(icon, { size: 23 }));
   const titleEl = document.createElement('div');
   titleEl.className = 'summary-card-title';
   titleEl.textContent = title;

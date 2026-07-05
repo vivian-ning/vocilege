@@ -2,7 +2,7 @@
 //
 // V7 對話列表：direct 聊天列表 + group 佔位。可作為整頁列表或桌面 master 欄。
 
-import { deleteCharacter } from '../../state/store.js';
+import { createGroupConversation, deleteCharacter, selectConversation } from '../../state/store.js';
 import { getStats } from '../../services/statsService.js';
 import { applyAvatar } from '../avatar.js';
 import { navigate } from '../router.js';
@@ -28,8 +28,11 @@ export function renderConversationList(container, state, options = {}) {
     const add = document.createElement('button');
     add.type = 'button';
     add.className = 'btn btn-primary conversation-add';
-    add.textContent = '+ 新增角色';
-    add.addEventListener('click', () => openCharacterCreator());
+    add.textContent = activeType === 'group' ? '+ 新增群聊' : '+ 新增角色';
+    add.addEventListener('click', () => {
+      if (activeType === 'group') openGroupCreator(state);
+      else openCharacterCreator();
+    });
     head.appendChild(add);
   }
   shell.appendChild(head);
@@ -41,10 +44,18 @@ export function renderConversationList(container, state, options = {}) {
   shell.appendChild(body);
 
   if (activeType === 'group') {
-    const empty = document.createElement('div');
-    empty.className = 'list-empty group-empty';
-    empty.textContent = '群聊即將推出';
-    body.appendChild(empty);
+    const group = (state.conversations || [])
+      .filter((c) => c.type === 'group')
+      .sort((a, b) => (b.lastMessageAt || b.updatedAt || b.createdAt || 0) - (a.lastMessageAt || a.updatedAt || a.createdAt || 0));
+    if (group.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'list-empty group-empty';
+      empty.textContent = '還沒有群聊。至少選 2 位角色開始合聲。';
+      body.appendChild(empty);
+    } else {
+      for (const conv of group) body.appendChild(renderItem(conv, state));
+      fillConversationPreviews(body, state);
+    }
     container.appendChild(shell);
     return;
   }
@@ -92,10 +103,21 @@ function renderItem(conv, state) {
   if (conv.id === state.currentConversationId) item.classList.add('active');
 
   const character = (state.characters || []).find((c) => c.id === conv.primaryCharacterId);
+  const members = conv.type === 'group'
+    ? (conv.memberIds || [])
+        .filter((id) => id !== 'player')
+        .map((id) => (state.characters || []).find((c) => c.id === id))
+        .filter(Boolean)
+    : [];
 
   const avatar = document.createElement('span');
   avatar.className = 'conv-avatar avatar';
-  applyAvatar(avatar, character ? character.avatar : null);
+  if (conv.type === 'group') {
+    avatar.classList.add('group-conv-avatar');
+    avatar.textContent = '合';
+  } else {
+    applyAvatar(avatar, character ? character.avatar : null);
+  }
 
   const meta = document.createElement('span');
   meta.className = 'conv-meta';
@@ -123,9 +145,10 @@ function renderItem(conv, state) {
   const del = document.createElement('button');
   del.className = 'conv-delete';
   del.type = 'button';
-  del.title = '刪除角色';
-  del.setAttribute('aria-label', '刪除角色');
+  del.title = conv.type === 'group' ? '群聊保留中' : '刪除角色';
+  del.setAttribute('aria-label', conv.type === 'group' ? '群聊保留中' : '刪除角色');
   del.textContent = '×';
+  if (conv.type === 'group') del.disabled = true;
   del.addEventListener('click', (e) => {
     e.stopPropagation();
     if (!character) return;
@@ -145,7 +168,94 @@ function renderItem(conv, state) {
   item.appendChild(avatar);
   item.appendChild(meta);
   item.appendChild(del);
+  if (conv.type === 'group' && members.length) {
+    desc.textContent = members.map((m) => m.name || '角色').join('、');
+  }
   return item;
+}
+
+function openGroupCreator(state) {
+  const characters = state.characters || [];
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const modal = document.createElement('div');
+  modal.className = 'modal group-create-modal';
+
+  const title = document.createElement('h2');
+  title.className = 'modal-title';
+  title.textContent = '新增群聊';
+  modal.appendChild(title);
+
+  const name = document.createElement('input');
+  name.type = 'text';
+  name.className = 'form-control';
+  name.placeholder = '群聊名稱（預設：合聲）';
+  modal.appendChild(name);
+
+  const first = document.createElement('textarea');
+  first.className = 'form-control';
+  first.rows = 3;
+  first.placeholder = '開場備註（選填，會以系統提示放入群聊）';
+  modal.appendChild(first);
+
+  const list = document.createElement('div');
+  list.className = 'group-member-list';
+  for (const character of characters) {
+    const label = document.createElement('label');
+    label.className = 'group-member-option';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.value = character.id;
+    const text = document.createElement('span');
+    text.textContent = character.name || '未命名角色';
+    label.appendChild(input);
+    label.appendChild(text);
+    list.appendChild(label);
+  }
+  modal.appendChild(list);
+
+  const hint = document.createElement('div');
+  hint.className = 'form-hint';
+  hint.textContent = characters.length < 2 ? '至少需要 2 位角色才能建立群聊。' : '被 @ 的角色會先回覆，其餘角色隨機接續。';
+  modal.appendChild(hint);
+
+  const actions = document.createElement('div');
+  actions.className = 'form-actions';
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'btn';
+  cancel.textContent = '取消';
+  cancel.addEventListener('click', () => overlay.remove());
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.className = 'btn btn-primary';
+  save.textContent = '建立';
+  save.disabled = characters.length < 2;
+  save.addEventListener('click', async () => {
+    const ids = Array.from(list.querySelectorAll('input[type="checkbox"]:checked')).map((input) => input.value);
+    if (ids.length < 2) {
+      hint.textContent = '請至少選擇 2 位角色。';
+      return;
+    }
+    const conv = await createGroupConversation({
+      title: name.value,
+      firstMessage: first.value,
+      memberIds: ids
+    });
+    overlay.remove();
+    if (conv) {
+      await selectConversation(conv.id);
+      navigate(`/chat/${conv.id}`);
+    }
+  });
+  actions.appendChild(cancel);
+  actions.appendChild(save);
+  modal.appendChild(actions);
+
+  overlay.appendChild(modal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+  name.focus();
 }
 
 async function fillConversationPreviews(scope, state) {

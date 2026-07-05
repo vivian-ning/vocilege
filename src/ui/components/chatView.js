@@ -33,9 +33,16 @@ export function renderChatView(container, state) {
 
   const character = state.characters.find((c) => c.id === state.currentCharacterId);
   const conversation = state.conversations.find((c) => c.id === state.currentConversationId);
+  const isGroup = conversation && conversation.type === 'group';
+  const groupMembers = isGroup
+    ? (conversation.memberIds || [])
+        .filter((id) => id !== 'player')
+        .map((id) => state.characters.find((c) => c.id === id))
+        .filter(Boolean)
+    : [];
 
   // 空狀態：沒有選取任何角色 / 對話。
-  if (!character || !conversation) {
+  if (!conversation || (!isGroup && !character)) {
     const empty = document.createElement('div');
     empty.className = 'chat-empty';
     empty.textContent = '選擇左側角色開始對話，或先新增一個角色。';
@@ -54,22 +61,34 @@ export function renderChatView(container, state) {
   const profileBtn = document.createElement('button');
   profileBtn.type = 'button';
   profileBtn.className = 'chat-header-profile';
-  profileBtn.setAttribute('aria-label', `回到 ${character.name || '角色'} 的聲庭`);
-  profileBtn.title = `回到 ${character.name || '角色'} 的聲庭`;
+  profileBtn.setAttribute('aria-label', isGroup ? '群聊' : `回到 ${character.name || '角色'} 的聲庭`);
+  profileBtn.title = isGroup ? '群聊' : `回到 ${character.name || '角色'} 的聲庭`;
   profileBtn.addEventListener('click', async () => {
+    if (isGroup) return;
     await selectCharacter(character.id);
     navigate('/home');
   });
 
   const avatar = document.createElement('span');
   avatar.className = 'chat-header-avatar avatar';
-  applyAvatar(avatar, character.avatar);
+  if (isGroup) {
+    avatar.classList.add('group-conv-avatar');
+    avatar.textContent = '合';
+  } else {
+    applyAvatar(avatar, character.avatar);
+  }
   const titleWrap = document.createElement('span');
   titleWrap.className = 'chat-header-titlewrap';
   const title = document.createElement('span');
   title.className = 'chat-header-title';
-  title.textContent = character.name; // 派生自角色 name
+  title.textContent = isGroup ? (conversation.title || '合聲') : character.name; // direct 派生自角色 name
   titleWrap.appendChild(title);
+  if (isGroup && groupMembers.length) {
+    const memberLine = document.createElement('span');
+    memberLine.className = 'chat-header-mock';
+    memberLine.textContent = groupMembers.map((c) => c.name || '角色').join('、');
+    titleWrap.appendChild(memberLine);
+  }
 
   // 未設定 API 時，標題列以小字提示「模擬回覆中」。
   if (usesMock(state.apiSettings)) {
@@ -86,14 +105,16 @@ export function renderChatView(container, state) {
   const headerActions = document.createElement('div');
   headerActions.className = 'chat-header-actions';
 
-  const enabledMemCount = (state.memories || []).filter((m) => m.characterId === character.id && (m.status || 'active') === 'active' && m.enabled !== false).length;
-  const memoryBtn = iconButton('brain', `開啟聲痕（${enabledMemCount} 筆）`, { className: 'icon-btn chat-icon-btn', title: '聲痕' });
-  const badge = document.createElement('span');
-  badge.className = 'icon-badge';
-  badge.textContent = String(enabledMemCount);
-  memoryBtn.appendChild(badge);
-  memoryBtn.addEventListener('click', () => openMemoryDrawer(state, character, conversation));
-  headerActions.appendChild(memoryBtn);
+  if (!isGroup) {
+    const enabledMemCount = (state.memories || []).filter((m) => m.characterId === character.id && (m.status || 'active') === 'active' && m.enabled !== false).length;
+    const memoryBtn = iconButton('brain', `開啟聲痕（${enabledMemCount} 筆）`, { className: 'icon-btn chat-icon-btn', title: '聲痕' });
+    const badge = document.createElement('span');
+    badge.className = 'icon-badge';
+    badge.textContent = String(enabledMemCount);
+    memoryBtn.appendChild(badge);
+    memoryBtn.addEventListener('click', () => openMemoryDrawer(state, character, conversation));
+    headerActions.appendChild(memoryBtn);
+  }
 
   const moreBtn = iconButton('ellipsis', '開啟更多聊天操作', { className: 'icon-btn chat-icon-btn', title: '更多' });
   moreBtn.addEventListener('click', () => openChatOverflowMenu(moreBtn, conversation));
@@ -110,8 +131,9 @@ export function renderChatView(container, state) {
   const ctx = {
     player: state.player,
     playerAvatar: state.player ? state.player.avatar : null,
-    characterName: character.name,
-    characterAvatar: character.avatar,
+    characterName: character ? character.name : '',
+    characterAvatar: character ? character.avatar : null,
+    characters: state.characters || [],
     settings: state.settings,
     lastCharacterMessageId: findLastCharacterMessageId(messages),
     keepsakes: state.keepsakes || [],
@@ -129,7 +151,7 @@ export function renderChatView(container, state) {
     typing.className = 'typing-indicator';
     typing.appendChild(createWaveBars());
     const label = document.createElement('span');
-    label.textContent = `${character.name} 正在輸入…`;
+    label.textContent = isGroup ? '群聊正在回覆…' : `${character.name} 正在輸入…`;
     typing.appendChild(label);
     list.appendChild(typing);
   }
@@ -252,7 +274,7 @@ export function renderChatView(container, state) {
     };
     addItem('成書（HTML）', () => exportConversationBook('html'));
     addItem('成書（Markdown）', () => exportConversationBook('markdown'));
-    addItem('此對話的我', () => openPersonaPanel(conv), !!conv.playerPersona);
+    if (conv.type !== 'group') addItem('此對話的我', () => openPersonaPanel(conv), !!conv.playerPersona);
 
     const closeOnPointer = (event) => {
       if (!menu.contains(event.target) && event.target !== anchor) closeChatOverflowMenu();

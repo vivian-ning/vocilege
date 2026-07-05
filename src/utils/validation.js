@@ -66,6 +66,17 @@ export function validateBackup(data) {
       s.conversations.forEach((c, i) => {
         if (!isObject(c) || typeof c.id !== 'string') {
           errors.push(`conversations[${i}] 缺少字串 id`);
+          return;
+        }
+        if (c.type === 'group') {
+          if (c.primaryCharacterId !== null) errors.push(`conversations[${i}].primaryCharacterId 應為 null`);
+          if (!Array.isArray(c.memberIds) || c.memberIds.length < 3) {
+            errors.push(`conversations[${i}].memberIds 應包含 player 與至少 2 位角色`);
+          }
+        } else if (c.type === 'direct' || !('type' in c)) {
+          if (typeof c.primaryCharacterId !== 'string') {
+            errors.push(`conversations[${i}].primaryCharacterId 應為字串`);
+          }
         }
       });
     }

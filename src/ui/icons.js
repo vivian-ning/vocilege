@@ -12,6 +12,20 @@ const ICONS = {
   chat: [
     ['path', { d: 'M5 6.5A3.5 3.5 0 0 1 8.5 3h7A3.5 3.5 0 0 1 19 6.5v4A3.5 3.5 0 0 1 15.5 14H11l-5 4v-4.2A3.5 3.5 0 0 1 5 11.5v-5Z' }]
   ],
+  calendar: [
+    ['rect', { x: 4, y: 5, width: 16, height: 15, rx: 2 }],
+    ['path', { d: 'M8 3v4' }],
+    ['path', { d: 'M16 3v4' }],
+    ['path', { d: 'M4 10h16' }]
+  ],
+  checklist: [
+    ['path', { d: 'm8 7 1.8 1.8L13 5.5' }],
+    ['path', { d: 'M15 7h5' }],
+    ['path', { d: 'm8 15 1.8 1.8L13 13.5' }],
+    ['path', { d: 'M15 15h5' }],
+    ['path', { d: 'M4 7h.01' }],
+    ['path', { d: 'M4 15h.01' }]
+  ],
   feed: [
     ['path', { d: 'M4 6.5h10' }],
     ['path', { d: 'M4 12h16' }],

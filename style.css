@@ -561,6 +561,12 @@ button { touch-action: manipulation; }
   display: flex; align-items: center; justify-content: center;
   font-size: 23px;
 }
+.group-conv-avatar {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 15px;
+  font-weight: 800;
+}
 .conv-meta { flex: 1; min-width: 0; }
 .conv-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .conv-desc { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -573,6 +579,7 @@ button { touch-action: manipulation; }
 }
 .conv-item:hover .conv-delete, .conv-delete:focus-visible { opacity: .7; }
 .conv-delete:hover { opacity: 1; background: var(--bg); }
+.conv-delete:disabled { cursor: default; opacity: 0; }
 
 /* 新增角色：左欄裡以安靜的虛線鈕呈現（specificity 需壓過 .btn-primary） */
 .btn-primary.add-character {
@@ -1067,6 +1074,25 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 .modal-title { margin: 0 0 14px; font-size: 17px; }
 .edit-message-modal { max-width: 560px; }
 .persona-modal .form-field { margin-bottom: 12px; }
+.group-create-modal { max-width: 560px; }
+.group-member-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+.group-member-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-m);
+  padding: 10px 12px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.group-member-option:hover { border-color: var(--primary); background: var(--surface-2); }
+.group-member-option input { width: 18px; height: 18px; accent-color: var(--primary); }
 
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes rise-in { from { opacity: 0; transform: translateY(10px); } }
@@ -1140,11 +1166,6 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
   background: var(--hero-gradient);
   box-shadow: var(--shadow-2);
   overflow: hidden;
-}
-.home-hero-label {
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 700;
 }
 .home-hero-title {
   margin: 0;

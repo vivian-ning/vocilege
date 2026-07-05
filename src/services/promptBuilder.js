@@ -45,6 +45,12 @@ export function buildPrompt({
 }) {
   const character = activeCharacter || {};
   const p = player || {};
+  const groupMembers = conversation && conversation.type === 'group'
+    ? (conversation.memberIds || [])
+        .filter((id) => id && id !== 'player')
+        .map((id) => (characters || []).find((c) => c.id === id))
+        .filter(Boolean)
+    : [];
 
   // 對話層級人設覆蓋（任務四）：playerPersona 的非空欄位優先於全域 player 對應欄位。
   // 覆蓋值屬於靜態區——切換人設會使快取失效一次，屬預期行為。
@@ -67,6 +73,16 @@ export function buildPrompt({
 
   // 2) 角色核心設定。
   const charParts = [];
+  if (conversation && conversation.type === 'group') {
+    charParts.push([
+      '【群聊規則】',
+      `這是一段群聊。你現在只扮演「${character.name || '角色'}」，只能輸出這位角色本輪的回覆。`,
+      '不要代替其他角色發言，不要加角色名標籤，不要描述其他角色已經說了什麼。',
+      groupMembers.length
+        ? `本群成員：${groupMembers.map((c) => c.name || '未命名角色').join('、')}。`
+        : ''
+    ].filter(Boolean).join('\n'));
+  }
   if (character.systemPrompt) charParts.push(character.systemPrompt.trim());
   if (character.personality) charParts.push(`【個性】${character.personality.trim()}`);
   if (character.scenario) charParts.push(`【情境】${character.scenario.trim()}`);
@@ -110,8 +126,19 @@ export function buildPrompt({
   // 最近聊天紀錄 → 依 message.role 轉為 { role, content } 序列。
   const recent = (messages || []).slice(-RECENT_LIMIT);
   const history = recent
-    .filter((m) => m && (m.role === 'user' || m.role === 'assistant'))
-    .map((m) => ({ role: m.role, content: partsToText(m.parts, stickers), parts: m.parts || [] }))
+    .filter((m) => m && (m.role === 'user' || m.role === 'assistant' || (conversation && conversation.type === 'group' && m.role === 'system')))
+    .map((m) => {
+      const mappedRole = mapMessageRoleForSpeaker(m, character.id, conversation);
+      const speaker = conversation && conversation.type === 'group'
+        ? speakerLabel(m, character.id, characters, playerName)
+        : '';
+      const content = partsToText(m.parts, stickers);
+      return {
+        role: mappedRole,
+        content: speaker ? `${speaker}：${content}` : content,
+        parts: m.parts || []
+      };
+    })
     .filter((m) => m.content && m.content.trim());
 
   return {
@@ -129,6 +156,23 @@ export function buildPrompt({
       stickers: normalizeStickers(stickers)
     }
   };
+}
+
+function mapMessageRoleForSpeaker(message, activeCharacterId, conversation) {
+  if (!conversation || conversation.type !== 'group') return message.role;
+  if (message.senderType === 'character' && message.senderId === activeCharacterId) return 'assistant';
+  return 'user';
+}
+
+function speakerLabel(message, activeCharacterId, characters, playerName) {
+  if (!message) return '';
+  if (message.senderType === 'player') return playerName || '玩家';
+  if (message.senderType === 'character') {
+    const character = (characters || []).find((c) => c.id === message.senderId);
+    const name = character ? character.name || '角色' : '角色';
+    return message.senderId === activeCharacterId ? '' : name;
+  }
+  return '系統';
 }
 
 // 記憶選取（純函式，供 buildPrompt 與角色頁「注入估算」共用）：
@@ -221,7 +265,7 @@ function nextAnniversaryText(anniversaries, characterId, nowDate) {
     if (!a || a.characterId !== characterId || !a.date) continue;
     const days = daysUntil(a, today);
     if (days == null || days < 0 || days > 3) continue;
-    hits.push({ days, title: a.title || '紀念日', date: occurrenceDate(a, today) });
+    hits.push({ days, title: a.title || '節拍', date: occurrenceDate(a, today) });
   }
   hits.sort((x, y) => x.days - y.days);
   const h = hits[0];

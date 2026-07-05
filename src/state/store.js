@@ -155,6 +155,14 @@ function getActiveConversation() {
   return state.conversations.find((c) => c.id === state.currentConversationId) || null;
 }
 
+function getConversationMembers(conversation) {
+  if (!conversation || conversation.type !== 'group') return [];
+  const ids = (conversation.memberIds || []).filter((id) => id && id !== 'player');
+  return ids
+    .map((id) => state.characters.find((c) => c.id === id))
+    .filter(Boolean);
+}
+
 function activeParts(message) {
   if (!message || !Array.isArray(message.versions) || message.versions.length === 0) {
     return Array.isArray(message && message.parts) ? message.parts : [];
@@ -285,6 +293,50 @@ export async function createCharacter(data) {
   return character;
 }
 
+export async function createGroupConversation(data = {}) {
+  const ts = now();
+  const memberIds = ['player']
+    .concat(Array.isArray(data.memberIds) ? data.memberIds : [])
+    .filter(Boolean);
+  const uniqueMemberIds = [...new Set(memberIds)];
+  const characterIds = uniqueMemberIds.filter((id) => id !== 'player');
+  if (characterIds.length < 2) return null;
+
+  const conversation = {
+    id: generateId('conv'),
+    type: 'group',
+    title: String(data.title || '').trim() || '合聲',
+    memberIds: ['player', ...characterIds],
+    primaryCharacterId: null,
+    createdAt: ts,
+    updatedAt: ts,
+    lastMessageAt: ts
+  };
+  state.conversations.push(conversation);
+  state.currentConversationId = conversation.id;
+  state.currentCharacterId = '';
+  messages = [];
+
+  const noteText = String(data.firstMessage || '').trim();
+  if (noteText) {
+    const note = makeMessage({
+      conversationId: conversation.id,
+      senderType: 'system',
+      senderId: 'system',
+      parts: [{ type: 'systemNote', content: noteText }]
+    });
+    await addMessage(note);
+    messages.push(note);
+    conversation.lastMessageAt = note.createdAt;
+    conversation.updatedAt = note.createdAt;
+  }
+
+  invalidateStats();
+  await saveCurrentState();
+  notify();
+  return conversation;
+}
+
 export async function updateCharacter(characterId, patch) {
   const character = state.characters.find((c) => c.id === characterId);
   if (!character) return;
@@ -397,7 +449,8 @@ export async function sendPlayerMessage(text, extraParts = []) {
 
   const conversation = getActiveConversation();
   const character = getActiveCharacter();
-  if (!conversation || !character) return;
+  if (!conversation) return;
+  if (conversation.type !== 'group' && !character) return;
 
   // 新送出：清掉舊錯誤條。
   pendingError = null;
@@ -419,7 +472,11 @@ export async function sendPlayerMessage(text, extraParts = []) {
   await saveCurrentState();
 
   // 3~7) 產生回覆流程。
-  await runGeneration(conversation, character, partsToPlainText(playerMsg.parts));
+  if (conversation.type === 'group') {
+    await runGroupGeneration(conversation, partsToPlainText(playerMsg.parts));
+  } else {
+    await runGeneration(conversation, character, partsToPlainText(playerMsg.parts));
+  }
 }
 
 export async function sendStickerMessage(stickerId) {
@@ -436,7 +493,8 @@ export async function sendPhotoMessage(assetId, altText = '') {
 export async function retryLastReply() {
   const conversation = getActiveConversation();
   const character = getActiveCharacter();
-  if (!conversation || !character) return;
+  if (!conversation) return;
+  if (conversation.type !== 'group' && !character) return;
 
   let userText = pendingError ? pendingError.userText : '';
   if (!userText) {
@@ -450,7 +508,11 @@ export async function retryLastReply() {
   }
 
   pendingError = null;
-  await runGeneration(conversation, character, userText);
+  if (conversation.type === 'group') {
+    await runGroupGeneration(conversation, userText);
+  } else {
+    await runGeneration(conversation, character, userText);
+  }
 }
 
 // 產生 AI 回覆的共用流程（送出與重試共用）。成功則新增 character message 並保存；
@@ -541,6 +603,100 @@ async function runGeneration(conversation, character, userText) {
   }
 }
 
+async function runGroupGeneration(conversation, userText) {
+  const speakers = pickGroupSpeakers(conversation, userText);
+  if (!speakers.length) return;
+
+  typing = true;
+  pendingError = null;
+  notify();
+
+  try {
+    for (const character of speakers) {
+      const prompt = buildPrompt({
+        conversation,
+        activeCharacter: character,
+        characters: state.characters,
+        player: state.player,
+        messages,
+        memories: state.memories,
+        worldEntries: state.worldbooks,
+        globalPrompts: state.globalPrompts,
+        mode: state.settings.messageDisplayMode,
+        memoryInjectionLimit: state.settings.memoryInjectionLimit,
+        settings: state.settings,
+        anniversaries: state.anniversaries,
+        stickers: state.stickers
+      });
+      await markMemoriesRecalled(prompt.meta && prompt.meta.injectedMemoryIds);
+      const result = await generateReply({
+        prompt,
+        conversation,
+        character,
+        player: state.player,
+        userMessage: userText,
+        apiSettings: state.apiSettings
+      });
+      const parts = Array.isArray(result) && result.length
+        ? result
+        : [{ type: 'message', content: '……' }];
+      const usage = result && result.usage ? result.usage : null;
+      const thinking = result && typeof result.thinking === 'string' ? result.thinking : '';
+      const replyMsg = makeMessage({
+        conversationId: conversation.id,
+        senderType: 'character',
+        senderId: character.id,
+        parts,
+        usage,
+        thinking
+      });
+      await addMessage(replyMsg);
+      messages.push(replyMsg);
+      conversation.lastMessageAt = replyMsg.createdAt;
+      conversation.updatedAt = replyMsg.createdAt;
+      invalidateStats();
+      await saveCurrentState();
+      notify();
+    }
+  } catch (err) {
+    pendingError = {
+      message: (err && err.userMessage) || (err && err.message) || 'AI 回覆失敗',
+      userText,
+      conversationId: conversation.id
+    };
+  } finally {
+    typing = false;
+    notify();
+  }
+}
+
+function pickGroupSpeakers(conversation, text) {
+  const members = getConversationMembers(conversation);
+  if (!members.length) return [];
+  const mentioned = members.filter((c) => isMentioned(text, c));
+  const mentionedIds = new Set(mentioned.map((c) => c.id));
+  const rest = shuffle(members.filter((c) => !mentionedIds.has(c.id)));
+  return mentioned.length ? mentioned.concat(rest) : shuffle(members);
+}
+
+function isMentioned(text, character) {
+  const raw = String(text || '');
+  const names = [character.name, character.id]
+    .filter(Boolean)
+    .map((x) => String(x).trim())
+    .filter(Boolean);
+  return names.some((name) => raw.includes(`@${name}`));
+}
+
+function shuffle(list) {
+  const out = list.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 function partsToPlainText(parts) {
   if (!Array.isArray(parts)) return '';
   return parts.map((p) => {
@@ -571,10 +727,19 @@ export async function updatePlayer(patch) {
 }
 
 // ---- 對話選取（供 hash router 使用）----
-// 由 conversationId 反查對應角色並走唯一的 selectCharacter，維持指標不變式。
+// 由 conversationId 選取對話。direct 仍走 selectCharacter；group 允許 primaryCharacterId=null。
 export async function selectConversation(conversationId) {
   const conv = state.conversations.find((c) => c.id === conversationId);
   if (!conv) return;
+  if (conv.type === 'group') {
+    state.currentConversationId = conv.id;
+    state.currentCharacterId = '';
+    pendingError = null;
+    await reloadCurrentMessages();
+    await saveCurrentState();
+    notify();
+    return;
+  }
   await selectCharacter(conv.primaryCharacterId);
 }
 
@@ -690,7 +855,7 @@ export async function refreshRelationshipStats(characterId, conversationId) {
   return count;
 }
 
-// ---- 紀念日 anniversaries ----
+// ---- 節拍 anniversaries ----
 function normalizeRepeat(r) {
   return r === 'yearly' || r === 'monthly' ? r : 'none';
 }
@@ -699,7 +864,7 @@ export async function addAnniversary(characterId, { title, date, repeat } = {}) 
   state.anniversaries.push({
     id: generateId('anniv'),
     characterId,
-    title: (title || '').trim() || '未命名紀念日',
+    title: (title || '').trim() || '未命名節拍',
     date: (date || '').trim(),
     repeat: normalizeRepeat(repeat),
     createdAt: now()
@@ -711,7 +876,7 @@ export async function addAnniversary(characterId, { title, date, repeat } = {}) 
 export async function updateAnniversary(id, patch) {
   const a = state.anniversaries.find((x) => x.id === id);
   if (!a) return;
-  if ('title' in patch) a.title = (patch.title || '').trim() || '未命名紀念日';
+  if ('title' in patch) a.title = (patch.title || '').trim() || '未命名節拍';
   if ('date' in patch) a.date = (patch.date || '').trim();
   if ('repeat' in patch) a.repeat = normalizeRepeat(patch.repeat);
   await saveCurrentState();
@@ -724,7 +889,7 @@ export async function deleteAnniversary(id) {
   notify();
 }
 
-// ---- 想一起做的事 wishlists ----
+// ---- 約定 wishlists ----
 export async function addWishlist(characterId, { title, note } = {}) {
   state.wishlists.push({
     id: generateId('wish'),
@@ -1232,7 +1397,9 @@ export async function addKeepsakeFromMessage(messageId, note = '') {
   const existing = (state.keepsakes || []).find((k) => k.messageId === messageId);
   if (existing) return existing;
   const conversation = state.conversations.find((c) => c.id === msg.conversationId);
-  const characterId = conversation ? conversation.primaryCharacterId : state.currentCharacterId;
+  const characterId = conversation && conversation.type === 'group' && msg.senderType === 'character'
+    ? msg.senderId
+    : (conversation ? conversation.primaryCharacterId : state.currentCharacterId);
   const keepsake = {
     id: generateId('keep'),
     characterId: characterId || '',
@@ -1333,7 +1500,7 @@ export async function regenerateMessage(messageId) {
   const msg = messages.find((m) => m.id === messageId);
   const conversation = msg ? state.conversations.find((c) => c.id === msg.conversationId) : null;
   const character = conversation
-    ? state.characters.find((c) => c.id === conversation.primaryCharacterId)
+    ? state.characters.find((c) => c.id === (conversation.type === 'group' ? msg.senderId : conversation.primaryCharacterId))
     : getActiveCharacter();
   if (!msg || msg.senderType !== 'character' || !conversation || !character || typing) return;
 
@@ -1497,6 +1664,7 @@ function replayRecord(row) {
 export async function maybeExtractDreamMemories(conversationId, { automatic = false } = {}) {
   const conv = (state.conversations || []).find((c) => c.id === conversationId);
   if (!conv || state.settings.dreamEnabled === false) return [];
+  if (conv.type === 'group') return [];
   if (usesMock(state.apiSettings)) {
     if (!automatic) windowAlert('夢釀需要連接 AI 服務');
     return [];
@@ -1677,12 +1845,14 @@ export function getConfig() {
 export async function exportConversationBook(format = 'html') {
   const conversation = getActiveConversation();
   const character = getActiveCharacter();
-  if (!conversation || !character) return null;
+  if (!conversation) return null;
   const list = conversation.id === state.currentConversationId
     ? messages
     : normalizeMessageList(await getMessagesByConversation(conversation.id));
   const active = list.map((m) => ({ ...m, parts: activeParts(m) }));
-  const title = `${character.name || '角色'} 與 ${(state.player && state.player.playerName) || '你'} 的聲書`;
+  const title = conversation.type === 'group'
+    ? `${conversation.title || '合聲'} 的聲書`
+    : `${(character && character.name) || '角色'} 與 ${(state.player && state.player.playerName) || '你'} 的聲書`;
   const range = dateRangeText(active);
   const body = format === 'markdown'
     ? bookMarkdown(title, range, active, character)
@@ -1708,9 +1878,12 @@ function dateRangeText(list) {
 }
 
 function speakerName(message, character) {
-  return message.senderType === 'player'
-    ? ((state.player && state.player.playerName) || '你')
-    : (character.name || '角色');
+  if (message.senderType === 'player') return (state.player && state.player.playerName) || '你';
+  if (message.senderType === 'character') {
+    const sender = (state.characters || []).find((c) => c.id === message.senderId);
+    return (sender && sender.name) || (character && character.name) || '角色';
+  }
+  return '系統';
 }
 
 function bookPartText(part) {

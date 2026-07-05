@@ -41,7 +41,7 @@ const migrators = {
   },
 
   // v3 -> v4（V3 角色相處頁 + 記憶系統）：
-  //   - 新增 anniversaries（紀念日）空陣列
+  //   - 新增 anniversaries（節拍）空陣列
   //   - 啟用 memories / wishlists / relationshipData（結構已存在，補空陣列即可）
   //   - settings.memoryInjectionLimit 預設 10
   //   - conversation.playerPersona / message.usage.cacheRead|cacheWrite 為選填，

@@ -1,7 +1,7 @@
 // src/ui/components/characterPage.js
 //
 // 角色相處頁（#/character/:characterId，V3 任務二 + 任務三）。以分頁呈現：
-//   - 相處紀錄：相識天數 / 相處統計 / 記憶 / 紀念日 / 想一起做的事
+//   - 相處紀錄：相識天數 / 相處統計 / 記憶 / 節拍 / 約定
 //   - 角色設定：既有 characterEditor（含頭貼上傳）＋ 刪除角色入口
 //
 // 全程 createElement + textContent，不使用 innerHTML。任何 store action 完成後由
@@ -143,7 +143,7 @@ export function renderSettingsTab(container, state, character, options = {}) {
 
   const dhint = document.createElement('p');
   dhint.className = 'form-hint';
-  dhint.textContent = '刪除角色會一併刪除該角色的所有對話、聊天紀錄、記憶、紀念日、想一起做的事與相處統計，此動作無法復原。';
+  dhint.textContent = '刪除角色會一併刪除該角色的所有對話、聊天紀錄、記憶、節拍、約定與相處統計，此動作無法復原。';
   danger.appendChild(dhint);
 
   const delBtn = document.createElement('button');
@@ -152,7 +152,7 @@ export function renderSettingsTab(container, state, character, options = {}) {
   delBtn.textContent = '刪除這個角色';
   delBtn.addEventListener('click', async () => {
     const ok = window.confirm(
-      `確定要刪除角色「${character.name}」嗎？\n\n將同時刪除該角色的所有對話、聊天紀錄、記憶、紀念日、想一起做的事，此動作無法復原。`
+      `確定要刪除角色「${character.name}」嗎？\n\n將同時刪除該角色的所有對話、聊天紀錄、記憶、節拍、約定，此動作無法復原。`
     );
     if (!ok) return;
     await deleteCharacter(character.id);
@@ -527,9 +527,9 @@ function recallText(m) {
   return `上次想起：${when} · 共 ${count} 次`;
 }
 
-// ---- 紀念日 ----
+// ---- 節拍 ----
 export function buildAnniversarySection(state, character) {
-  const sec = sectionEl('紀念日');
+  const sec = sectionEl('節拍');
 
   const form = document.createElement('form');
   form.className = 'anniv-form';
@@ -537,7 +537,7 @@ export function buildAnniversarySection(state, character) {
   const title = document.createElement('input');
   title.type = 'text';
   title.className = 'form-control';
-  title.placeholder = '紀念日名稱（例如：相遇紀念日）';
+  title.placeholder = '節拍名稱（例如：相遇節拍）';
 
   const date = document.createElement('input');
   date.type = 'date';
@@ -557,7 +557,7 @@ export function buildAnniversarySection(state, character) {
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     if (!title.value.trim()) {
-      window.alert('請輸入紀念日名稱');
+      window.alert('請輸入節拍名稱');
       return;
     }
     if (!date.value) {
@@ -580,7 +580,7 @@ export function buildAnniversarySection(state, character) {
   if (items.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'form-hint';
-    empty.textContent = '還沒有紀念日。';
+    empty.textContent = '還沒有節拍。';
     list.appendChild(empty);
   } else {
     for (const a of items) list.appendChild(buildAnniversaryItem(a));
@@ -597,7 +597,7 @@ function buildAnniversaryItem(a) {
   info.className = 'anniv-info';
   const t = document.createElement('span');
   t.className = 'anniv-title';
-  t.textContent = a.title || '未命名紀念日';
+  t.textContent = a.title || '未命名節拍';
   const meta = document.createElement('span');
   meta.className = 'anniv-meta';
   meta.textContent = `${a.date || '—'}　${repeatLabel(a.repeat)}`;
@@ -610,7 +610,7 @@ function buildAnniversaryItem(a) {
   const editBtn = iconBtn('✎', '編輯');
   const delBtn = iconBtn('🗑', '刪除');
   delBtn.addEventListener('click', () => {
-    if (window.confirm(`確定要刪除紀念日「${a.title || '未命名'}」嗎？`)) deleteAnniversary(a.id);
+    if (window.confirm(`確定要刪除節拍「${a.title || '未命名'}」嗎？`)) deleteAnniversary(a.id);
   });
   actions.appendChild(editBtn);
   actions.appendChild(delBtn);
@@ -656,16 +656,16 @@ function buildAnniversaryItem(a) {
   return item;
 }
 
-// ---- 想一起做的事 ----
+// ---- 約定 ----
 export function buildWishlistSection(state, character) {
-  const sec = sectionEl('想一起做的事');
+  const sec = sectionEl('約定');
 
   const form = document.createElement('form');
   form.className = 'wish-form';
   const title = document.createElement('input');
   title.type = 'text';
   title.className = 'form-control';
-  title.placeholder = '想一起做的事（例如：一起看日出）';
+  title.placeholder = '約定（例如：一起看日出）';
   const note = document.createElement('input');
   note.type = 'text';
   note.className = 'form-control wish-note';
@@ -697,7 +697,7 @@ export function buildWishlistSection(state, character) {
   if (items.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'form-hint';
-    empty.textContent = '還沒有想一起做的事。';
+    empty.textContent = '還沒有約定。';
     list.appendChild(empty);
   } else {
     for (const w of undone) list.appendChild(buildWishlistItem(w));

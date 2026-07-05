@@ -165,7 +165,7 @@ export function renderApiSettingsEditor(container, state) {
   const timeAwarenessToggle = createToggle({
     checked: state.settings.timeAwareness !== false,
     label: '時間感知',
-    description: '讓角色知道目前日期、時段與近期紀念日。'
+    description: '讓角色知道目前日期、時段與近期節拍。'
   });
   const timeAwarenessInput = timeAwarenessToggle.input;
   timeAwarenessInput.addEventListener('change', () => updateSettings({ timeAwareness: timeAwarenessInput.checked }));

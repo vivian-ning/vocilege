@@ -219,19 +219,21 @@ export function renderMessagePart(part, message, context) {
   row.className = `bubble-row ${isPlayer ? 'from-player' : 'from-character'}`;
 
   // 頭貼（V2）：玩家靠右、角色靠左，各放一個小頭貼。
+  const senderCharacter = !isPlayer ? findSenderCharacter(message, context) : null;
   const avatarSource = isPlayer
     ? (context && context.playerAvatar)
-    : (context && context.characterAvatar);
+    : (senderCharacter ? senderCharacter.avatar : (context && context.characterAvatar));
   const avatarEl = createAvatarEl(avatarSource, 'bubble-avatar');
 
   const bubble = document.createElement('div');
   bubble.className = `bubble ${isPlayer ? 'bubble-player' : 'bubble-character'}`;
 
   // 角色訊息顯示發話者名稱（群聊時特別有用）。
-  if (!isPlayer && context && context.characterName) {
+  const characterName = senderCharacter ? senderCharacter.name : (context && context.characterName);
+  if (!isPlayer && characterName) {
     const nameEl = document.createElement('div');
     nameEl.className = 'bubble-name';
-    nameEl.textContent = context.characterName;
+    nameEl.textContent = characterName;
     bubble.appendChild(nameEl);
   }
 
@@ -260,12 +262,20 @@ function renderMediaPart(part, message, context, kind) {
   const isPlayer = message.senderType === 'player';
   const row = document.createElement('div');
   row.className = `bubble-row ${isPlayer ? 'from-player' : 'from-character'}`;
+  const senderCharacter = !isPlayer ? findSenderCharacter(message, context) : null;
   const avatarSource = isPlayer
     ? (context && context.playerAvatar)
-    : (context && context.characterAvatar);
+    : (senderCharacter ? senderCharacter.avatar : (context && context.characterAvatar));
   const avatarEl = createAvatarEl(avatarSource, 'bubble-avatar');
   const bubble = document.createElement('div');
   bubble.className = `bubble media-bubble ${isPlayer ? 'bubble-player' : 'bubble-character'}`;
+  const characterName = senderCharacter ? senderCharacter.name : (context && context.characterName);
+  if (!isPlayer && characterName) {
+    const nameEl = document.createElement('div');
+    nameEl.className = 'bubble-name';
+    nameEl.textContent = characterName;
+    bubble.appendChild(nameEl);
+  }
   const img = document.createElement('button');
   img.type = 'button';
   img.className = kind === 'sticker' ? 'sticker-thumb' : 'photo-thumb';
@@ -300,6 +310,11 @@ function renderMediaPart(part, message, context, kind) {
     row.appendChild(bubble);
   }
   return row;
+}
+
+function findSenderCharacter(message, context) {
+  if (!message || message.senderType !== 'character' || !context || !Array.isArray(context.characters)) return null;
+  return context.characters.find((c) => c.id === message.senderId) || null;
 }
 
 function stickerAssetId(stickerId, context) {

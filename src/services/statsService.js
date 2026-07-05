@@ -54,7 +54,7 @@ async function compute(state) {
   const perCharacter = {}; // characterId -> { prompt, completion }
   const lastByConversation = {}; // conversationId -> { createdAt, snippet }
 
-  // conversationId -> primaryCharacterId
+  // conversationId -> primaryCharacterId（direct）；group 依 message.senderId 歸戶。
   const convToChar = {};
   for (const conv of (state.conversations || [])) {
     if (conv && conv.type === 'direct') convToChar[conv.id] = conv.primaryCharacterId;
@@ -79,7 +79,9 @@ async function compute(state) {
       if (isSameLocalMonth(ts, ref)) { month.prompt += p; month.completion += c; }
       if (isSameLocalDay(ts, ref)) { today.prompt += p; today.completion += c; }
 
-      const charId = convToChar[m.conversationId];
+      const charId = m.senderType === 'character' && m.senderId
+        ? m.senderId
+        : convToChar[m.conversationId];
       if (charId) {
         if (!perCharacter[charId]) perCharacter[charId] = zero();
         perCharacter[charId].prompt += p;

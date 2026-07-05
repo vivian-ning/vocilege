@@ -229,10 +229,20 @@ export function normalizeState(state) {
 
   merged.conversations = merged.conversations.map((c) => {
     if (!c || typeof c !== 'object') return c;
-    if (typeof c.lastDreamMessageCount !== 'number') {
-      return { ...c, lastDreamMessageCount: 0 };
-    }
-    return c;
+    const type = c.type === 'group' ? 'group' : 'direct';
+    const memberIds = Array.isArray(c.memberIds)
+      ? [...new Set(c.memberIds.filter((id) => typeof id === 'string' && id))]
+      : [];
+    const normalizedMemberIds = ['player', ...memberIds.filter((id) => id !== 'player')];
+    const normalized = {
+      ...c,
+      type,
+      title: type === 'group' ? String(c.title || '合聲') : null,
+      memberIds: memberIds.length ? normalizedMemberIds : ['player'].concat(c.primaryCharacterId ? [c.primaryCharacterId] : []),
+      primaryCharacterId: type === 'group' ? null : (typeof c.primaryCharacterId === 'string' ? c.primaryCharacterId : ''),
+      lastDreamMessageCount: typeof c.lastDreamMessageCount === 'number' ? c.lastDreamMessageCount : 0
+    };
+    return normalized;
   });
 
   merged.memories = merged.memories.map((m) => {
