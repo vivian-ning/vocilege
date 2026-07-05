@@ -23,6 +23,7 @@ import { usesMock } from '../../services/aiService.js';
 import { getObjectURL, saveImageAsset } from '../../services/assetService.js';
 import { applyAvatar } from '../avatar.js';
 import { navigate } from '../router.js';
+import { createWaveBars } from '../wave.js';
 
 export function renderChatView(container, state) {
   container.textContent = '';
@@ -130,12 +131,15 @@ export function renderChatView(container, state) {
     list.appendChild(renderMessage(msg, ctx));
   }
 
-  // 「輸入中」指示
+  // 「輸入中」指示：聲波跳動 + 文字
   const typingNow = isTyping();
   if (typingNow) {
     const typing = document.createElement('div');
     typing.className = 'typing-indicator';
-    typing.textContent = `${character.name} 正在輸入…`;
+    typing.appendChild(createWaveBars());
+    const label = document.createElement('span');
+    label.textContent = `${character.name} 正在輸入…`;
+    typing.appendChild(label);
     list.appendChild(typing);
   }
 
@@ -175,7 +179,8 @@ export function renderChatView(container, state) {
 
   const textarea = document.createElement('textarea');
   textarea.className = 'chat-input';
-  textarea.placeholder = '輸入訊息…（Enter 送出，Shift+Enter 換行）';
+  textarea.placeholder = '輸入訊息…';
+  textarea.title = 'Enter 送出，Shift+Enter 換行';
   textarea.rows = 1;
 
   const sendBtn = document.createElement('button');

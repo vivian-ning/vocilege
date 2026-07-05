@@ -1,7 +1,7 @@
 {
   "appName": "拾聲",
   "appNameLatin": "Vocilège",
-  "schemaVersion": 5,
+  "schemaVersion": 7,
   "defaultPlayer": {
     "id": "player",
     "playerName": "",
@@ -9,13 +9,14 @@
     "avatar": { "type": "emoji", "value": "🙂" }
   },
   "defaultSettings": {
-    "theme": "cream",
+    "theme": "blue",
+    "themeMode": "light",
     "messageDisplayMode": "mixed",
     "memoryInjectionLimit": 10,
     "timeAwareness": true,
     "feedReactorsPerPost": 2,
     "feedDailyLimit": 20,
-    "feedAutoPost": false,
+    "feedAutoPost": true,
     "greetingAfterDays": 3,
     "dreamEnabled": true,
     "dreamEveryMessages": 20,

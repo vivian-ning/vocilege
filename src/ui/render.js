@@ -18,6 +18,7 @@ import { renderCharacterPage } from './components/characterPage.js';
 import { openCharacterCreator } from './components/characterEditor.js';
 import { getRoute, navigate } from './router.js';
 import { selectConversation, getState } from '../state/store.js';
+import { createWaveBars } from './wave.js';
 
 let refs = null;
 let appName = 'Vocilège';
@@ -34,7 +35,7 @@ export function mountLayout(root, state) {
   root.textContent = '';
   root.className = 'app-root';
 
-  applyTheme(state.settings.theme);
+  applyTheme(state.settings.theme, state.settings.themeMode);
 
   const nav = document.createElement('nav');
   nav.className = 'top-nav';
@@ -65,7 +66,7 @@ function installToastHost(root) {
 
 export function render(state) {
   if (!refs) return;
-  applyTheme(state.settings.theme);
+  applyTheme(state.settings.theme, state.settings.themeMode);
 
   const route = getRoute();
   renderNav(refs.nav, route, state);
@@ -88,10 +89,11 @@ export function render(state) {
 function renderNav(nav, route, state) {
   nav.textContent = '';
 
-  // logo（回首頁）
+  // logo（回首頁）：聲波等化器 + 名稱
   const logo = document.createElement('button');
   logo.type = 'button';
   logo.className = 'nav-logo';
+  logo.appendChild(createWaveBars());
   const logoMain = document.createElement('span');
   logoMain.className = 'nav-logo-main';
   logoMain.textContent = appName;
@@ -179,8 +181,24 @@ function renderChatPage(container, state, conversationId) {
   container.appendChild(layout);
 }
 
-function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme || 'cream');
+// 主題 = 配色（blue/pink/brown）×明暗（light/dark）。
+// 舊值（cream/night 等）由 migration 轉換；此處仍防禦性映射一次。
+const LEGACY_THEME_MAP = {
+  cream: ['brown', 'light'], warm: ['brown', 'light'],
+  night: ['blue', 'dark'], sea: ['blue', 'light'],
+  fog: ['blue', 'light'], rose: ['pink', 'light']
+};
+
+function applyTheme(theme, themeMode) {
+  let palette = theme || 'blue';
+  let mode = themeMode === 'dark' ? 'dark' : 'light';
+  if (LEGACY_THEME_MAP[palette]) {
+    const mapped = LEGACY_THEME_MAP[palette];
+    palette = mapped[0];
+    if (!themeMode) mode = mapped[1];
+  }
+  if (!['blue', 'pink', 'brown'].includes(palette)) palette = 'blue';
+  document.documentElement.setAttribute('data-theme', `${palette}-${mode}`);
 }
 
 // 便於 router callback 直接取用最新 state 重繪。

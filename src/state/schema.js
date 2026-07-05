@@ -40,7 +40,8 @@ export function createDefaultState(config) {
     avatar: { type: 'emoji', value: '🙂' }
   };
   const defaultSettings = (config && config.defaultSettings) || {
-    theme: 'cream',
+    theme: 'blue',
+    themeMode: 'light',
     messageDisplayMode: 'mixed',
     memoryInjectionLimit: 10
   };
@@ -82,7 +83,10 @@ export function createDefaultState(config) {
     // V2 新增：上次成功匯出備份的時間戳（0 = 從未備份），供首頁備份提醒使用。
     lastBackupAt: 0,
     settings: {
-      theme: defaultSettings.theme || 'cream',
+      // V5.5 美化版：theme = 配色（blue 藍噪 / pink 粉噪 / brown 褐噪），
+      // themeMode = 明暗（light / dark）。舊主題值由 migration 6→7 轉換。
+      theme: defaultSettings.theme || 'blue',
+      themeMode: defaultSettings.themeMode === 'dark' ? 'dark' : 'light',
       messageDisplayMode: defaultSettings.messageDisplayMode || 'mixed',
       // V3：非 locked 記憶注入的筆數上限（locked 不占名額）。
       memoryInjectionLimit: typeof defaultSettings.memoryInjectionLimit === 'number'

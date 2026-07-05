@@ -13,15 +13,23 @@ import { renderApiSettingsEditor } from './apiSettingsEditor.js';
 import { renderGlobalPromptsEditor } from './globalPromptsEditor.js';
 import { renderPlayerEditor } from './playerEditor.js';
 import { renderBackupPanel } from './backupPanel.js';
-import { addSticker, updateSticker, deleteSticker } from '../../state/store.js';
+import { addSticker, updateSticker, deleteSticker, updateSettings } from '../../state/store.js';
 import { saveImageAsset, getObjectURL } from '../../services/assetService.js';
 
 const TABS = [
+  { key: 'appearance', label: '外觀' },
   { key: 'api', label: 'API 設定' },
   { key: 'prompts', label: 'Prompt 存放區' },
   { key: 'stickers', label: '小劇場' },
   { key: 'player', label: '玩家設定' },
   { key: 'data', label: '資料' }
+];
+
+// 三種配色取自聲學的「噪音顏色」；swatch 圓點 = 該主題的 bg / primary / bubble。
+const THEME_PALETTES = [
+  { key: 'blue', label: '藍噪', hint: '清晨廣播的冷靜', dots: { light: ['#eef1f4', '#2e6e8e', '#c9dfe9'], dark: ['#14181d', '#74b7d6', '#2c5a72'] } },
+  { key: 'pink', label: '粉噪', hint: '溫柔的傍晚', dots: { light: ['#f3edef', '#a4526e', '#ecd2dc'], dark: ['#1b1519', '#d78ba4', '#5c3a49'] } },
+  { key: 'brown', label: '褐噪', hint: '爐邊的低頻', dots: { light: ['#ece4d6', '#8f6234', '#e0cba4'], dark: ['#191512', '#ce9c5f', '#4e3d28'] } }
 ];
 
 let activeTab = 'api';
@@ -61,7 +69,9 @@ export function renderSettingsPage(container, state) {
   body.className = 'tab-body settings-body';
   page.appendChild(body);
 
-  if (activeTab === 'prompts') {
+  if (activeTab === 'appearance') {
+    renderAppearance(body, state);
+  } else if (activeTab === 'prompts') {
     renderGlobalPromptsEditor(body, state);
   } else if (activeTab === 'stickers') {
     renderStickerManager(body, state);
@@ -74,6 +84,69 @@ export function renderSettingsPage(container, state) {
   }
 
   container.appendChild(page);
+}
+
+// ---- 外觀：三配色 × 明暗 ----
+function renderAppearance(container, state) {
+  container.textContent = '';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'theme-picker';
+
+  const desc = document.createElement('p');
+  desc.className = 'gp-desc';
+  desc.textContent = '拾聲的三種配色取自聲學的「噪音顏色」——藍噪、粉噪、褐噪，各有明暗兩版。';
+  wrap.appendChild(desc);
+
+  const currentTheme = state.settings.theme || 'blue';
+  const currentMode = state.settings.themeMode === 'dark' ? 'dark' : 'light';
+
+  // 明暗切換
+  const modeRow = document.createElement('div');
+  modeRow.className = 'theme-mode-row';
+  for (const mode of [{ key: 'light', label: '亮' }, { key: 'dark', label: '暗' }]) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'theme-mode-btn' + (mode.key === currentMode ? ' active' : '');
+    btn.textContent = mode.label;
+    btn.addEventListener('click', () => updateSettings({ themeMode: mode.key }));
+    modeRow.appendChild(btn);
+  }
+  wrap.appendChild(modeRow);
+
+  // 配色 swatch
+  const swatches = document.createElement('div');
+  swatches.className = 'theme-swatches';
+  for (const p of THEME_PALETTES) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'theme-swatch' + (p.key === currentTheme ? ' active' : '');
+    btn.setAttribute('aria-pressed', p.key === currentTheme ? 'true' : 'false');
+
+    const dots = document.createElement('span');
+    dots.className = 'theme-swatch-dots';
+    for (const color of p.dots[currentMode]) {
+      const dot = document.createElement('i');
+      dot.style.background = color;
+      dots.appendChild(dot);
+    }
+    btn.appendChild(dots);
+
+    const name = document.createElement('span');
+    name.textContent = p.label;
+    btn.appendChild(name);
+
+    const hint = document.createElement('span');
+    hint.className = 'form-hint';
+    hint.textContent = p.hint;
+    btn.appendChild(hint);
+
+    btn.addEventListener('click', () => updateSettings({ theme: p.key }));
+    swatches.appendChild(btn);
+  }
+  wrap.appendChild(swatches);
+
+  container.appendChild(wrap);
 }
 
 function renderStickerManager(container, state) {

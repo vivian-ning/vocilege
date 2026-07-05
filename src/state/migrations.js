@@ -10,7 +10,7 @@
 
 import { createExampleGlobalPrompt } from './schema.js';
 
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
 
 // 逐版升級函式表。key = 來源版本，value = 把該版 state 升到「下一版」的函式。
 const migrators = {
@@ -137,6 +137,30 @@ const migrators = {
     }
 
     s.schemaVersion = 6;
+    return s;
+  },
+
+  // v6 -> v7（美化版）：主題改為「配色 × 明暗」兩欄位。
+  //   theme: blue（藍噪）/ pink（粉噪）/ brown（褐噪）；themeMode: light / dark。
+  //   舊值映射：cream/warm→brown·light、night→blue·dark、sea/fog→blue·light、rose→pink·light。
+  6: (s) => {
+    const settings = (s.settings && typeof s.settings === 'object') ? { ...s.settings } : {};
+    const legacy = {
+      cream: ['brown', 'light'], warm: ['brown', 'light'],
+      night: ['blue', 'dark'], sea: ['blue', 'light'],
+      fog: ['blue', 'light'], rose: ['pink', 'light']
+    };
+    const current = settings.theme;
+    if (legacy[current]) {
+      settings.theme = legacy[current][0];
+      settings.themeMode = legacy[current][1];
+    } else if (!['blue', 'pink', 'brown'].includes(current)) {
+      settings.theme = 'blue';
+      settings.themeMode = 'light';
+    }
+    if (settings.themeMode !== 'dark' && settings.themeMode !== 'light') settings.themeMode = 'light';
+    s.settings = settings;
+    s.schemaVersion = 7;
     return s;
   },
 };
