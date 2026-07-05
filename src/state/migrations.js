@@ -10,7 +10,7 @@
 
 import { createExampleGlobalPrompt } from './schema.js';
 
-export const CURRENT_SCHEMA_VERSION = 8;
+export const CURRENT_SCHEMA_VERSION = 9;
 
 // 逐版升級函式表。key = 來源版本，value = 把該版 state 升到「下一版」的函式。
 const migrators = {
@@ -182,6 +182,26 @@ const migrators = {
     s.apiSettings = api;
 
     s.schemaVersion = 8;
+    return s;
+  },
+
+  // v8 -> v9（V6）：貼圖移除 label，以 contextText 為唯一文字欄位。
+  // 舊資料若 contextText 為空，將 label 併入 contextText，之後刪除 label。
+  8: (s) => {
+    if (Array.isArray(s.stickers)) {
+      s.stickers = s.stickers
+        .filter((sticker) => sticker && typeof sticker === 'object')
+        .map((sticker) => {
+          const contextText = String(sticker.contextText || sticker.label || '').trim();
+          return {
+            id: String(sticker.id || ''),
+            assetId: String(sticker.assetId || ''),
+            contextText,
+            createdAt: typeof sticker.createdAt === 'number' ? sticker.createdAt : Date.now()
+          };
+        });
+    }
+    s.schemaVersion = 9;
     return s;
   },
 };

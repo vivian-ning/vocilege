@@ -31,6 +31,7 @@ import { renderCharacterEditor } from './characterEditor.js';
 import { createAvatarEl } from '../avatar.js';
 import { navigate } from '../router.js';
 import { dateStamp, parseDateInput } from '../../utils/time.js';
+import { createToggle } from '../toggle.js';
 
 const DAY_MS = 86400000;
 const TABS = [
@@ -359,12 +360,14 @@ function buildMemoryItem(m) {
   // 頭列：星等 / 情感 / locked 徽章 + 動作
   const head = document.createElement('div');
   head.className = 'mem-item-head';
-  const enabled = document.createElement('input');
-  enabled.type = 'checkbox';
-  enabled.checked = m.enabled !== false;
-  enabled.title = '是否注入 prompt';
-  enabled.addEventListener('change', () => updateMemory(m.id, { enabled: enabled.checked }));
-  head.appendChild(enabled);
+  const enabled = createToggle({
+    checked: m.enabled !== false,
+    label: '',
+    className: 'memory-toggle',
+    onChange: (checked) => updateMemory(m.id, { enabled: checked })
+  });
+  enabled.input.title = '是否注入 prompt';
+  head.appendChild(enabled.el);
 
   const badges = document.createElement('div');
   badges.className = 'mem-badges';
@@ -457,17 +460,13 @@ function buildMemoryForm({ submitLabel, onSubmit, initial, onCancel }) {
 
   form.appendChild(row);
 
-  const lockField = document.createElement('label');
-  lockField.className = 'form-field form-check';
-  const lock = document.createElement('input');
-  lock.type = 'checkbox';
-  lock.checked = initial ? !!initial.locked : false;
-  const lockText = document.createElement('span');
-  lockText.className = 'form-check-label';
-  lockText.textContent = '鎖定：永遠注入，適合最核心的設定。';
-  lockField.appendChild(lock);
-  lockField.appendChild(lockText);
-  form.appendChild(lockField);
+  const lockToggle = createToggle({
+    checked: initial ? !!initial.locked : false,
+    label: '鎖定',
+    description: '永遠注入，適合最核心的設定。'
+  });
+  const lock = lockToggle.input;
+  form.appendChild(lockToggle.el);
 
   const actions = document.createElement('div');
   actions.className = 'form-actions';
@@ -711,12 +710,13 @@ function buildWishlistItem(w) {
   const item = document.createElement('div');
   item.className = 'wish-item' + (w.done ? ' wish-done' : '');
 
-  const check = document.createElement('input');
-  check.type = 'checkbox';
-  check.className = 'wish-check';
-  check.checked = !!w.done;
-  check.addEventListener('change', () => updateWishlist(w.id, { done: check.checked }));
-  item.appendChild(check);
+  const check = createToggle({
+    checked: !!w.done,
+    label: '',
+    className: 'wish-check',
+    onChange: (checked) => updateWishlist(w.id, { done: checked })
+  });
+  item.appendChild(check.el);
 
   const info = document.createElement('div');
   info.className = 'wish-info';

@@ -547,7 +547,7 @@ function partsToPlainText(parts) {
     if (!p) return '';
     if (p.type === 'sticker') {
       const sticker = (state.stickers || []).find((s) => s.id === p.stickerId);
-      return sticker ? `[小劇場] ${sticker.contextText || sticker.label}` : '[小劇場]';
+      return sticker ? `[貼圖] ${sticker.contextText || '貼圖'}` : '[貼圖]';
     }
     if (p.type === 'image') return p.altText ? `[照片] ${p.altText}` : '[照片]';
     return p.content ? String(p.content) : '';
@@ -932,15 +932,14 @@ function emitToast(message) {
 
 // ---- V6 stickers ----
 
-export async function addSticker({ assetId, label, contextText }) {
+export async function addSticker({ assetId, contextText }) {
   const item = {
     id: generateId('sticker'),
     assetId: String(assetId || ''),
-    label: String(label || '').trim(),
     contextText: String(contextText || '').trim(),
     createdAt: now()
   };
-  if (!item.assetId || !item.label) return null;
+  if (!item.assetId || !item.contextText) return null;
   state.stickers = state.stickers || [];
   state.stickers.push(item);
   await saveCurrentState();
@@ -951,8 +950,8 @@ export async function addSticker({ assetId, label, contextText }) {
 export async function updateSticker(id, patch) {
   const item = (state.stickers || []).find((s) => s.id === id);
   if (!item) return null;
-  if ('label' in patch) item.label = String(patch.label || '').trim();
   if ('contextText' in patch) item.contextText = String(patch.contextText || '').trim();
+  delete item.label;
   await saveCurrentState();
   notify();
   return item;
@@ -1717,7 +1716,7 @@ function bookPartText(part) {
   if (!part) return '';
   if (part.type === 'sticker') {
     const sticker = (state.stickers || []).find((s) => s.id === part.stickerId);
-    return `（貼圖：${sticker ? sticker.label : '缺失'}）`;
+    return `（貼圖：${sticker ? (sticker.contextText || '貼圖') : '缺失'}）`;
   }
   if (part.type === 'image') return `（照片：${part.altText || '未命名'}）`;
   return part.content ? String(part.content) : '';

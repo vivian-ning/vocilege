@@ -2,7 +2,7 @@
 // 匯入資料前的結構驗證（第十三節）。回傳 { ok, errors }。
 // 不修改輸入，只做檢查。
 
-const CURRENT_SCHEMA_VERSION = 8;
+const CURRENT_SCHEMA_VERSION = 9;
 
 function isObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);

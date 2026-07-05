@@ -254,11 +254,10 @@ function daysUntil(a, today) {
 
 function normalizeStickers(stickers) {
   return (stickers || [])
-    .filter((s) => s && s.label)
+    .filter((s) => s && s.contextText)
     .map((s) => ({
       id: s.id || '',
       assetId: s.assetId || '',
-      label: String(s.label || '').trim(),
       contextText: String(s.contextText || '').trim()
     }));
 }
@@ -267,9 +266,9 @@ function stickersToInstruction(stickers) {
   const list = normalizeStickers(stickers);
   if (!list.length) return '';
   return [
-    '【小劇場貼圖】',
-    '你可以在回覆中單獨一行輸出「[貼圖:label]」來使用貼圖；label 必須完全符合下列清單。',
-    ...list.map((s) => `- ${s.label}：${s.contextText || '（無語境文字）'}`)
+    '【貼圖】',
+    '你可以在回覆中單獨一行輸出「[貼圖:語境文字]」來使用貼圖；語境文字必須完全符合下列清單。',
+    ...list.map((s) => `- ${s.contextText}`)
   ].join('\n');
 }
 
@@ -280,7 +279,7 @@ function partsToText(parts, stickers) {
     if (!part) return '';
     if (part.type === 'sticker') {
       const sticker = stickerById.get(part.stickerId);
-      return sticker ? `[小劇場] ${sticker.contextText || sticker.label}` : '[小劇場]';
+      return sticker ? `[貼圖] ${sticker.contextText}` : '[貼圖]';
     }
     if (part.type === 'image') {
       return part.altText ? `[照片] ${part.altText}` : '[照片]';

@@ -19,6 +19,7 @@ import { openCharacterCreator } from './components/characterEditor.js';
 import { getRoute, navigate } from './router.js';
 import { selectConversation, getState } from '../state/store.js';
 import { createWaveBars } from './wave.js';
+import { createIcon } from './icons.js';
 
 let refs = null;
 let appName = 'Vocilège';
@@ -45,7 +46,12 @@ export function mountLayout(root, state) {
   content.className = 'page-content';
   root.appendChild(content);
 
-  refs = { root, nav, content };
+  const bottomNav = document.createElement('nav');
+  bottomNav.className = 'bottom-nav';
+  bottomNav.setAttribute('aria-label', '底部導航');
+  root.appendChild(bottomNav);
+
+  refs = { root, nav, bottomNav, content };
   installToastHost(root);
   return refs;
 }
@@ -70,6 +76,7 @@ export function render(state) {
 
   const route = getRoute();
   renderNav(refs.nav, route, state);
+  renderBottomNav(refs.bottomNav, route, state);
 
   refs.content.textContent = '';
   if (route.name === 'settings') {
@@ -131,6 +138,31 @@ function navLink(label, active, onClick) {
   b.textContent = label;
   b.addEventListener('click', onClick);
   return b;
+}
+
+function renderBottomNav(nav, route, state) {
+  nav.textContent = '';
+  const items = [
+    { label: '首頁', icon: 'home', active: route.name === 'home', onClick: () => navigate('/home') },
+    { label: '聊天', icon: 'chat', active: route.name === 'chat', onClick: () => {
+      const target = pickChatConversationId(state);
+      navigate(target ? `/chat/${target}` : '/home');
+    } },
+    { label: '迴聲', icon: 'feed', active: route.name === 'feed', onClick: () => navigate('/feed') },
+    { label: '設定', icon: 'settings', active: route.name === 'settings', onClick: () => navigate('/settings') }
+  ];
+  for (const item of items) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'bottom-nav-link' + (item.active ? ' active' : '');
+    btn.setAttribute('aria-current', item.active ? 'page' : 'false');
+    btn.appendChild(createIcon(item.icon, { size: 21 }));
+    const text = document.createElement('span');
+    text.textContent = item.label;
+    btn.appendChild(text);
+    btn.addEventListener('click', item.onClick);
+    nav.appendChild(btn);
+  }
 }
 
 function pickChatConversationId(state) {

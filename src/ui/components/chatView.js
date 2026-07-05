@@ -25,6 +25,7 @@ import { applyAvatar } from '../avatar.js';
 import { navigate } from '../router.js';
 import { createWaveBars } from '../wave.js';
 import { iconButton } from '../icons.js';
+import { createToggle } from '../toggle.js';
 
 export function renderChatView(container, state) {
   container.textContent = '';
@@ -173,7 +174,7 @@ export function renderChatView(container, state) {
     sendBtn.disabled = true;
   }
 
-  const stickerBtn = iconButton('smile', '選擇小劇場貼圖', { className: 'icon-btn chat-send', title: '小劇場' });
+  const stickerBtn = iconButton('smile', '選擇貼圖', { className: 'icon-btn chat-send', title: '貼圖' });
   stickerBtn.disabled = typingNow || !(state.stickers || []).length;
   stickerBtn.addEventListener('click', () => openStickerMenu(state.stickers || []));
 
@@ -276,7 +277,7 @@ export function renderChatView(container, state) {
     modal.className = 'modal sticker-picker-modal';
     const title = document.createElement('h2');
     title.className = 'modal-title';
-    title.textContent = '小劇場';
+    title.textContent = '貼圖';
     modal.appendChild(title);
     const grid = document.createElement('div');
     grid.className = 'sticker-picker-grid';
@@ -284,15 +285,15 @@ export function renderChatView(container, state) {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'sticker-picker-item';
-      btn.textContent = sticker.label || '貼圖';
+      btn.textContent = sticker.contextText || '貼圖';
       getObjectURL(sticker.assetId).then((url) => {
         if (!url) return;
         btn.textContent = '';
         const img = document.createElement('img');
         img.src = url;
-        img.alt = sticker.label || '';
+        img.alt = sticker.contextText || '貼圖';
         const cap = document.createElement('span');
-        cap.textContent = sticker.label || '貼圖';
+        cap.textContent = sticker.contextText || '貼圖';
         btn.appendChild(img);
         btn.appendChild(cap);
       });
@@ -531,11 +532,13 @@ function openMemoryDrawer(state, character, conversation) {
 function memoryDrawerItem(m, characterId) {
   const row = document.createElement('div');
   row.className = 'memory-drawer-item';
-  const toggle = document.createElement('input');
-  toggle.type = 'checkbox';
-  toggle.checked = m.enabled !== false;
-  toggle.addEventListener('change', () => updateMemory(m.id, { enabled: toggle.checked }));
-  row.appendChild(toggle);
+  const toggle = createToggle({
+    checked: m.enabled !== false,
+    label: '',
+    className: 'memory-toggle',
+    onChange: (checked) => updateMemory(m.id, { enabled: checked })
+  });
+  row.appendChild(toggle.el);
   const body = document.createElement('div');
   body.className = 'memory-drawer-item-body';
   const title = document.createElement('div');

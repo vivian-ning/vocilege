@@ -61,6 +61,7 @@ async function boot() {
 
     // 首次渲染。
     render(getState());
+    registerServiceWorker();
   } catch (err) {
     root.textContent = '';
     const box = document.createElement('div');
@@ -81,3 +82,37 @@ async function boot() {
 }
 
 boot();
+
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  if (location.protocol === 'file:') return;
+
+  navigator.serviceWorker.register('./sw.js')
+    .then((registration) => {
+      registration.addEventListener('updatefound', () => {
+        const worker = registration.installing;
+        if (!worker) return;
+        worker.addEventListener('statechange', () => {
+          if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+            showUpdateToast(worker);
+          }
+        });
+      });
+    })
+    .catch(() => {
+      // PWA support must never block the local-first app.
+    });
+}
+
+function showUpdateToast(worker) {
+  const root = document.getElementById('app') || document.body;
+  const bar = document.createElement('button');
+  bar.type = 'button';
+  bar.className = 'app-update-toast';
+  bar.textContent = '有新版本，點擊重新整理';
+  bar.addEventListener('click', () => {
+    worker.postMessage({ type: 'SKIP_WAITING' });
+    window.location.reload();
+  });
+  root.appendChild(bar);
+}

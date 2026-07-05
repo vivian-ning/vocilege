@@ -245,8 +245,7 @@ export function normalizeState(state) {
     .map((s) => ({
       id: String(s.id || generateId('sticker')),
       assetId: String(s.assetId || ''),
-      label: String(s.label || '').trim(),
-      contextText: String(s.contextText || '').trim(),
+      contextText: String(s.contextText || s.label || '').trim(),
       createdAt: typeof s.createdAt === 'number' ? s.createdAt : Date.now()
     }));
 

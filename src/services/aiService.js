@@ -680,8 +680,8 @@ export function parseReplyToParts(text, stickers = []) {
 function matchSticker(block, stickers) {
   const m = /^\[貼圖:([^\]]+)\]$/.exec(String(block || '').trim());
   if (!m) return null;
-  const label = m[1].trim();
-  return (stickers || []).find((s) => s && String(s.label || '').trim() === label) || null;
+  const contextText = m[1].trim();
+  return (stickers || []).find((s) => s && String(s.contextText || '').trim() === contextText) || null;
 }
 
 // 若整段被全形 ＊…＊ 或半形 *…* 完整包裹，回傳去掉星號後的內容；否則回傳 null。

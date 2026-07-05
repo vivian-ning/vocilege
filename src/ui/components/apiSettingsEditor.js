@@ -11,6 +11,7 @@
 import { updateApiSettings, updateSettings } from '../../state/store.js';
 import { testConnection } from '../../services/aiService.js';
 import { getAllMessages } from '../../db/indexeddb.js';
+import { createToggle } from '../toggle.js';
 
 const PROVIDER_DEFAULT_BASE = {
   anthropic: 'https://api.anthropic.com',
@@ -88,26 +89,29 @@ export function renderApiSettingsEditor(container, state) {
   apiKeyInput.autocomplete = 'off';
   form.appendChild(wrapField('API 金鑰 (apiKey)', apiKeyInput));
 
-  // rememberApiKey（checkbox）
-  const rememberWrap = document.createElement('label');
-  rememberWrap.className = 'form-field form-check';
-  const rememberInput = document.createElement('input');
-  rememberInput.type = 'checkbox';
-  rememberInput.checked = !!api.rememberApiKey;
-  const rememberText = document.createElement('span');
-  rememberText.className = 'form-check-label';
-  rememberText.textContent = '記住金鑰：勾選後金鑰將以明文存在本機瀏覽器資料中；不勾選則重新整理後需重新輸入。';
-  rememberWrap.appendChild(rememberInput);
-  rememberWrap.appendChild(rememberText);
-  form.appendChild(rememberWrap);
+  const rememberToggle = createToggle({
+    checked: !!api.rememberApiKey,
+    label: '記住金鑰',
+    description: '開啟後金鑰將以明文存在本機瀏覽器資料中；關閉則重新整理後需重新輸入。'
+  });
+  const rememberInput = rememberToggle.input;
+  form.appendChild(rememberToggle.el);
 
-  const visionInput = checkboxInput(api.visionEnabled === true);
-  const visionField = wrapField('visionEnabled（開啟後照片會隨請求送出，token / 圖片成本會增加）', visionInput);
-  form.appendChild(visionField);
+  const visionToggle = createToggle({
+    checked: api.visionEnabled === true,
+    label: 'visionEnabled',
+    description: '開啟後照片會隨請求送出，token / 圖片成本會增加。'
+  });
+  const visionInput = visionToggle.input;
+  form.appendChild(visionToggle.el);
 
-  const thinkingInput = checkboxInput(api.showThinking === true);
-  const thinkingField = wrapField('顯示思考過程（需模型支援；會增加 token 消耗，思考內容計入聲量）', thinkingInput);
-  form.appendChild(thinkingField);
+  const thinkingToggle = createToggle({
+    checked: api.showThinking === true,
+    label: '顯示思考過程',
+    description: '需模型支援；會增加 token 消耗，思考內容計入聲量。'
+  });
+  const thinkingInput = thinkingToggle.input;
+  form.appendChild(thinkingToggle.el);
 
   const thinkingBudgetInput = document.createElement('input');
   thinkingBudgetInput.type = 'number';
@@ -158,9 +162,14 @@ export function renderApiSettingsEditor(container, state) {
   const memField = wrapField('記憶注入上限（一般記憶筆數；locked 不占名額，改動即時生效）', memLimitInput);
   form.appendChild(memField);
 
-  const timeAwarenessInput = checkboxInput(state.settings.timeAwareness !== false);
+  const timeAwarenessToggle = createToggle({
+    checked: state.settings.timeAwareness !== false,
+    label: '時間感知',
+    description: '讓角色知道目前日期、時段與近期紀念日。'
+  });
+  const timeAwarenessInput = timeAwarenessToggle.input;
   timeAwarenessInput.addEventListener('change', () => updateSettings({ timeAwareness: timeAwarenessInput.checked }));
-  form.appendChild(wrapField('時間感知', timeAwarenessInput));
+  form.appendChild(timeAwarenessToggle.el);
 
   const feedReactorsInput = numberInput(state.settings.feedReactorsPerPost, 0, 10, 1);
   feedReactorsInput.addEventListener('change', () => updateSettings({ feedReactorsPerPost: clampInt(feedReactorsInput.value, 0, 10, 2) }));
@@ -170,17 +179,27 @@ export function renderApiSettingsEditor(container, state) {
   feedDailyInput.addEventListener('change', () => updateSettings({ feedDailyLimit: clampInt(feedDailyInput.value, 0, 200, 20) }));
   form.appendChild(wrapField('每日動態 AI 上限', feedDailyInput));
 
-  const feedAutoInput = checkboxInput(!!state.settings.feedAutoPost);
+  const feedAutoToggle = createToggle({
+    checked: !!state.settings.feedAutoPost,
+    label: '允許角色自動發動態',
+    description: '角色可在每日上限內主動出現在迴聲牆。'
+  });
+  const feedAutoInput = feedAutoToggle.input;
   feedAutoInput.addEventListener('change', () => updateSettings({ feedAutoPost: feedAutoInput.checked }));
-  form.appendChild(wrapField('允許角色自動發動態', feedAutoInput));
+  form.appendChild(feedAutoToggle.el);
 
   const greetingInput = numberInput(state.settings.greetingAfterDays, 0, 365, 1);
   greetingInput.addEventListener('change', () => updateSettings({ greetingAfterDays: clampInt(greetingInput.value, 0, 365, 3) }));
   form.appendChild(wrapField('幾天未開啟後問候', greetingInput));
 
-  const dreamEnabledInput = checkboxInput(state.settings.dreamEnabled !== false);
+  const dreamToggle = createToggle({
+    checked: state.settings.dreamEnabled !== false,
+    label: '啟用 dream-lite 記憶擷取',
+    description: '在條件符合時整理近期對話成聲痕。'
+  });
+  const dreamEnabledInput = dreamToggle.input;
   dreamEnabledInput.addEventListener('change', () => updateSettings({ dreamEnabled: dreamEnabledInput.checked }));
-  form.appendChild(wrapField('啟用 dream-lite 記憶擷取', dreamEnabledInput));
+  form.appendChild(dreamToggle.el);
 
   const dreamEveryInput = numberInput(state.settings.dreamEveryMessages, 1, 1000, 1);
   dreamEveryInput.addEventListener('change', () => updateSettings({ dreamEveryMessages: clampInt(dreamEveryInput.value, 1, 1000, 20) }));
@@ -383,13 +402,6 @@ function numberInput(value, min, max, step) {
   input.max = String(max);
   input.step = String(step || 1);
   input.value = value != null ? String(value) : String(min);
-  return input;
-}
-
-function checkboxInput(checked) {
-  const input = document.createElement('input');
-  input.type = 'checkbox';
-  input.checked = !!checked;
   return input;
 }
 

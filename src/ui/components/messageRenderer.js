@@ -310,7 +310,7 @@ function stickerAssetId(stickerId, context) {
 function mediaLabel(part, context, kind) {
   if (kind === 'sticker') {
     const sticker = (context.stickers || []).find((s) => s.id === part.stickerId);
-    return sticker ? `（貼圖：${sticker.label}）` : '（貼圖缺失）';
+    return sticker ? `（貼圖：${sticker.contextText || '貼圖'}）` : '（貼圖缺失）';
   }
   return part.altText ? `（照片：${part.altText}）` : '（照片）';
 }

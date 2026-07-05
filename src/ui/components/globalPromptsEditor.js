@@ -15,6 +15,7 @@ import {
   deleteGlobalPrompt,
   moveGlobalPrompt
 } from '../../state/store.js';
+import { createToggle } from '../toggle.js';
 
 export function renderGlobalPromptsEditor(container, state) {
   container.textContent = '';
@@ -66,19 +67,15 @@ function renderBlock(gp, idx, total) {
   const head = document.createElement('div');
   head.className = 'gp-block-head';
 
-  const toggle = document.createElement('label');
-  toggle.className = 'gp-toggle';
-  const toggleInput = document.createElement('input');
-  toggleInput.type = 'checkbox';
-  toggleInput.checked = !!gp.enabled;
-  toggleInput.addEventListener('change', () => {
-    updateGlobalPrompt(gp.id, { enabled: toggleInput.checked });
+  const toggle = createToggle({
+    checked: !!gp.enabled,
+    label: gp.enabled ? '生效中' : '已停用',
+    className: 'gp-toggle',
+    onChange: (checked) => {
+      updateGlobalPrompt(gp.id, { enabled: checked });
+    }
   });
-  const toggleText = document.createElement('span');
-  toggleText.textContent = gp.enabled ? '生效中' : '已停用';
-  toggle.appendChild(toggleInput);
-  toggle.appendChild(toggleText);
-  head.appendChild(toggle);
+  head.appendChild(toggle.el);
 
   const spacer = document.createElement('div');
   spacer.className = 'gp-spacer';
