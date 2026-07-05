@@ -4,8 +4,14 @@
 
 import {
   clearPendingGreeting,
+  deleteHeartVoice,
+  deleteJournal,
+  deleteLetter,
+  generateLifeContent,
   getRelationship,
+  markLetterRead,
   pickOldReplay,
+  revealHeartVoice,
   selectCharacter,
   setFirstMetAt
 } from '../../state/store.js';
@@ -39,6 +45,9 @@ export function renderHomeView(container, state) {
 
   const greeting = buildGreetingCard(state);
   if (greeting) page.appendChild(greeting);
+
+  const letterNotice = buildUnreadLetterNotice(state);
+  if (letterNotice) page.appendChild(letterNotice);
 
   const annivReminders = buildAnniversaryReminders(state);
   if (annivReminders) page.appendChild(annivReminders);
@@ -152,6 +161,29 @@ function buildDashboard(state, character) {
     title: '約定',
     summary: wishlistSummary(state, character.id),
     onClick: () => openCharacterModal('約定', (body) => body.appendChild(buildWishlistSection(state, character)))
+  }));
+  grid.appendChild(lifeSummaryCard({
+    icon: 'book',
+    title: '私語',
+    summary: `${characterJournals(state, character.id).length} 則`,
+    onOpen: () => openCharacterModal('私語', (body) => renderJournalList(body, state, character)),
+    onGenerate: () => handleGenerateLife(character.id, 'diary')
+  }));
+  grid.appendChild(lifeSummaryCard({
+    icon: 'heart',
+    title: '弦外之音',
+    summary: `${heartVoices(state, character.id).filter((h) => !h.revealed).length} 則未解鎖`,
+    onOpen: () => openCharacterModal('弦外之音', (body) => renderHeartVoiceList(body, state, character)),
+    onGenerate: () => handleGenerateLife(character.id, 'heartVoice')
+  }));
+  const letters = characterLetters(state, character.id);
+  const unread = letters.filter((l) => !l.isRead).length;
+  grid.appendChild(lifeSummaryCard({
+    icon: 'send',
+    title: '聲箋',
+    summary: `${letters.length} 封・${unread} 未讀`,
+    onOpen: () => openCharacterModal('聲箋', (body, close) => renderLetterList(body, state, character, close)),
+    onGenerate: () => handleGenerateLife(character.id, 'letter')
   }));
   grid.appendChild(summaryCard({
     icon: 'edit',
@@ -297,6 +329,58 @@ function summaryCard({ icon, title, summary, onClick }) {
   return card;
 }
 
+function lifeSummaryCard({ icon, title, summary, onOpen, onGenerate }) {
+  const card = document.createElement('div');
+  card.className = 'summary-card life-summary-card';
+
+  const iconEl = document.createElement('div');
+  iconEl.className = 'summary-card-icon';
+  iconEl.appendChild(createIcon(icon, { size: 23 }));
+  card.appendChild(iconEl);
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'summary-card-title';
+  titleEl.textContent = title;
+  card.appendChild(titleEl);
+
+  const summaryEl = document.createElement('div');
+  summaryEl.className = 'summary-card-summary';
+  summaryEl.textContent = summary;
+  card.appendChild(summaryEl);
+
+  const actions = document.createElement('div');
+  actions.className = 'summary-card-actions';
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'btn';
+  open.textContent = '查看';
+  open.addEventListener('click', onOpen);
+  const gen = document.createElement('button');
+  gen.type = 'button';
+  gen.className = 'btn btn-primary';
+  gen.textContent = '讓 TA 寫一則';
+  gen.addEventListener('click', async () => {
+    gen.disabled = true;
+    try {
+      await onGenerate();
+    } finally {
+      gen.disabled = false;
+    }
+  });
+  actions.appendChild(open);
+  actions.appendChild(gen);
+  card.appendChild(actions);
+  return card;
+}
+
+async function handleGenerateLife(characterId, kind) {
+  try {
+    await generateLifeContent(characterId, kind, { automatic: false });
+  } catch (err) {
+    window.alert((err && err.userMessage) || (err && err.message) || '產生失敗');
+  }
+}
+
 function openCharacterModal(titleText, renderBody, extraClass) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -365,6 +449,181 @@ async function fillChatPreview(scope, state) {
     const last = stats.lastByConversation[node.dataset.convTime];
     node.textContent = last && last.createdAt ? formatRelative(last.createdAt) : node.textContent;
   });
+}
+
+function characterJournals(state, characterId) {
+  return (state.journals || [])
+    .filter((j) => j && j.ownerType === 'character' && j.ownerId === characterId)
+    .slice()
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+function heartVoices(state, characterId) {
+  return (state.heartVoices || [])
+    .filter((h) => h && h.characterId === characterId)
+    .slice()
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+function characterLetters(state, characterId) {
+  return (state.letters || [])
+    .filter((l) => l && l.characterId === characterId)
+    .slice()
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+function renderJournalList(container, state, character) {
+  const list = document.createElement('div');
+  list.className = 'life-list';
+  const items = characterJournals(state, character.id);
+  if (!items.length) list.appendChild(emptyLifeText('還沒有私語。'));
+  for (const item of items) {
+    const row = lifeItemShell(formatDate(item.createdAt), item.content);
+    row.appendChild(deleteButton('刪除私語', () => deleteJournal(item.id)));
+    list.appendChild(row);
+  }
+  container.appendChild(list);
+}
+
+function renderHeartVoiceList(container, state, character) {
+  const list = document.createElement('div');
+  list.className = 'life-list';
+  const items = heartVoices(state, character.id);
+  if (!items.length) list.appendChild(emptyLifeText('還沒有弦外之音。'));
+  for (const item of items) {
+    const row = document.createElement('article');
+    row.className = 'life-item heart-voice-item' + (item.revealed ? ' revealed' : '');
+    const date = document.createElement('div');
+    date.className = 'life-item-date';
+    date.textContent = formatDate(item.createdAt);
+    row.appendChild(date);
+    const content = document.createElement('button');
+    content.type = 'button';
+    content.className = 'heart-voice-content';
+    content.textContent = item.revealed ? item.content : '點一下，聽見沒有說出口的話';
+    content.addEventListener('click', async () => {
+      if (item.revealed) return;
+      await revealHeartVoice(item.id);
+      item.revealed = true;
+      row.classList.add('revealed');
+      content.textContent = item.content;
+    });
+    row.appendChild(content);
+    row.appendChild(deleteButton('刪除弦外之音', () => deleteHeartVoice(item.id)));
+    list.appendChild(row);
+  }
+  container.appendChild(list);
+}
+
+function renderLetterList(container, state, character, closeModal) {
+  const list = document.createElement('div');
+  list.className = 'life-list letter-list';
+  const items = characterLetters(state, character.id);
+  if (!items.length) list.appendChild(emptyLifeText('還沒有聲箋。'));
+  for (const item of items) list.appendChild(letterRow(item, character, closeModal));
+  container.appendChild(list);
+}
+
+function letterRow(item, character, closeModal) {
+  const row = document.createElement('article');
+  row.className = 'life-item letter-row' + (item.isRead ? '' : ' unread');
+  const date = document.createElement('div');
+  date.className = 'life-item-date';
+  date.textContent = formatDate(item.createdAt);
+  row.appendChild(date);
+  const preview = document.createElement('button');
+  preview.type = 'button';
+  preview.className = 'letter-preview';
+  preview.textContent = item.content.replace(/\s+/g, ' ').trim().slice(0, 80) || '一封尚未展開的聲箋';
+  preview.addEventListener('click', () => openLetterReader(item, character, closeModal));
+  row.appendChild(preview);
+  const status = document.createElement('span');
+  status.className = 'letter-status';
+  status.textContent = item.isRead ? '已讀' : '未讀';
+  row.appendChild(status);
+  row.appendChild(deleteButton('刪除聲箋', () => deleteLetter(item.id)));
+  return row;
+}
+
+async function openLetterReader(item, character, previousClose) {
+  if (previousClose) previousClose();
+  await markLetterRead(item.id);
+  openCharacterModal('聲箋', (body) => {
+    const article = document.createElement('article');
+    article.className = 'letter-reader';
+    const meta = document.createElement('div');
+    meta.className = 'life-item-date';
+    meta.textContent = `${character.name || '角色'} · ${formatDate(item.createdAt)}`;
+    article.appendChild(meta);
+    for (const block of String(item.content || '').split(/\n\s*\n/)) {
+      const p = document.createElement('p');
+      p.textContent = block.trim();
+      if (p.textContent) article.appendChild(p);
+    }
+    body.appendChild(article);
+  }, 'letter-reader-modal');
+}
+
+function lifeItemShell(dateText, contentText) {
+  const row = document.createElement('article');
+  row.className = 'life-item';
+  const date = document.createElement('div');
+  date.className = 'life-item-date';
+  date.textContent = dateText;
+  const content = document.createElement('div');
+  content.className = 'life-item-content';
+  content.textContent = contentText || '';
+  row.appendChild(date);
+  row.appendChild(content);
+  return row;
+}
+
+function deleteButton(label, action) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn btn-danger life-delete';
+  btn.textContent = '刪除';
+  btn.setAttribute('aria-label', label);
+  btn.addEventListener('click', async () => {
+    if (!window.confirm(`${label}？`)) return;
+    btn.disabled = true;
+    try {
+      await action();
+      const row = btn.closest('.life-item');
+      if (row) row.remove();
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  return btn;
+}
+
+function emptyLifeText(text) {
+  const empty = document.createElement('div');
+  empty.className = 'list-empty';
+  empty.textContent = text;
+  return empty;
+}
+
+function buildUnreadLetterNotice(state) {
+  const letters = (state.letters || []).filter((l) => l && !l.isRead);
+  if (!letters.length) return null;
+  letters.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const letter = letters[0];
+  const character = (state.characters || []).find((c) => c.id === letter.characterId);
+  if (!character) return null;
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'unread-letter-card';
+  card.appendChild(createAvatarEl(character.avatar, 'greeting-avatar'));
+  const text = document.createElement('span');
+  text.textContent = `${character.name || '角色'} 寄來一封信`;
+  card.appendChild(text);
+  card.addEventListener('click', async () => {
+    await selectCharacter(character.id);
+    openLetterReader(letter, character);
+  });
+  return card;
 }
 
 function buildGreetingCard(state) {

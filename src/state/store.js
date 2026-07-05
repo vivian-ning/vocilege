@@ -387,6 +387,10 @@ export async function deleteCharacter(characterId) {
   state.anniversaries = (state.anniversaries || []).filter((a) => a.characterId !== characterId);
   state.wishlists = (state.wishlists || []).filter((w) => w.characterId !== characterId);
   state.relationshipData = (state.relationshipData || []).filter((r) => r.characterId !== characterId);
+  state.journals = (state.journals || []).filter((j) => !(j.ownerType === 'character' && j.ownerId === characterId));
+  state.heartVoices = (state.heartVoices || []).filter((h) => h.characterId !== characterId);
+  state.letters = (state.letters || []).filter((l) => l.characterId !== characterId);
+  if (state.lifeGenLog && typeof state.lifeGenLog === 'object') delete state.lifeGenLog[characterId];
 
   // 4) 修復指標：若指向被刪除對象，自動選取剩餘第一個角色；若已無角色則清空。
   const pointedDeleted =
@@ -1108,7 +1112,7 @@ function resetDailyCounters() {
   const key = localDayKey(now());
   state.dailyCounters = state.dailyCounters || {};
   if (state.dailyCounters.date !== key) {
-    state.dailyCounters = { date: key, feed: 0, dream: 0, background: 0 };
+    state.dailyCounters = { date: key, feed: 0, dream: 0, life: 0, background: 0 };
   }
   return state.dailyCounters;
 }
@@ -1207,6 +1211,195 @@ function stripSpeakerName(text, character) {
   const name = character && character.name ? String(character.name).trim() : '';
   if (name && raw.startsWith(`${name}：`)) return raw.slice(name.length + 1).trim();
   return raw;
+}
+
+async function recentConversationText(characterId, limit = 14) {
+  const conv = findConversationByCharacter(characterId);
+  if (!conv) return '';
+  const list = conv.id === state.currentConversationId
+    ? messages
+    : normalizeMessageList(await getMessagesByConversation(conv.id));
+  return list
+    .slice(-limit)
+    .map((m) => `${m.senderType === 'player' ? '玩家' : '角色'}：${partsToPlainText(activeParts(m))}`)
+    .filter((line) => line.trim())
+    .join('\n');
+}
+
+function lifePromptSpec(kind) {
+  if (kind === 'heartVoice') {
+    return {
+      maxTokens: 180,
+      usageKind: 'heartVoice',
+      system: [
+        '你要以指定角色第一人稱寫一則「弦外之音」。',
+        '弦外之音是一句沒有說出口的內心話，1 到 2 句，更私密、脆弱、克制。',
+        '請使用繁體中文、角色口吻，不要加標題、角色名、引號或項目符號。'
+      ],
+      fallbackLabel: '弦外之音'
+    };
+  }
+  if (kind === 'letter') {
+    return {
+      maxTokens: 700,
+      usageKind: 'letter',
+      system: [
+        '你要以指定角色第一人稱寫一封「聲箋」給玩家。',
+        '聲箋比聊天更深、比弦外之音更正式，是隔幾天寫下的長信。',
+        '請使用繁體中文、角色口吻，分成數段，取材自最近對話餘韻與聲痕；不要加標題、角色名或項目符號。'
+      ],
+      fallbackLabel: '聲箋'
+    };
+  }
+  return {
+    maxTokens: 320,
+    usageKind: 'diary',
+    system: [
+      '你要以指定角色第一人稱寫一則「私語」。',
+      '私語是角色私人日記，內容是最近與玩家互動後的心情與想法。',
+      '請使用繁體中文、角色口吻，2 到 4 句，不要加日期、標題、角色名、引號或項目符號。'
+    ],
+    fallbackLabel: '私語'
+  };
+}
+
+function weightedLifeKind(characterId) {
+  const source = `${characterId}:${localDayKey(now())}`;
+  let hash = 0;
+  for (let i = 0; i < source.length; i++) hash = ((hash * 33) + source.charCodeAt(i)) >>> 0;
+  const bucket = hash % 10;
+  if (bucket < 6) return 'diary';
+  if (bucket < 9) return 'heartVoice';
+  return 'letter';
+}
+
+export async function generateLifeContent(characterId, kind = 'diary', { automatic = false } = {}) {
+  const character = (state.characters || []).find((c) => c.id === characterId);
+  if (!character) return null;
+  if (usesMock(state.apiSettings)) {
+    if (!automatic) windowAlert('需要連接 AI 服務');
+    return null;
+  }
+  if (!consumeDaily('life', state.settings.lifeDailyLimit, { manual: !automatic })) return null;
+  const spec = lifePromptSpec(kind);
+  const recent = await recentConversationText(character.id);
+  const memoryText = topMemoryText(character.id, 5);
+  const result = await generateUtilityText({
+    apiSettings: state.apiSettings,
+    maxTokens: spec.maxTokens,
+    system: [
+      ...spec.system,
+      characterBrief(character),
+      memoryText ? `聲痕：\n${memoryText}` : ''
+    ].filter(Boolean).join('\n\n'),
+    userText: [
+      recent ? `最近對話：\n${recent}` : '最近對話：目前沒有足夠文字，請依角色設定與聲痕自然書寫。',
+      `請只輸出${spec.fallbackLabel}正文。`
+    ].join('\n\n')
+  });
+  const content = stripSpeakerName(result.text, character);
+  if (!content) return null;
+  const ts = now();
+  let item;
+  if (kind === 'heartVoice') {
+    item = {
+      id: generateId('heart'),
+      characterId: character.id,
+      content,
+      revealed: false,
+      createdAt: ts
+    };
+    state.heartVoices = state.heartVoices || [];
+    state.heartVoices.push(item);
+  } else if (kind === 'letter') {
+    item = {
+      id: generateId('letter'),
+      characterId: character.id,
+      content,
+      isRead: false,
+      createdAt: ts
+    };
+    state.letters = state.letters || [];
+    state.letters.push(item);
+  } else {
+    item = {
+      id: generateId('journal'),
+      ownerType: 'character',
+      ownerId: character.id,
+      content,
+      createdAt: ts
+    };
+    state.journals = state.journals || [];
+    state.journals.push(item);
+  }
+  pushUsageLog({ kind: spec.usageKind, characterId: character.id, usage: result.usage });
+  if (automatic) {
+    state.lifeGenLog = state.lifeGenLog || {};
+    state.lifeGenLog[character.id] = ts;
+  }
+  await saveCurrentState();
+  notify();
+  return item;
+}
+
+export async function maybeGenerateLifeContent() {
+  if (state.settings.lifeEnabled === false) return [];
+  if (usesMock(state.apiSettings)) return [];
+  if (!canUseDaily('life', state.settings.lifeDailyLimit)) return [];
+  const everyDays = Math.max(0, Number(state.settings.lifeEveryDays) || 0);
+  if (!everyDays) return [];
+  const threshold = everyDays * 86400000;
+  const out = [];
+  for (const character of state.characters || []) {
+    if (!character || !character.id) continue;
+    if (!canUseDaily('life', state.settings.lifeDailyLimit)) break;
+    const last = state.lifeGenLog && Number(state.lifeGenLog[character.id]);
+    if (last && now() - last < threshold) continue;
+    try {
+      const item = await generateLifeContent(character.id, weightedLifeKind(character.id), { automatic: true });
+      if (item) out.push(item);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('角色生活內容自動產生失敗', e);
+    }
+  }
+  return out;
+}
+
+export async function deleteJournal(id) {
+  state.journals = (state.journals || []).filter((j) => j.id !== id);
+  await saveCurrentState();
+  notify();
+}
+
+export async function revealHeartVoice(id) {
+  const item = (state.heartVoices || []).find((h) => h.id === id);
+  if (!item) return null;
+  item.revealed = true;
+  await saveCurrentState();
+  notify();
+  return item;
+}
+
+export async function deleteHeartVoice(id) {
+  state.heartVoices = (state.heartVoices || []).filter((h) => h.id !== id);
+  await saveCurrentState();
+  notify();
+}
+
+export async function markLetterRead(id) {
+  const item = (state.letters || []).find((l) => l.id === id);
+  if (!item) return null;
+  item.isRead = true;
+  await saveCurrentState();
+  notify();
+  return item;
+}
+
+export async function deleteLetter(id) {
+  state.letters = (state.letters || []).filter((l) => l.id !== id);
+  await saveCurrentState();
+  notify();
 }
 
 function shuffled(list) {

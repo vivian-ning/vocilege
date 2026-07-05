@@ -1,7 +1,7 @@
 {
   "appName": "拾聲",
   "appNameLatin": "Vocilège",
-  "schemaVersion": 9,
+  "schemaVersion": 10,
   "defaultPlayer": {
     "id": "player",
     "playerName": "",
@@ -20,6 +20,9 @@
     "greetingAfterDays": 3,
     "dreamEnabled": true,
     "dreamEveryMessages": 20,
-    "dreamDailyLimit": 10
+    "dreamDailyLimit": 10,
+    "lifeEnabled": true,
+    "lifeEveryDays": 3,
+    "lifeDailyLimit": 5
   }
 }

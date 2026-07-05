@@ -68,6 +68,7 @@ export function createDefaultState(config) {
     posts: [],
     stickers: [],
     heartVoices: [],
+    letters: [],
     keepsakes: [],
     relationshipData: [],
     wishlists: [],
@@ -80,6 +81,7 @@ export function createDefaultState(config) {
     lastGreetingAt: 0,
     lastFeedAutoPostAt: 0,
     feedAutoPostLog: {},
+    lifeGenLog: {},
     // V2 新增：上次成功匯出備份的時間戳（0 = 從未備份），供首頁備份提醒使用。
     lastBackupAt: 0,
     settings: {
@@ -109,7 +111,14 @@ export function createDefaultState(config) {
         : 20,
       dreamDailyLimit: typeof defaultSettings.dreamDailyLimit === 'number'
         ? defaultSettings.dreamDailyLimit
-        : 10
+        : 10,
+      lifeEnabled: defaultSettings.lifeEnabled !== false,
+      lifeEveryDays: typeof defaultSettings.lifeEveryDays === 'number'
+        ? defaultSettings.lifeEveryDays
+        : 3,
+      lifeDailyLimit: typeof defaultSettings.lifeDailyLimit === 'number'
+        ? defaultSettings.lifeDailyLimit
+        : 5
     },
     apiSettings: {
       provider: '',
@@ -164,7 +173,7 @@ export function normalizeState(state) {
   // 確保所有陣列欄位存在且為陣列。
   const arrayFields = [
     'characters', 'conversations', 'memories', 'worldbooks',
-    'journals', 'globalPrompts', 'posts', 'heartVoices', 'keepsakes', 'relationshipData',
+    'journals', 'globalPrompts', 'posts', 'heartVoices', 'letters', 'keepsakes', 'relationshipData',
     'wishlists', 'anniversaries', 'notifications', 'usageLog', 'stickers'
   ];
   for (const f of arrayFields) {
@@ -183,7 +192,9 @@ export function normalizeState(state) {
     feedDailyLimit: [0, 200, 20],
     greetingAfterDays: [0, 365, 3],
     dreamEveryMessages: [1, 1000, 20],
-    dreamDailyLimit: [0, 200, 10]
+    dreamDailyLimit: [0, 200, 10],
+    lifeEveryDays: [0, 365, 3],
+    lifeDailyLimit: [0, 200, 5]
   };
   for (const [key, [min, max, fallback]] of Object.entries(numericSettings)) {
     const n = Number(merged.settings[key]);
@@ -194,6 +205,7 @@ export function normalizeState(state) {
   merged.settings.timeAwareness = merged.settings.timeAwareness !== false;
   merged.settings.feedAutoPost = !!merged.settings.feedAutoPost;
   merged.settings.dreamEnabled = merged.settings.dreamEnabled !== false;
+  merged.settings.lifeEnabled = merged.settings.lifeEnabled !== false;
   merged.apiSettings.visionEnabled = merged.apiSettings.visionEnabled === true;
   merged.apiSettings.showThinking = merged.apiSettings.showThinking === true;
   if (typeof merged.apiSettings.thinkingBudget !== 'number' ||
@@ -211,6 +223,9 @@ export function normalizeState(state) {
   if (typeof merged.lastFeedAutoPostAt !== 'number') merged.lastFeedAutoPostAt = 0;
   if (!merged.feedAutoPostLog || typeof merged.feedAutoPostLog !== 'object' || Array.isArray(merged.feedAutoPostLog)) {
     merged.feedAutoPostLog = {};
+  }
+  if (!merged.lifeGenLog || typeof merged.lifeGenLog !== 'object' || Array.isArray(merged.lifeGenLog)) {
+    merged.lifeGenLog = {};
   }
   if (!merged.pendingGreeting || typeof merged.pendingGreeting !== 'object') merged.pendingGreeting = null;
   if (!merged.dailyCounters || typeof merged.dailyCounters !== 'object') {
@@ -257,6 +272,36 @@ export function normalizeState(state) {
       assetId: String(s.assetId || ''),
       contextText: String(s.contextText || s.label || '').trim(),
       createdAt: typeof s.createdAt === 'number' ? s.createdAt : Date.now()
+    }));
+
+  merged.journals = merged.journals
+    .filter((j) => j && typeof j === 'object')
+    .map((j) => ({
+      id: String(j.id || generateId('journal')),
+      ownerType: j.ownerType === 'character' ? 'character' : String(j.ownerType || 'player'),
+      ownerId: String(j.ownerId || j.characterId || ''),
+      content: String(j.content || ''),
+      createdAt: typeof j.createdAt === 'number' ? j.createdAt : Date.now()
+    }));
+
+  merged.heartVoices = merged.heartVoices
+    .filter((h) => h && typeof h === 'object')
+    .map((h) => ({
+      id: String(h.id || generateId('heart')),
+      characterId: String(h.characterId || ''),
+      content: String(h.content || ''),
+      revealed: h.revealed === true,
+      createdAt: typeof h.createdAt === 'number' ? h.createdAt : Date.now()
+    }));
+
+  merged.letters = merged.letters
+    .filter((l) => l && typeof l === 'object')
+    .map((l) => ({
+      id: String(l.id || generateId('letter')),
+      characterId: String(l.characterId || ''),
+      content: String(l.content || ''),
+      isRead: l.isRead === true,
+      createdAt: typeof l.createdAt === 'number' ? l.createdAt : Date.now()
     }));
 
   if (typeof merged.lastBackupAt !== 'number') merged.lastBackupAt = 0;

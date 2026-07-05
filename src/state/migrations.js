@@ -10,7 +10,7 @@
 
 import { createExampleGlobalPrompt } from './schema.js';
 
-export const CURRENT_SCHEMA_VERSION = 9;
+export const CURRENT_SCHEMA_VERSION = 10;
 
 // 逐版升級函式表。key = 來源版本，value = 把該版 state 升到「下一版」的函式。
 const migrators = {
@@ -204,6 +204,46 @@ const migrators = {
     s.schemaVersion = 9;
     return s;
   },
+
+  // v9 -> v10（V9 角色生活感）：私語 / 弦外之音 / 聲箋。
+  9: (s) => {
+    const journals = Array.isArray(s.journals) ? s.journals : [];
+    const existingPosts = Array.isArray(s.posts) ? s.posts : [];
+    const postIds = new Set(existingPosts.map((p) => p && p.id).filter(Boolean));
+    const legacyJournals = journals.filter((j) => j && j.ownerType !== 'character');
+    const migratedPosts = legacyJournals
+      .filter((j) => !postIds.has(j.id))
+      .map((j) => ({
+        id: j.id || `post_${Math.random().toString(36).slice(2)}`,
+        authorType: 'player',
+        authorId: 'player',
+        content: j.content || '',
+        mood: j.mood || '',
+        createdAt: j.createdAt || Date.now(),
+        likes: [],
+        comments: []
+      }));
+    s.posts = existingPosts.concat(migratedPosts);
+    s.journals = journals.filter((j) => j && j.ownerType === 'character');
+    if (!Array.isArray(s.letters)) s.letters = [];
+    if (!s.lifeGenLog || typeof s.lifeGenLog !== 'object' || Array.isArray(s.lifeGenLog)) {
+      s.lifeGenLog = {};
+    }
+    if (Array.isArray(s.heartVoices)) {
+      s.heartVoices = s.heartVoices
+        .filter((item) => item && typeof item === 'object')
+        .map((item) => ({ ...item, revealed: item.revealed === true }));
+    } else {
+      s.heartVoices = [];
+    }
+    const settings = (s.settings && typeof s.settings === 'object') ? { ...s.settings } : {};
+    if (typeof settings.lifeEnabled !== 'boolean') settings.lifeEnabled = true;
+    if (typeof settings.lifeEveryDays !== 'number') settings.lifeEveryDays = 3;
+    if (typeof settings.lifeDailyLimit !== 'number') settings.lifeDailyLimit = 5;
+    s.settings = settings;
+    s.schemaVersion = 10;
+    return s;
+  },
 };
 
 export function migrateState(state) {
@@ -227,7 +267,7 @@ export function migrateState(state) {
   // 防禦性修復：v5 初版的 4→5 migration 漏了「轉換後清空 journals」，
   // 已升到 v5 的資料可能殘留舊獨白。此處補做一次同樣的轉換（以 id 去重，
   // 冪等安全），確保獨白不會卡在死掉的 journals 陣列裡。
-  if (s.schemaVersion >= 5 && Array.isArray(s.journals) && s.journals.length) {
+  if (s.schemaVersion >= 5 && s.schemaVersion < 10 && Array.isArray(s.journals) && s.journals.length) {
     const existingPosts = Array.isArray(s.posts) ? s.posts : [];
     const postIds = new Set(existingPosts.map((p) => p && p.id).filter(Boolean));
     const migratedPosts = s.journals

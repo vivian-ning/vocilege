@@ -7,7 +7,7 @@
 // username.github.io/repo/ 子路徑下，絕對路徑會失效。
 
 import { initDB } from './db/indexeddb.js';
-import { initStore, subscribe, getState, markAppOpened, maybeCreateGreeting, maybeAutoFeedPost } from './state/store.js';
+import { initStore, subscribe, getState, markAppOpened, maybeCreateGreeting, maybeAutoFeedPost, maybeGenerateLifeContent } from './state/store.js';
 import { mountLayout, render, setAppName } from './ui/render.js';
 import { onRouteChange, ensureRoute } from './ui/router.js';
 
@@ -38,10 +38,18 @@ async function boot() {
       // eslint-disable-next-line no-console
       console.warn('迴聲自動發文檢查失敗', err);
     });
+    maybeGenerateLifeContent().catch((err) => {
+      // eslint-disable-next-line no-console
+      console.warn('角色生活內容檢查失敗', err);
+    });
     window.setInterval(() => {
       maybeAutoFeedPost().catch((err) => {
         // eslint-disable-next-line no-console
         console.warn('迴聲自動發文檢查失敗', err);
+      });
+      maybeGenerateLifeContent().catch((err) => {
+        // eslint-disable-next-line no-console
+        console.warn('角色生活內容檢查失敗', err);
       });
     }, 15 * 60 * 1000);
     await markAppOpened();

@@ -2,7 +2,7 @@
 // 匯入資料前的結構驗證（第十三節）。回傳 { ok, errors }。
 // 不修改輸入，只做檢查。
 
-const CURRENT_SCHEMA_VERSION = 9;
+const CURRENT_SCHEMA_VERSION = 10;
 
 function isObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -36,7 +36,7 @@ export function validateBackup(data) {
     const arrayFields = [
       'characters', 'conversations', 'memories', 'worldbooks',
       'journals', 'globalPrompts', 'posts', 'heartVoices', 'keepsakes', 'relationshipData',
-      'wishlists', 'anniversaries', 'notifications', 'usageLog', 'stickers'
+      'wishlists', 'anniversaries', 'notifications', 'usageLog', 'stickers', 'letters'
     ];
     for (const f of arrayFields) {
       if (f in s && !Array.isArray(s[f])) {
