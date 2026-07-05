@@ -2,7 +2,7 @@
 //
 // V7 對話列表：direct 聊天列表 + group 佔位。可作為整頁列表或桌面 master 欄。
 
-import { createGroupConversation, deleteCharacter, selectConversation } from '../../state/store.js';
+import { createGroupConversation, deleteCharacter, deleteGroupConversation, selectConversation } from '../../state/store.js';
 import { getStats } from '../../services/statsService.js';
 import { applyAvatar } from '../avatar.js';
 import { navigate } from '../router.js';
@@ -145,12 +145,21 @@ function renderItem(conv, state) {
   const del = document.createElement('button');
   del.className = 'conv-delete';
   del.type = 'button';
-  del.title = conv.type === 'group' ? '群聊保留中' : '刪除角色';
-  del.setAttribute('aria-label', conv.type === 'group' ? '群聊保留中' : '刪除角色');
+  del.title = conv.type === 'group' ? '刪除群聊' : '刪除角色';
+  del.setAttribute('aria-label', conv.type === 'group' ? '刪除群聊' : '刪除角色');
   del.textContent = '×';
-  if (conv.type === 'group') del.disabled = true;
-  del.addEventListener('click', (e) => {
+  del.addEventListener('click', async (e) => {
     e.stopPropagation();
+    if (conv.type === 'group') {
+      const ok = window.confirm(
+        `確定要刪除群聊「${deriveTitle(conv, character)}」嗎？\n\n將刪除此群聊與聊天紀錄，但不會刪除任何角色、聲痕、節拍或約定。`
+      );
+      if (!ok) return;
+      const wasCurrent = conv.id === state.currentConversationId;
+      await deleteGroupConversation(conv.id);
+      if (wasCurrent) navigate('/chats');
+      return;
+    }
     if (!character) return;
     const ok = window.confirm(
       `確定要刪除角色「${character.name}」嗎？\n\n將同時刪除該角色的所有對話與聊天紀錄，此動作無法復原。`
@@ -181,22 +190,25 @@ function openGroupCreator(state) {
   const modal = document.createElement('div');
   modal.className = 'modal group-create-modal';
 
+  const form = document.createElement('div');
+  form.className = 'char-form group-create-form';
+
   const title = document.createElement('h2');
   title.className = 'modal-title';
   title.textContent = '新增群聊';
-  modal.appendChild(title);
+  form.appendChild(title);
 
   const name = document.createElement('input');
   name.type = 'text';
   name.className = 'form-control';
   name.placeholder = '群聊名稱（預設：合聲）';
-  modal.appendChild(name);
+  form.appendChild(name);
 
   const first = document.createElement('textarea');
   first.className = 'form-control';
   first.rows = 3;
   first.placeholder = '開場備註（選填，會以系統提示放入群聊）';
-  modal.appendChild(first);
+  form.appendChild(first);
 
   const list = document.createElement('div');
   list.className = 'group-member-list';
@@ -212,12 +224,12 @@ function openGroupCreator(state) {
     label.appendChild(text);
     list.appendChild(label);
   }
-  modal.appendChild(list);
+  form.appendChild(list);
 
   const hint = document.createElement('div');
   hint.className = 'form-hint';
   hint.textContent = characters.length < 2 ? '至少需要 2 位角色才能建立群聊。' : '被 @ 的角色會先回覆，其餘角色隨機接續。';
-  modal.appendChild(hint);
+  form.appendChild(hint);
 
   const actions = document.createElement('div');
   actions.className = 'form-actions';
@@ -250,7 +262,8 @@ function openGroupCreator(state) {
   });
   actions.appendChild(cancel);
   actions.appendChild(save);
-  modal.appendChild(actions);
+  form.appendChild(actions);
+  modal.appendChild(form);
 
   overlay.appendChild(modal);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });

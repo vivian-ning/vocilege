@@ -691,6 +691,7 @@ button { touch-action: manipulation; }
 /* 訊息流 */
 .chat-messages {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 20px clamp(14px, 4vw, 32px);
   display: flex;
@@ -965,6 +966,8 @@ button { touch-action: manipulation; }
 .form-field { display: flex; flex-direction: column; gap: 5px; }
 .form-label { font-size: 12px; font-weight: 600; color: var(--muted); }
 .form-control {
+  width: 100%;
+  box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 9px 12px;
@@ -1075,6 +1078,17 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 .edit-message-modal { max-width: 560px; }
 .persona-modal .form-field { margin-bottom: 12px; }
 .group-create-modal { max-width: 560px; }
+.group-create-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.group-create-form .modal-title,
+.group-create-form .form-hint,
+.group-create-form .group-member-list,
+.group-create-form .form-actions {
+  margin: 0;
+}
 .group-member-list {
   display: grid;
   gap: 8px;
@@ -1093,6 +1107,55 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 }
 .group-member-option:hover { border-color: var(--primary); background: var(--surface-2); }
 .group-member-option input { width: 18px; height: 18px; accent-color: var(--primary); }
+
+.mention-menu {
+  position: fixed;
+  z-index: var(--z-modal);
+  width: min(280px, calc(100vw - 24px));
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-m);
+  background: var(--glass-bg);
+  box-shadow: var(--shadow-3);
+  backdrop-filter: blur(22px) saturate(130%);
+  animation: rise-in var(--t-fast) var(--ease);
+}
+.mention-option {
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: var(--r-s);
+  background: transparent;
+  color: var(--text);
+  padding: 6px 8px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mention-option:hover,
+.mention-option:focus-visible {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.mention-avatar {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 50%;
+  background-color: var(--surface-2);
+  font-size: 18px;
+}
+.mention-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
 
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes rise-in { from { opacity: 0; transform: translateY(10px); } }
@@ -1755,6 +1818,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
     backdrop-filter: blur(20px) saturate(130%);
   }
   .page-content {
+    flex: 1 1 auto;
+    min-height: 0;
     padding-bottom: 0;
     overflow-x: hidden;
   }
@@ -1795,17 +1860,24 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
     clip: rect(0 0 0 0);
   }
   .col-center {
+    display: flex;
+    flex-direction: column;
     min-height: 0;
     overflow: hidden;
   }
   .chat-header {
+    flex: 0 0 auto;
     padding: 8px 12px;
   }
   .chat-messages {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
     padding: 14px 12px;
-    padding-bottom: 86px;
+    padding-bottom: 14px;
   }
   .chat-input-bar {
+    flex: 0 0 auto;
     position: sticky;
     bottom: 0;
     z-index: var(--z-sticky);
@@ -2013,7 +2085,13 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 .conv-time { margin-left: auto; color: var(--muted); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .chat-master-detail { grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); }
 .chat-back-btn { flex: 0 0 auto; }
-.chat-mobile-page { height: calc(100vh - var(--top-nav-height, 64px) - var(--bottom-nav-height, 62px)); min-height: 0; }
+.chat-mobile-page {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 
 /* V7 settings accordion */
 .settings-section-title { width: 100%; border: 1px solid var(--border); border-radius: var(--r-m); background: var(--glass); color: var(--text); display: flex; align-items: center; justify-content: space-between; min-height: 52px; padding: 0 14px; cursor: pointer; }

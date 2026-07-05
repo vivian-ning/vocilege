@@ -18,7 +18,8 @@ import {
   sendStickerMessage,
   sendPhotoMessage,
   exportConversationBook,
-  selectCharacter
+  selectCharacter,
+  deleteGroupConversation
 } from '../../state/store.js';
 import { usesMock } from '../../services/aiService.js';
 import { getObjectURL, saveImageAsset } from '../../services/assetService.js';
@@ -228,6 +229,7 @@ export function renderChatView(container, state) {
     const text = textarea.value;
     if (!text.trim()) return;
     textarea.value = '';
+    closeMentionMenu();
     sendPlayerMessage(text);
   };
 
@@ -237,11 +239,26 @@ export function renderChatView(container, state) {
   });
 
   textarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeMentionMenu();
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       submit();
     }
   });
+  if (isGroup) {
+    textarea.addEventListener('input', () => updateMentionMenu());
+    textarea.addEventListener('keyup', () => updateMentionMenu());
+    textarea.addEventListener('click', () => updateMentionMenu());
+    textarea.addEventListener('blur', () => {
+      window.setTimeout(() => {
+        const menu = document.querySelector('.mention-menu');
+        if (menu && !menu.matches(':hover')) closeMentionMenu();
+      }, 120);
+    });
+  }
 
   inputBar.appendChild(stickerBtn);
   inputBar.appendChild(photoBtn);
@@ -249,6 +266,105 @@ export function renderChatView(container, state) {
   inputBar.appendChild(textarea);
   inputBar.appendChild(sendBtn);
   container.appendChild(inputBar);
+
+  function getMentionQuery() {
+    const cursor = textarea.selectionStart || 0;
+    const before = textarea.value.slice(0, cursor);
+    const match = /(^|\s)@([^\s@]*)$/.exec(before);
+    if (!match) return null;
+    return {
+      query: match[2] || '',
+      start: cursor - (match[2] || '').length - 1,
+      end: cursor
+    };
+  }
+
+  function updateMentionMenu() {
+    if (!isGroup || textarea.disabled) {
+      closeMentionMenu();
+      return;
+    }
+    const mention = getMentionQuery();
+    if (!mention) {
+      closeMentionMenu();
+      return;
+    }
+    const q = mention.query.trim().toLowerCase();
+    const matched = groupMembers.filter((member) => {
+      const name = String(member.name || '角色').toLowerCase();
+      return !q || name.includes(q);
+    });
+    if (!matched.length) {
+      closeMentionMenu();
+      return;
+    }
+    openMentionMenu(matched, mention);
+  }
+
+  function openMentionMenu(members, mention) {
+    closeMentionMenu();
+    const menu = document.createElement('div');
+    menu.className = 'mention-menu';
+    menu.setAttribute('role', 'listbox');
+    menu.setAttribute('aria-label', '提及群聊成員');
+    const rect = textarea.getBoundingClientRect();
+    menu.style.left = `${Math.max(12, Math.min(rect.left, window.innerWidth - 292))}px`;
+    menu.style.bottom = `${Math.max(12, window.innerHeight - rect.top + 8)}px`;
+    menu.style.maxHeight = `${Math.min(260, window.innerHeight - 24)}px`;
+    for (const member of members) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mention-option';
+      btn.setAttribute('role', 'option');
+      btn.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        insertMention(member, mention);
+      });
+      const avatarEl = document.createElement('span');
+      avatarEl.className = 'mention-avatar avatar';
+      applyAvatar(avatarEl, member.avatar);
+      const nameEl = document.createElement('span');
+      nameEl.className = 'mention-name';
+      nameEl.textContent = member.name || '角色';
+      btn.appendChild(avatarEl);
+      btn.appendChild(nameEl);
+      menu.appendChild(btn);
+    }
+    const closeOnPointer = (event) => {
+      if (!menu.contains(event.target) && event.target !== textarea) closeMentionMenu();
+    };
+    const closeOnKey = (event) => {
+      if (event.key === 'Escape') closeMentionMenu();
+    };
+    menu._cleanup = () => {
+      document.removeEventListener('pointerdown', closeOnPointer);
+      document.removeEventListener('keydown', closeOnKey);
+    };
+    document.body.appendChild(menu);
+    requestAnimationFrame(() => {
+      document.addEventListener('pointerdown', closeOnPointer);
+      document.addEventListener('keydown', closeOnKey);
+    });
+  }
+
+  function insertMention(member, mention) {
+    const name = member.name || '角色';
+    const before = textarea.value.slice(0, mention.start);
+    const after = textarea.value.slice(mention.end);
+    const inserted = `@${name} `;
+    textarea.value = before + inserted + after;
+    const pos = before.length + inserted.length;
+    closeMentionMenu();
+    textarea.focus();
+    textarea.setSelectionRange(pos, pos);
+  }
+
+  function closeMentionMenu() {
+    const old = document.querySelector('.mention-menu');
+    if (!old) return;
+    if (typeof old._cleanup === 'function') old._cleanup();
+    old.remove();
+  }
 
   function openChatOverflowMenu(anchor, conv) {
     closeChatOverflowMenu();
@@ -275,6 +391,16 @@ export function renderChatView(container, state) {
     addItem('成書（HTML）', () => exportConversationBook('html'));
     addItem('成書（Markdown）', () => exportConversationBook('markdown'));
     if (conv.type !== 'group') addItem('此對話的我', () => openPersonaPanel(conv), !!conv.playerPersona);
+    if (conv.type === 'group') {
+      addItem('刪除群聊', async () => {
+        const ok = window.confirm(
+          `確定要刪除群聊「${conv.title || '合聲'}」嗎？\n\n將刪除此群聊與聊天紀錄，但不會刪除任何角色、聲痕、節拍或約定。`
+        );
+        if (!ok) return;
+        await deleteGroupConversation(conv.id);
+        navigate('/chats');
+      });
+    }
 
     const closeOnPointer = (event) => {
       if (!menu.contains(event.target) && event.target !== anchor) closeChatOverflowMenu();

@@ -407,6 +407,41 @@ export async function deleteCharacter(characterId) {
   notify();
 }
 
+// 刪除合聲：只刪 group conversation 與其 messages，不動任何角色資料。
+export async function deleteGroupConversation(conversationId) {
+  const conversation = state.conversations.find((c) => c.id === conversationId);
+  if (!conversation || conversation.type !== 'group') return false;
+
+  await deleteMessagesByConversation(conversation.id);
+  state.conversations = state.conversations.filter((c) => c.id !== conversation.id);
+  invalidateStats();
+
+  if (state.currentConversationId === conversation.id) {
+    const fallback = (state.conversations || [])
+      .slice()
+      .sort((a, b) => (b.lastMessageAt || b.updatedAt || b.createdAt || 0) - (a.lastMessageAt || a.updatedAt || a.createdAt || 0))[0];
+    if (fallback) {
+      if (fallback.type === 'group') {
+        state.currentConversationId = fallback.id;
+        state.currentCharacterId = '';
+        pendingError = null;
+        await reloadCurrentMessages();
+      } else {
+        await selectCharacter(fallback.primaryCharacterId, { silent: true });
+      }
+    } else {
+      state.currentCharacterId = '';
+      state.currentConversationId = '';
+      pendingError = null;
+      messages = [];
+    }
+  }
+
+  await saveCurrentState();
+  notify();
+  return true;
+}
+
 // 唯一可修改兩個 current 指標的 action。同時更新並保持一致。
 export async function selectCharacter(characterId, options = {}) {
   const conversation = findConversationByCharacter(characterId);
@@ -673,19 +708,33 @@ async function runGroupGeneration(conversation, userText) {
 function pickGroupSpeakers(conversation, text) {
   const members = getConversationMembers(conversation);
   if (!members.length) return [];
-  const mentioned = members.filter((c) => isMentioned(text, c));
+  if (members.length <= 3) return members;
+  const mentioned = mentionedMembersInOrder(text, members).slice(0, 3);
   const mentionedIds = new Set(mentioned.map((c) => c.id));
   const rest = shuffle(members.filter((c) => !mentionedIds.has(c.id)));
-  return mentioned.length ? mentioned.concat(rest) : shuffle(members);
+  return mentioned.concat(rest).slice(0, 3);
 }
 
-function isMentioned(text, character) {
+function mentionedMembersInOrder(text, members) {
   const raw = String(text || '');
-  const names = [character.name, character.id]
-    .filter(Boolean)
-    .map((x) => String(x).trim())
-    .filter(Boolean);
-  return names.some((name) => raw.includes(`@${name}`));
+  const found = [];
+  const seen = new Set();
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i] !== '@') continue;
+    const after = raw.slice(i + 1);
+    const match = members.find((character) => {
+      const names = [character.name, character.id]
+        .filter(Boolean)
+        .map((x) => String(x).trim())
+        .filter(Boolean);
+      return names.some((name) => after.startsWith(name));
+    });
+    if (match && !seen.has(match.id)) {
+      seen.add(match.id);
+      found.push(match);
+    }
+  }
+  return found;
 }
 
 function shuffle(list) {
