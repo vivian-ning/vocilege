@@ -24,5 +24,8 @@
     "lifeEnabled": true,
     "lifeEveryDays": 3,
     "lifeDailyLimit": 5
+  },
+  "defaultApiSettings": {
+    "maxTokens": 2048
   }
 }

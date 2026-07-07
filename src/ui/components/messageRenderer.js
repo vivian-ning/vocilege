@@ -20,7 +20,8 @@ import {
   toggleKeepsakeFromMessage,
   regenerateMessage,
   editMessageParts,
-  switchMessageVersion
+  switchMessageVersion,
+  continueTruncatedReply
 } from '../../state/store.js';
 import { getObjectURL } from '../../services/assetService.js';
 import { iconButton } from '../icons.js';
@@ -52,9 +53,28 @@ export function renderMessage(message, context) {
     wrap.appendChild(usageEl);
   }
 
+  if (message.senderType === 'character' && message.truncated === true) {
+    wrap.appendChild(renderTruncatedNotice(message));
+  }
+
   wrap.appendChild(renderMessageTools(message, context));
 
   return wrap;
+}
+
+function renderTruncatedNotice(message) {
+  const row = document.createElement('div');
+  row.className = 'msg-truncated-notice';
+  const text = document.createElement('span');
+  text.textContent = '回覆似乎被截斷';
+  row.appendChild(text);
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'msg-truncated-continue';
+  btn.textContent = '繼續';
+  btn.addEventListener('click', () => continueTruncatedReply(message.id));
+  row.appendChild(btn);
+  return row;
 }
 
 function renderMessageTools(message, context) {

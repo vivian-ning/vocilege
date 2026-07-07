@@ -45,6 +45,7 @@ export function createDefaultState(config) {
     messageDisplayMode: 'mixed',
     memoryInjectionLimit: 10
   };
+  const defaultApiSettings = (config && config.defaultApiSettings) || {};
 
   return {
     // schemaVersion 的唯一真相來源是 state；config 只在此第一次建立時提供初值。
@@ -127,9 +128,9 @@ export function createDefaultState(config) {
       rememberApiKey: false,
       apiKey: '',
       utilityModel: '',
-      // V1 新增：temperature（0–2，預設 1）、maxTokens（預設 1024）。
+      // V1 新增：temperature（0–2，預設 1）；V9.1 起新預設 maxTokens 2048。
       temperature: 1,
-      maxTokens: 1024,
+      maxTokens: typeof defaultApiSettings.maxTokens === 'number' ? defaultApiSettings.maxTokens : 2048,
       visionEnabled: false,
       showThinking: false,
       thinkingBudget: 1024

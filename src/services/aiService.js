@@ -10,6 +10,7 @@
 //   - result.usage  ：{ promptTokens, completionTokens, model }（只有真 API 回覆才有）
 //   - result.isMock ：true 代表這是 mock 回覆（未設定 provider / apiKey）
 //   - result.thinking：模型思考文字（僅 showThinking 且 provider 支援時）
+//   - result.truncated：true 代表供應商因 max tokens 截斷
 //
 // V1：依 apiSettings.provider 分派——
 //   - 未設定 provider 或 apiKey → 委派給 mockAIService（附 isMock 標記）
@@ -151,7 +152,7 @@ async function callOpenAICompatible(args, { stream = false } = {}) {
     model: apiSettings.model || '',
     messages,
     temperature: clampNumber(apiSettings.temperature, 0, 2, 1),
-    max_tokens: clampNumber(apiSettings.maxTokens, 1, 1000000, 1024),
+    max_tokens: clampNumber(apiSettings.maxTokens, 1, 1000000, 2048),
     stream // V1 恆為 false；預留未來 SSE。
   };
 
@@ -160,7 +161,8 @@ async function callOpenAICompatible(args, { stream = false } = {}) {
     'Content-Type': 'application/json'
   }, body);
 
-  const message = data && data.choices && data.choices[0] && data.choices[0].message;
+  const choice = data && data.choices && data.choices[0];
+  const message = choice && choice.message;
   const text = message ? String(message.content || '') : '';
   const thinking = message
     ? String(message.reasoning_content || message.reasoning || '').trim()
@@ -173,6 +175,7 @@ async function callOpenAICompatible(args, { stream = false } = {}) {
 
   const parts = parseReplyToParts(text, prompt && prompt.meta && prompt.meta.stickers);
   parts.usage = usage;
+  if (choice && choice.finish_reason === 'length') parts.truncated = true;
   if (thinking) parts.thinking = thinking;
   return parts;
 }
@@ -193,10 +196,12 @@ async function callOpenAIUtility(args) {
     max_tokens: clampNumber(apiSettings.maxTokens, 1, 1000000, 512),
     stream: false
   });
+  const choice = data && data.choices && data.choices[0];
   return {
-    text: data && data.choices && data.choices[0] && data.choices[0].message
-      ? String(data.choices[0].message.content || '').trim()
+    text: choice && choice.message
+      ? String(choice.message.content || '').trim()
       : '',
+    truncated: choice && choice.finish_reason === 'length',
     usage: {
       promptTokens: intOr(data && data.usage && data.usage.prompt_tokens, 0),
       completionTokens: intOr(data && data.usage && data.usage.completion_tokens, 0),
@@ -215,10 +220,10 @@ async function callAnthropic(args, { stream = false } = {}) {
 
   const thinkingEnabled = apiSettings.showThinking === true;
   const thinkingBudget = Math.max(1024, Math.floor(Number(apiSettings.thinkingBudget) || 1024));
-  const maxTokens = Math.max(
-    thinkingEnabled ? thinkingBudget + 256 : 1,
-    Math.round(clampNumber(apiSettings.maxTokens, 1, 1000000, 1024))
-  );
+  const userMaxTokens = Math.round(clampNumber(apiSettings.maxTokens, 1, 1000000, 2048));
+  const maxTokens = thinkingEnabled
+    ? thinkingBudget + Math.max(1024, userMaxTokens)
+    : userMaxTokens;
 
   const body = {
     model: apiSettings.model || '',
@@ -261,6 +266,7 @@ async function callAnthropic(args, { stream = false } = {}) {
 
   const parts = parseReplyToParts(text, prompt && prompt.meta && prompt.meta.stickers);
   parts.usage = usage;
+  if (data && data.stop_reason === 'max_tokens') parts.truncated = true;
   if (thinking) parts.thinking = thinking;
   return parts;
 }
@@ -289,7 +295,11 @@ async function callAnthropicUtility(args) {
   };
   if (u.cache_read_input_tokens != null) usage.cacheRead = intOr(u.cache_read_input_tokens, 0);
   if (u.cache_creation_input_tokens != null) usage.cacheWrite = intOr(u.cache_creation_input_tokens, 0);
-  return { text: extractAnthropicText(data).trim(), usage };
+  return {
+    text: extractAnthropicText(data).trim(),
+    truncated: data && data.stop_reason === 'max_tokens',
+    usage
+  };
 }
 
 // system 分區 → Anthropic block 陣列。靜態 block 帶 cache_control；動態 block 為空則省略。
@@ -347,7 +357,7 @@ async function callGemini(args, { stream = false } = {}) {
     contents,
     generationConfig: {
       temperature: clampNumber(apiSettings.temperature, 0, 2, 1),
-      maxOutputTokens: clampNumber(apiSettings.maxTokens, 1, 1000000, 1024)
+      maxOutputTokens: clampNumber(apiSettings.maxTokens, 1, 1000000, 2048)
     }
   };
   // gemini：前綴快取自動；把 systemBlocks 串接為單一 systemInstruction 即可。
@@ -362,6 +372,7 @@ async function callGemini(args, { stream = false } = {}) {
   }, body);
 
   const text = extractGeminiText(data);
+  const cand = data && Array.isArray(data.candidates) ? data.candidates[0] : null;
   const usage = {
     promptTokens: intOr(data && data.usageMetadata && data.usageMetadata.promptTokenCount, 0),
     completionTokens: intOr(data && data.usageMetadata && data.usageMetadata.candidatesTokenCount, 0),
@@ -370,6 +381,7 @@ async function callGemini(args, { stream = false } = {}) {
 
   const parts = parseReplyToParts(text, prompt && prompt.meta && prompt.meta.stickers);
   parts.usage = usage;
+  if (cand && cand.finishReason === 'MAX_TOKENS') parts.truncated = true;
   return parts;
 }
 
@@ -391,8 +403,10 @@ async function callGeminiUtility(args) {
       }
     }
   );
+  const cand = data && Array.isArray(data.candidates) ? data.candidates[0] : null;
   return {
     text: extractGeminiText(data).trim(),
+    truncated: cand && cand.finishReason === 'MAX_TOKENS',
     usage: {
       promptTokens: intOr(data && data.usageMetadata && data.usageMetadata.promptTokenCount, 0),
       completionTokens: intOr(data && data.usageMetadata && data.usageMetadata.candidatesTokenCount, 0),

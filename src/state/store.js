@@ -199,6 +199,17 @@ function activeThinking(message) {
     : '';
 }
 
+function activeTruncated(message) {
+  if (!message || !Array.isArray(message.versions) || message.versions.length === 0) {
+    return message && message.truncated === true;
+  }
+  const idx = Math.min(
+    message.versions.length - 1,
+    Math.max(0, Number(message.activeVersion) || 0)
+  );
+  return message.versions[idx] && message.versions[idx].truncated === true;
+}
+
 function normalizeMessageRecord(message) {
   if (!message || typeof message !== 'object') return message;
   const parts = Array.isArray(message.parts) ? message.parts : [];
@@ -217,17 +228,20 @@ function normalizeMessageRecord(message) {
     const thinking = typeof message.versions[activeVersion].thinking === 'string'
       ? message.versions[activeVersion].thinking
       : (typeof message.thinking === 'string' ? message.thinking : '');
-    return { ...message, activeVersion, parts: nextParts, usage, thinking };
+    const truncated = message.versions[activeVersion].truncated === true;
+    return { ...message, activeVersion, parts: nextParts, usage, thinking, truncated };
   }
   return {
     ...message,
     parts,
     thinking: typeof message.thinking === 'string' ? message.thinking : '',
+    truncated: message.truncated === true,
     activeVersion: 0,
     versions: [{
       parts,
       usage: message.usage || null,
       thinking: typeof message.thinking === 'string' ? message.thinking : '',
+      truncated: message.truncated === true,
       createdAt: message.createdAt || now()
     }]
   };
@@ -554,6 +568,89 @@ export async function retryLastReply() {
   }
 }
 
+export async function continueTruncatedReply(messageId) {
+  const msg = messages.find((m) => m.id === messageId);
+  const conversation = msg ? state.conversations.find((c) => c.id === msg.conversationId) : null;
+  const character = conversation
+    ? state.characters.find((c) => c.id === (conversation.type === 'group' ? msg.senderId : conversation.primaryCharacterId))
+    : null;
+  if (!msg || msg.senderType !== 'character' || !conversation || !character || typing || msg.truncated !== true) return;
+
+  typing = true;
+  pendingError = null;
+  notify();
+  try {
+    const prompt = buildPrompt({
+      conversation,
+      activeCharacter: character,
+      characters: state.characters,
+      player: state.player,
+      messages,
+      memories: state.memories,
+      worldEntries: state.worldbooks,
+      globalPrompts: state.globalPrompts,
+      mode: state.settings.messageDisplayMode,
+      memoryInjectionLimit: state.settings.memoryInjectionLimit,
+      settings: state.settings,
+      anniversaries: state.anniversaries,
+      stickers: state.stickers
+    });
+    prompt.messages = (prompt.messages || []).concat({
+      role: 'user',
+      content: '（請接續上一句未完成的回覆，直接續寫，不要重複）'
+    });
+    await markMemoriesRecalled(prompt.meta && prompt.meta.injectedMemoryIds);
+    const result = await generateReply({
+      prompt,
+      conversation,
+      character,
+      player: state.player,
+      userMessage: '（請接續上一句未完成的回覆，直接續寫，不要重複）',
+      apiSettings: state.apiSettings
+    });
+    const nextParts = Array.isArray(result) && result.length
+      ? result
+      : [{ type: 'message', content: '' }];
+    msg.parts = (Array.isArray(msg.parts) ? msg.parts : []).concat(nextParts);
+    msg.usage = mergeUsage(msg.usage, result && result.usage);
+    if (result && typeof result.thinking === 'string' && result.thinking) {
+      msg.thinking = [msg.thinking || '', result.thinking].filter(Boolean).join('\n\n');
+    }
+    msg.truncated = result && result.truncated === true;
+    msg.versions = Array.isArray(msg.versions) && msg.versions.length
+      ? msg.versions
+      : [{
+        parts: msg.parts || [],
+        usage: msg.usage || null,
+        thinking: msg.thinking || '',
+        truncated: true,
+        createdAt: msg.createdAt || now()
+      }];
+    const idx = Math.min(msg.versions.length - 1, Math.max(0, Number(msg.activeVersion) || 0));
+    msg.versions[idx] = {
+      ...msg.versions[idx],
+      parts: msg.parts,
+      usage: msg.usage || null,
+      thinking: msg.thinking || '',
+      truncated: msg.truncated,
+      continuedAt: now()
+    };
+    await updateMessage(msg);
+    pushUsageLog({ kind: 'chatContinue', characterId: character.id, usage: result && result.usage });
+    invalidateStats();
+    await saveCurrentState();
+  } catch (err) {
+    pendingError = {
+      message: (err && err.userMessage) || (err && err.message) || 'AI 回覆失敗',
+      userText: '（請接續上一句未完成的回覆，直接續寫，不要重複）',
+      conversationId: conversation.id
+    };
+  } finally {
+    typing = false;
+    notify();
+  }
+}
+
 // 產生 AI 回覆的共用流程（送出與重試共用）。成功則新增 character message 並保存；
 // 失敗則設定 pendingError，讓聊天視窗顯示錯誤條與「重試」按鈕。
 async function runGeneration(conversation, character, userText) {
@@ -600,6 +697,7 @@ async function runGeneration(conversation, character, userText) {
     // 只有真 API 回覆會帶 usage；mock 不帶（保持 undefined）。
     const usage = result && result.usage ? result.usage : null;
     const thinking = result && typeof result.thinking === 'string' ? result.thinking : '';
+    const truncated = result && result.truncated === true;
 
     // 5) 新增 character message
     const replyMsg = makeMessage({
@@ -608,7 +706,8 @@ async function runGeneration(conversation, character, userText) {
       senderId: character.id,
       parts,
       usage,
-      thinking
+      thinking,
+      truncated
     });
     await addMessage(replyMsg);
     messages.push(replyMsg);
@@ -681,13 +780,15 @@ async function runGroupGeneration(conversation, userText) {
         : [{ type: 'message', content: '……' }];
       const usage = result && result.usage ? result.usage : null;
       const thinking = result && typeof result.thinking === 'string' ? result.thinking : '';
+      const truncated = result && result.truncated === true;
       const replyMsg = makeMessage({
         conversationId: conversation.id,
         senderType: 'character',
         senderId: character.id,
         parts,
         usage,
-        thinking
+        thinking,
+        truncated
       });
       await addMessage(replyMsg);
       messages.push(replyMsg);
@@ -1090,6 +1191,22 @@ function pushUsageLog(entry) {
   invalidateStats();
 }
 
+function mergeUsage(base, extra) {
+  if (!base && !extra) return null;
+  const out = {
+    promptTokens: Number(base && base.promptTokens) || 0,
+    completionTokens: Number(base && base.completionTokens) || 0,
+    model: (extra && extra.model) || (base && base.model) || ''
+  };
+  out.promptTokens += Number(extra && extra.promptTokens) || 0;
+  out.completionTokens += Number(extra && extra.completionTokens) || 0;
+  const cacheRead = (Number(base && base.cacheRead) || 0) + (Number(extra && extra.cacheRead) || 0);
+  const cacheWrite = (Number(base && base.cacheWrite) || 0) + (Number(extra && extra.cacheWrite) || 0);
+  if (cacheRead) out.cacheRead = cacheRead;
+  if (cacheWrite) out.cacheWrite = cacheWrite;
+  return out;
+}
+
 export async function logUtilityUsage(kind, characterId, usage) {
   pushUsageLog({ kind, characterId, usage });
   await saveCurrentState();
@@ -1213,6 +1330,47 @@ function stripSpeakerName(text, character) {
   return raw;
 }
 
+function cleanLifeContent(text, character, { truncated = false } = {}) {
+  const stripped = stripSpeakerName(text, character);
+  const lines = stripped
+    .split(/\r?\n/)
+    .map((line) => cleanLifeLine(line))
+    .filter((line) => line && !isLifeMetaLine(line) && !hasInstructionLeak(line));
+  let cleaned = lines.join('\n').trim();
+  if (truncated) cleaned = trimToCompleteSentence(cleaned);
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
+  return cleaned.length >= 10 ? cleaned : '';
+}
+
+function cleanLifeLine(line) {
+  return String(line || '')
+    .trim()
+    .replace(/^\s*(?:#{1,6}|[-*＊>]+|\d+[.)、．])\s*/u, '')
+    .replace(/\*\*/g, '')
+    .replace(/^[＊*]+|[＊*]+$/g, '')
+    .trim();
+}
+
+function isLifeMetaLine(line) {
+  const text = String(line || '').trim();
+  return /^(?:第[一二三四五六七八九十\d]+段|段落\s*\d+|〔[^〕]*〕|（以下[^）]*）|第三段[:：]|第二段[:：]|第一段[:：])/u.test(text);
+}
+
+function hasInstructionLeak(line) {
+  return /不要引號|項目符號|第一人稱|繁體中文|角色口吻|正文/u.test(String(line || ''));
+}
+
+function trimToCompleteSentence(text) {
+  const raw = String(text || '').trim();
+  const idx = Math.max(
+    raw.lastIndexOf('。'),
+    raw.lastIndexOf('！'),
+    raw.lastIndexOf('？'),
+    raw.lastIndexOf('…')
+  );
+  return idx >= 0 ? raw.slice(0, idx + 1).trim() : '';
+}
+
 async function recentConversationText(characterId, limit = 14) {
   const conv = findConversationByCharacter(characterId);
   if (!conv) return '';
@@ -1229,7 +1387,7 @@ async function recentConversationText(characterId, limit = 14) {
 function lifePromptSpec(kind) {
   if (kind === 'heartVoice') {
     return {
-      maxTokens: 180,
+      maxTokens: 256,
       usageKind: 'heartVoice',
       system: [
         '你要以指定角色第一人稱寫一則「弦外之音」。',
@@ -1241,7 +1399,7 @@ function lifePromptSpec(kind) {
   }
   if (kind === 'letter') {
     return {
-      maxTokens: 700,
+      maxTokens: 1600,
       usageKind: 'letter',
       system: [
         '你要以指定角色第一人稱寫一封「聲箋」給玩家。',
@@ -1252,7 +1410,7 @@ function lifePromptSpec(kind) {
     };
   }
   return {
-    maxTokens: 320,
+    maxTokens: 512,
     usageKind: 'diary',
     system: [
       '你要以指定角色第一人稱寫一則「私語」。',
@@ -1294,11 +1452,14 @@ export async function generateLifeContent(characterId, kind = 'diary', { automat
     ].filter(Boolean).join('\n\n'),
     userText: [
       recent ? `最近對話：\n${recent}` : '最近對話：目前沒有足夠文字，請依角色設定與聲痕自然書寫。',
-      `請只輸出${spec.fallbackLabel}正文。`
+      `請只輸出${spec.fallbackLabel}正文。直接以正文第一個字開始輸出，不要任何開場白、規劃、段落標號或說明。`
     ].join('\n\n')
   });
-  const content = stripSpeakerName(result.text, character);
-  if (!content) return null;
+  const content = cleanLifeContent(result.text, character, { truncated: result && result.truncated === true });
+  if (!content) {
+    if (!automatic) windowAlert('這次沒寫好，再試一次');
+    return null;
+  }
   const ts = now();
   let item;
   if (kind === 'heartVoice') {
@@ -1716,6 +1877,7 @@ export async function switchMessageVersion(messageId, dir) {
   msg.parts = activeParts(msg);
   msg.usage = activeUsage(msg);
   msg.thinking = activeThinking(msg);
+  msg.truncated = activeTruncated(msg);
   await updateMessage(msg);
   invalidateStats();
   notify();
@@ -1787,13 +1949,21 @@ export async function regenerateMessage(messageId) {
     const parts = Array.isArray(result) && result.length ? result : [{ type: 'message', content: '' }];
     const usage = result && result.usage ? result.usage : null;
     const thinking = result && typeof result.thinking === 'string' ? result.thinking : '';
+    const truncated = result && result.truncated === true;
     msg.versions = Array.isArray(msg.versions) && msg.versions.length
       ? msg.versions
-      : [{ parts: msg.parts || [], usage: msg.usage || null, thinking: msg.thinking || '', createdAt: msg.createdAt || now() }];
-    msg.versions.push({ parts, usage, thinking, createdAt: now() });
+      : [{
+        parts: msg.parts || [],
+        usage: msg.usage || null,
+        thinking: msg.thinking || '',
+        truncated: msg.truncated === true,
+        createdAt: msg.createdAt || now()
+      }];
+    msg.versions.push({ parts, usage, thinking, truncated, createdAt: now() });
     msg.activeVersion = msg.versions.length - 1;
     msg.parts = parts;
     msg.thinking = thinking;
+    msg.truncated = truncated;
     if (usage) msg.usage = usage;
     await updateMessage(msg);
     invalidateStats();
@@ -2031,7 +2201,7 @@ function isDuplicateMemory(content, list) {
 //
 // role 對應未來 AI API 的 message role；senderType + senderId 用於區分「群聊中多個
 // 角色都是 assistant」的情境（未來群聊時，靠 senderId 分辨是哪個角色）。
-function makeMessage({ conversationId, senderType, senderId, parts, usage, thinking }) {
+function makeMessage({ conversationId, senderType, senderId, parts, usage, thinking, truncated }) {
   const createdAt = now();
   let role;
   if (senderType === 'player') role = 'user';
@@ -2061,11 +2231,13 @@ function makeMessage({ conversationId, senderType, senderId, parts, usage, think
   }
   if (senderType === 'character') {
     msg.thinking = typeof thinking === 'string' ? thinking : '';
+    msg.truncated = truncated === true;
     msg.activeVersion = 0;
     msg.versions = [{
       parts: msg.parts,
       usage: msg.usage || null,
       thinking: msg.thinking,
+      truncated: msg.truncated,
       createdAt
     }];
   }

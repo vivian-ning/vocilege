@@ -142,8 +142,8 @@ export function renderApiSettingsEditor(container, state) {
   maxTokInput.className = 'form-control';
   maxTokInput.min = '1';
   maxTokInput.step = '1';
-  maxTokInput.value = api.maxTokens != null ? String(api.maxTokens) : '1024';
-  form.appendChild(wrapField('maxTokens', maxTokInput));
+  maxTokInput.value = api.maxTokens != null ? String(api.maxTokens) : '2048';
+  form.appendChild(wrapField('maxTokens（回覆常被截斷請調高）', maxTokInput));
 
   // memoryInjectionLimit（記憶注入上限）：屬 settings 而非 apiSettings，改動即時獨立
   // 儲存（不隨「儲存 API 設定」），避免與 apiKey 表單耦合。
@@ -221,7 +221,7 @@ export function renderApiSettingsEditor(container, state) {
     showThinking: thinkingInput.checked,
     thinkingBudget: Math.max(1024, Math.round(clampNum(thinkingBudgetInput.value, 1024, 1000000, 1024))),
     temperature: clampNum(tempInput.value, 0, 2, 1),
-    maxTokens: Math.max(1, Math.round(clampNum(maxTokInput.value, 1, 1000000, 1024)))
+    maxTokens: Math.max(1, Math.round(clampNum(maxTokInput.value, 1, 1000000, 2048)))
   });
 
   // 動作列：儲存 + 測試連線

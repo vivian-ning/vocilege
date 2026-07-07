@@ -537,13 +537,14 @@ button { touch-action: manipulation; }
   margin-top: 2px;
 }
 
-.conv-list { flex: 1; overflow-y: auto; padding: 8px; }
+.conv-list { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; padding: 8px; }
 .list-empty { padding: 24px 12px; color: var(--muted); font-size: 13px; text-align: center; }
 
 .conv-item {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   padding: 10px;
   border-radius: var(--r-m);
   cursor: pointer;
@@ -567,11 +568,12 @@ button { touch-action: manipulation; }
   font-size: 15px;
   font-weight: 800;
 }
-.conv-meta { flex: 1; min-width: 0; }
-.conv-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.conv-desc { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conv-meta { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.conv-name { display: block; flex: 1 1 auto; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conv-desc { display: block; min-width: 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .conv-delete {
+  flex: 0 0 auto;
   opacity: 0;
   border: none; background: transparent; cursor: pointer;
   font-size: 14px; padding: 6px; border-radius: 6px;
@@ -791,6 +793,27 @@ button { touch-action: manipulation; }
 }
 .from-player + .msg-usage,
 .msg-group:has(.from-player) .msg-usage { text-align: right; }
+
+.msg-truncated-notice {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -2px 0 2px 44px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.msg-truncated-continue {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--primary);
+  padding: 3px 9px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.msg-truncated-continue:hover { background: var(--primary-soft); }
 
 /* 訊息工具（拾貝 / 再說一次 / 修飾）*/
 .msg-tools {
@@ -2208,9 +2231,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 .conversation-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 0 4px; }
 .conversation-tab { border: 1px solid var(--border); border-radius: var(--r-s); background: var(--surface); color: var(--text); min-height: 40px; cursor: pointer; }
 .conversation-tab.active { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); font-weight: 800; }
-.conversation-list-body { min-height: 0; overflow-y: auto; padding: 0 4px 8px; }
-.conv-topline { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.conv-time { margin-left: auto; color: var(--muted); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.conversation-list-body { min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0 4px 8px; }
+.conv-topline { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
+.conv-time { flex: 0 0 auto; margin-left: auto; color: var(--muted); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .chat-master-detail { grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); }
 .chat-back-btn { flex: 0 0 auto; }
 .chat-mobile-page {
