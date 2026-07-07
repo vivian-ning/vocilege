@@ -262,7 +262,7 @@ function renderLifeSettings(container, state) {
 
   const desc = document.createElement('p');
   desc.className = 'gp-desc';
-  desc.textContent = '控制私語、弦外之音與聲箋的背景產生。未連接 AI 服務時不會自動產生。';
+  desc.textContent = '控制私語與聲箋的背景產生；弦外之音會在對話中自然產生。未連接 AI 服務時不會自動產生。';
   wrap.appendChild(desc);
 
   const enabled = document.createElement('label');

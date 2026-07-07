@@ -59,6 +59,10 @@ let typing = false;       // 「輸入中」狀態旗標
 let pendingError = null;  // 最近一次產生回覆的錯誤（供錯誤條 + 重試使用）
 let config = null;
 const listeners = new Set();
+// 對話後自然觸發弦外之音的機率；集中在此方便日後調整。
+const CHAT_HEART_VOICE_CHANCE = 0.2;
+const CHAT_HEART_VOICE_COOLDOWN_MS = 30 * 60 * 1000;
+const chatHeartVoiceLastTriggeredAt = new Map();
 
 // ---- 基本存取 ----
 
@@ -719,6 +723,7 @@ async function runGeneration(conversation, character, userText) {
     conversation.lastMessageAt = replyMsg.createdAt;
     conversation.updatedAt = replyMsg.createdAt;
     await saveCurrentState();
+    triggerChatHeartVoice(conversation, character);
     maybeExtractDreamMemories(conversation.id, { automatic: true })
       .then((added) => {
         if (added && added.length) emitToast('夢釀完成');
@@ -744,6 +749,7 @@ async function runGeneration(conversation, character, userText) {
 async function runGroupGeneration(conversation, userText) {
   const speakers = pickGroupSpeakers(conversation, userText);
   if (!speakers.length) return;
+  const heartVoiceRound = { triggered: false };
 
   typing = true;
   pendingError = null;
@@ -796,6 +802,7 @@ async function runGroupGeneration(conversation, userText) {
       conversation.updatedAt = replyMsg.createdAt;
       invalidateStats();
       await saveCurrentState();
+      triggerChatHeartVoice(conversation, character, heartVoiceRound);
       notify();
     }
   } catch (err) {
@@ -808,6 +815,32 @@ async function runGroupGeneration(conversation, userText) {
     typing = false;
     notify();
   }
+}
+
+function triggerChatHeartVoice(conversation, character, roundState = null) {
+  maybeChatHeartVoice(conversation, character, roundState).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.warn('對話弦外之音產生失敗', err);
+  });
+}
+
+async function maybeChatHeartVoice(conversation, character, roundState = null) {
+  if (usesMock(state.apiSettings)) return null;
+  if (state.settings.lifeEnabled === false) return null;
+  if (!canUseDaily('life', state.settings.lifeDailyLimit)) return null;
+  if (!conversation || !character || !character.id) return null;
+
+  const last = chatHeartVoiceLastTriggeredAt.get(character.id) || 0;
+  const ts = now();
+  if (last && ts - last < CHAT_HEART_VOICE_COOLDOWN_MS) return null;
+  if (roundState && roundState.triggered) return null;
+  if (Math.random() >= CHAT_HEART_VOICE_CHANCE) return null;
+
+  if (roundState) roundState.triggered = true;
+  chatHeartVoiceLastTriggeredAt.set(character.id, ts);
+  const item = await generateLifeContent(character.id, 'heartVoice', { automatic: true });
+  if (item) emitToast(`「${character.name || '角色'}」把一句話藏進了弦外之音`);
+  return item;
 }
 
 function pickGroupSpeakers(conversation, text) {
@@ -1426,9 +1459,7 @@ function weightedLifeKind(characterId) {
   let hash = 0;
   for (let i = 0; i < source.length; i++) hash = ((hash * 33) + source.charCodeAt(i)) >>> 0;
   const bucket = hash % 10;
-  if (bucket < 6) return 'diary';
-  if (bucket < 9) return 'heartVoice';
-  return 'letter';
+  return bucket < 8 ? 'diary' : 'letter';
 }
 
 export async function generateLifeContent(characterId, kind = 'diary', { automatic = false } = {}) {
