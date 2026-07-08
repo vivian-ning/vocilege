@@ -10,7 +10,15 @@
 
 import { createExampleGlobalPrompt } from './schema.js';
 
-export const CURRENT_SCHEMA_VERSION = 10;
+export const CURRENT_SCHEMA_VERSION = 11;
+
+const DEFAULT_VIGIL = {
+  enabled: false,
+  dailyLimit: 2,
+  nickname: '',
+  pushPersona: '',
+  fallbackLines: []
+};
 
 // 逐版升級函式表。key = 來源版本，value = 把該版 state 升到「下一版」的函式。
 const migrators = {
@@ -242,6 +250,19 @@ const migrators = {
     if (typeof settings.lifeDailyLimit !== 'number') settings.lifeDailyLimit = 5;
     s.settings = settings;
     s.schemaVersion = 10;
+    return s;
+  },
+
+  // v10 -> v11（V9.3）：角色新增駐守推播設定。
+  10: (s) => {
+    if (Array.isArray(s.characters)) {
+      s.characters = s.characters.map((character) => (
+        character && typeof character === 'object' && !character.vigil
+          ? { ...character, vigil: { ...DEFAULT_VIGIL } }
+          : character
+      ));
+    }
+    s.schemaVersion = 11;
     return s;
   },
 };

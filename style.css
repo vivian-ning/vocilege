@@ -1196,6 +1196,16 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
   font-size: 13px;
   animation: rise-in var(--t-med) var(--ease);
 }
+.app-toast-clickable {
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.app-toast-clickable:hover,
+.app-toast-clickable:focus-visible {
+  transform: translateY(-1px);
+}
 .app-update-toast {
   position: fixed;
   left: 50%;
@@ -2278,6 +2288,42 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 .settings-profile-header .settings-chevron { margin-left: auto; flex: 0 0 auto; }
 .settings-player-editor-card {
   border-top: 0;
+}
+.character-editor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.character-editor-section + .character-editor-section {
+  margin-top: 10px;
+}
+.character-editor-section-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+.character-editor-section-hint {
+  font-size: 12px;
+  font-style: italic;
+  font-weight: 400;
+  color: var(--muted);
+}
+.character-editor-section-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 0;
+}
+.character-editor-section-card[hidden] {
+  display: none;
+}
+.vigil-character-editor,
+.vigil-export-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 @media (max-width: 760px) {

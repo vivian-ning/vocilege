@@ -129,6 +129,57 @@ export async function exportFullArchive() {
   return { ok: true };
 }
 
+export function exportVigilCharacters() {
+  const state = getState();
+  const playerName = (state.player && state.player.playerName) || '';
+  const characters = (state.characters || [])
+    .filter((character) => character && character.vigil && character.vigil.enabled === true)
+    .map((character) => {
+      const vigil = character.vigil || {};
+      return {
+        name: character.name || '未命名角色',
+        persona: String(vigil.pushPersona || '').trim() || fallbackPersona(character),
+        playerName: String(vigil.nickname || '').trim() || playerName,
+        dailyLimit: Math.max(0, Math.floor(Number(vigil.dailyLimit) || 0)),
+        fallbackLines: Array.isArray(vigil.fallbackLines)
+          ? vigil.fallbackLines.filter((line) => typeof line === 'string' && line.trim()).map((line) => line.trim())
+          : []
+      };
+    });
+
+  if (!characters.length) {
+    return { ok: false, reason: 'empty' };
+  }
+
+  const payload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    characters
+  };
+  const json = JSON.stringify(payload, null, 2);
+  const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'vigil-characters.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return { ok: true, count: characters.length, payload };
+}
+
+function fallbackPersona(character) {
+  return [
+    character.personality,
+    character.description,
+    character.scenario,
+    character.systemPrompt,
+    character.speechStyle,
+    character.name
+  ].filter(Boolean).join('\n').slice(0, 100);
+}
+
 // ---- 匯入 ----
 // all-or-nothing：驗證 + migration 全部在記憶體完成且成功後，才開始寫入 IndexedDB。
 // 任何一步失敗即丟出錯誤，現有資料不得有任何變動。

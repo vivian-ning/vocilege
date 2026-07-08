@@ -23,7 +23,7 @@ import {
   updateMessage,
   deleteMessagesByConversation
 } from '../db/indexeddb.js';
-import { createDefaultState, normalizeState } from './schema.js';
+import { createDefaultState, createDefaultVigil, normalizeState } from './schema.js';
 import { migrateState } from './migrations.js';
 import { buildPrompt } from '../services/promptBuilder.js';
 import { generateReply, generateUtilityText, parseReplyToParts, usesMock } from '../services/aiService.js';
@@ -270,6 +270,7 @@ export async function createCharacter(data) {
     firstMessage: data.firstMessage || '',
     speechStyle: data.speechStyle || '',
     avatar: normalizeAvatarInput(data.avatar),
+    vigil: createDefaultVigil(),
     createdAt: ts,
     updatedAt: ts
   };
@@ -839,7 +840,12 @@ async function maybeChatHeartVoice(conversation, character, roundState = null) {
   if (roundState) roundState.triggered = true;
   chatHeartVoiceLastTriggeredAt.set(character.id, ts);
   const item = await generateLifeContent(character.id, 'heartVoice', { automatic: true });
-  if (item) emitToast(`「${character.name || '角色'}」把一句話藏進了弦外之音`);
+  if (item) {
+    emitToast(`「${character.name || '角色'}」把一句話藏進了弦外之音`, {
+      type: 'heartVoice',
+      characterId: character.id
+    });
+  }
   return item;
 }
 
@@ -1294,9 +1300,9 @@ function windowAlert(message) {
   if (typeof window !== 'undefined' && window.alert) window.alert(message);
 }
 
-function emitToast(message) {
+function emitToast(message, action = null) {
   if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent('vocilege:toast', { detail: { message } }));
+  window.dispatchEvent(new CustomEvent('vocilege:toast', { detail: { message, action } }));
 }
 
 // ---- V6 stickers ----

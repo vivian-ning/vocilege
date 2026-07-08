@@ -7,6 +7,7 @@ import { renderApiSettingsEditor } from './apiSettingsEditor.js';
 import { renderGlobalPromptsEditor } from './globalPromptsEditor.js';
 import { renderPlayerEditor } from './playerEditor.js';
 import { renderBackupPanel } from './backupPanel.js';
+import { exportVigilCharacters } from '../../services/backupService.js';
 import { addSticker, updateSticker, deleteSticker, updateSettings } from '../../state/store.js';
 import { saveImageAsset, getObjectURL } from '../../services/assetService.js';
 import { getStats } from '../../services/statsService.js';
@@ -47,7 +48,7 @@ export function renderSettingsPage(container, state) {
   page.appendChild(settingsSection('api', 'API', (body) => renderApiSettingsEditor(body, state)));
   page.appendChild(settingsSection('appearance', '外觀', (body) => renderAppearance(body, state)));
   page.appendChild(settingsSection('life', '角色生活感', (body) => renderLifeSettings(body, state)));
-  page.appendChild(settingsSection('vigil', '駐守', (body) => renderVigilSettings(body)));
+  page.appendChild(settingsSection('vigil', '駐守', (body) => renderVigilSettings(body, state)));
   page.appendChild(settingsSection('stickers', '貼圖', (body) => renderStickerManager(body, state)));
   page.appendChild(settingsSection('prompts', 'Prompt', (body) => renderGlobalPromptsEditor(body, state)));
   page.appendChild(settingsSection('usage', '聲量', (body) => renderUsageStats(body, state)));
@@ -200,7 +201,7 @@ function renderPlayerProfile(container, state) {
   container.appendChild(editor);
 }
 
-function renderVigilSettings(container) {
+function renderVigilSettings(container, state) {
   const wrap = document.createElement('div');
   wrap.className = 'vigil-settings';
 
@@ -208,6 +209,34 @@ function renderVigilSettings(container) {
   desc.className = 'gp-desc';
   desc.textContent = '駐守需在電腦執行 vocilege-vigil；iPhone 需 iOS 16.4+，並從主畫面啟動拾聲後才能訂閱推播。';
   wrap.appendChild(desc);
+
+  const exportBox = document.createElement('div');
+  exportBox.className = 'vigil-export-box';
+  const exportDesc = document.createElement('div');
+  exportDesc.className = 'form-hint';
+  exportDesc.textContent = '下載後把檔案放進電腦的 vocilege-vigil 資料夾即可生效';
+  exportBox.appendChild(exportDesc);
+
+  const exportStatus = document.createElement('div');
+  exportStatus.className = 'form-hint';
+
+  const exportBtn = document.createElement('button');
+  exportBtn.type = 'button';
+  exportBtn.className = 'btn btn-primary';
+  exportBtn.textContent = '匯出駐守角色檔';
+  exportBtn.addEventListener('click', () => {
+    const result = exportVigilCharacters();
+    if (!result.ok && result.reason === 'empty') {
+      exportStatus.className = 'backup-status error';
+      exportStatus.textContent = '還沒有角色開啟駐守推播';
+      return;
+    }
+    exportStatus.className = 'backup-status success';
+    exportStatus.textContent = `已匯出 ${result.count || 0} 位駐守角色。`;
+  });
+  exportBox.appendChild(exportBtn);
+  exportBox.appendChild(exportStatus);
+  wrap.appendChild(exportBox);
 
   const support = getPushSupportState();
   const supportNote = document.createElement('div');

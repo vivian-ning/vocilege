@@ -130,7 +130,7 @@ export function renderSettingsTab(container, state, character, options = {}) {
   container.textContent = '';
 
   const editorWrap = document.createElement('div');
-  renderCharacterEditor(editorWrap, state, character.id);
+  renderCharacterEditor(editorWrap, state, character.id, { collapsible: true });
   container.appendChild(editorWrap);
 
   // 刪除角色入口（沿用連鎖刪除規則；一併刪除 memories/anniversaries/wishlists/relationshipData）。

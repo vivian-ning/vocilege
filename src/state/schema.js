@@ -31,6 +31,16 @@ export function createExampleGlobalPrompt() {
   };
 }
 
+export function createDefaultVigil() {
+  return {
+    enabled: false,
+    dailyLimit: 2,
+    nickname: '',
+    pushPersona: '',
+    fallbackLines: []
+  };
+}
+
 // state record 完整結構（第六節）。
 export function createDefaultState(config) {
   const defaultPlayer = (config && config.defaultPlayer) || {
@@ -151,6 +161,21 @@ function cloneAvatar(avatar) {
   return { type: 'emoji', value: '🙂' };
 }
 
+export function normalizeVigil(vigil) {
+  const base = createDefaultVigil();
+  const source = vigil && typeof vigil === 'object' && !Array.isArray(vigil) ? vigil : {};
+  const dailyLimit = Number(source.dailyLimit);
+  return {
+    enabled: source.enabled === true,
+    dailyLimit: Number.isFinite(dailyLimit) ? Math.max(0, Math.floor(dailyLimit)) : base.dailyLimit,
+    nickname: typeof source.nickname === 'string' ? source.nickname : base.nickname,
+    pushPersona: typeof source.pushPersona === 'string' ? source.pushPersona : base.pushPersona,
+    fallbackLines: Array.isArray(source.fallbackLines)
+      ? source.fallbackLines.filter((line) => typeof line === 'string')
+      : [...base.fallbackLines]
+  };
+}
+
 // 補齊缺漏欄位，回傳一個新物件（不深層修改輸入）。
 // 只負責「欄位存在性」與型別修正，不動 schemaVersion 的升級邏輯。
 export function normalizeState(state) {
@@ -237,10 +262,10 @@ export function normalizeState(state) {
     .filter((u) => u && typeof u === 'object')
     .slice(-500);
 
-  // 角色頭貼型別修正（image / emoji 兩型）。
+  // 角色頭貼型別修正（image / emoji 兩型）與駐守欄位補齊。
   merged.characters = merged.characters.map((c) => {
     if (!c || typeof c !== 'object') return c;
-    return { ...c, avatar: cloneAvatar(c.avatar) };
+    return { ...c, avatar: cloneAvatar(c.avatar), vigil: normalizeVigil(c.vigil) };
   });
 
   merged.conversations = merged.conversations.map((c) => {

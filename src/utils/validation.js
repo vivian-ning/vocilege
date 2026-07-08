@@ -2,7 +2,7 @@
 // 匯入資料前的結構驗證（第十三節）。回傳 { ok, errors }。
 // 不修改輸入，只做檢查。
 
-const CURRENT_SCHEMA_VERSION = 10;
+const CURRENT_SCHEMA_VERSION = 11;
 
 function isObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -59,6 +59,34 @@ export function validateBackup(data) {
       s.characters.forEach((c, i) => {
         if (!isObject(c) || typeof c.id !== 'string') {
           errors.push(`characters[${i}] 缺少字串 id`);
+          return;
+        }
+        if ('vigil' in c) {
+          if (!isObject(c.vigil)) {
+            errors.push(`characters[${i}].vigil 應為物件`);
+          } else {
+            if ('enabled' in c.vigil && typeof c.vigil.enabled !== 'boolean') {
+              errors.push(`characters[${i}].vigil.enabled 應為布林值`);
+            }
+            if ('dailyLimit' in c.vigil && typeof c.vigil.dailyLimit !== 'number') {
+              errors.push(`characters[${i}].vigil.dailyLimit 應為數字`);
+            }
+            for (const key of ['nickname', 'pushPersona']) {
+              if (key in c.vigil && typeof c.vigil[key] !== 'string') {
+                errors.push(`characters[${i}].vigil.${key} 應為字串`);
+              }
+            }
+            if ('fallbackLines' in c.vigil && !Array.isArray(c.vigil.fallbackLines)) {
+              errors.push(`characters[${i}].vigil.fallbackLines 應為陣列`);
+            }
+            if (Array.isArray(c.vigil.fallbackLines)) {
+              c.vigil.fallbackLines.forEach((line, lineIndex) => {
+                if (typeof line !== 'string') {
+                  errors.push(`characters[${i}].vigil.fallbackLines[${lineIndex}] 應為字串`);
+                }
+              });
+            }
+          }
         }
       });
     }

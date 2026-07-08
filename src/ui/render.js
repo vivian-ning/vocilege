@@ -62,8 +62,20 @@ function installToastHost(root) {
   window.addEventListener('vocilege:toast', (event) => {
     const message = event && event.detail ? event.detail.message : '';
     if (!message) return;
-    const toast = document.createElement('div');
+    const action = event && event.detail ? event.detail.action : null;
+    const clickable = action && action.type === 'heartVoice' && action.characterId;
+    const toast = document.createElement(clickable ? 'button' : 'div');
     toast.className = 'app-toast';
+    if (clickable) {
+      toast.type = 'button';
+      toast.classList.add('app-toast-clickable');
+      toast.title = '前往首頁查看弦外之音';
+      toast.addEventListener('click', async () => {
+        await selectCharacter(action.characterId);
+        navigate('/home');
+        toast.remove();
+      });
+    }
     toast.textContent = message;
     root.appendChild(toast);
     window.setTimeout(() => toast.remove(), 2400);
