@@ -32,42 +32,7 @@ function collectAvatarAssetIds(state) {
 // ---- 匯出 ----
 // 收集 state + 全部 messages + 頭貼 asset（base64 內嵌）打包成一個 JSON 並觸發下載。
 export async function exportData() {
-  const state = getState();
-  const allMessages = await getAllMessages();
-
-  // 匯出前必須把 apiSettings.apiKey 設為空字串（不論 rememberApiKey 為何）。
-  const exportState = {
-    ...state,
-    apiSettings: {
-      ...state.apiSettings,
-      apiKey: ''
-    }
-  };
-
-  // 頭貼 asset 很小（256×256 WebP 約 10–30KB），直接 base64 內嵌，維持單一 JSON 檔。
-  const avatarAssets = [];
-  for (const id of collectAvatarAssetIds(state)) {
-    const asset = await getAsset(id);
-    if (asset && asset.blob) {
-      avatarAssets.push({
-        id: asset.id,
-        kind: asset.kind || 'avatar',
-        mime: asset.mime || 'image/webp',
-        createdAt: asset.createdAt || Date.now(),
-        dataBase64: await blobToBase64(asset.blob)
-      });
-    }
-  }
-
-  const payload = {
-    app: 'local-character-chat',
-    exportedAt: Date.now(),
-    schemaVersion: exportState.schemaVersion, // 保留 schemaVersion
-    state: exportState,
-    messages: allMessages,
-    avatarAssets
-  };
-
+  const payload = await buildBackupPayload();
   const json = JSON.stringify(payload, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -86,35 +51,7 @@ export async function exportData() {
 }
 
 export async function exportFullArchive() {
-  const state = getState();
-  const allMessages = await getAllMessages();
-  const exportState = {
-    ...state,
-    apiSettings: {
-      ...state.apiSettings,
-      apiKey: ''
-    }
-  };
-  const assets = [];
-  for (const asset of await getAllAssets()) {
-    if (!asset || !asset.id || !asset.blob) continue;
-    assets.push({
-      id: asset.id,
-      kind: asset.kind || 'asset',
-      mime: asset.mime || 'application/octet-stream',
-      createdAt: asset.createdAt || Date.now(),
-      dataBase64: await blobToBase64(asset.blob)
-    });
-  }
-  const payload = {
-    app: 'local-character-chat',
-    archiveKind: 'full',
-    exportedAt: Date.now(),
-    schemaVersion: exportState.schemaVersion,
-    state: exportState,
-    messages: allMessages,
-    assets
-  };
+  const payload = await buildFullArchivePayload();
   const json = JSON.stringify(payload, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -127,6 +64,71 @@ export async function exportFullArchive() {
   URL.revokeObjectURL(url);
   await markBackupDone();
   return { ok: true };
+}
+
+export async function buildBackupPayload() {
+  const state = getState();
+  const allMessages = await getAllMessages();
+  const exportState = sanitizeStateForBackup(state);
+  const avatarAssets = [];
+  for (const id of collectAvatarAssetIds(state)) {
+    const asset = await getAsset(id);
+    if (asset && asset.blob) {
+      avatarAssets.push({
+        id: asset.id,
+        kind: asset.kind || 'avatar',
+        mime: asset.mime || 'image/webp',
+        createdAt: asset.createdAt || Date.now(),
+        dataBase64: await blobToBase64(asset.blob)
+      });
+    }
+  }
+  return {
+    app: 'local-character-chat',
+    exportedAt: Date.now(),
+    schemaVersion: exportState.schemaVersion,
+    state: exportState,
+    messages: allMessages,
+    avatarAssets
+  };
+}
+
+export async function buildFullArchivePayload() {
+  const state = getState();
+  const allMessages = await getAllMessages();
+  const exportState = sanitizeStateForBackup(state);
+  const assets = [];
+  for (const asset of await getAllAssets()) {
+    if (!asset || !asset.id || !asset.blob) continue;
+    assets.push({
+      id: asset.id,
+      kind: asset.kind || 'asset',
+      mime: asset.mime || 'application/octet-stream',
+      createdAt: asset.createdAt || Date.now(),
+      dataBase64: await blobToBase64(asset.blob)
+    });
+  }
+  return {
+    app: 'local-character-chat',
+    archiveKind: 'full',
+    exportedAt: Date.now(),
+    schemaVersion: exportState.schemaVersion,
+    state: exportState,
+    messages: allMessages,
+    assets
+  };
+}
+
+function sanitizeStateForBackup(state) {
+  const apiSettings = { ...(state.apiSettings || {}) };
+  apiSettings.apiKey = '';
+  if ('vigilVapidKey' in apiSettings) apiSettings.vigilVapidKey = '';
+  const exportState = {
+    ...state,
+    apiSettings
+  };
+  if ('vigilVapidKey' in exportState) delete exportState.vigilVapidKey;
+  return exportState;
 }
 
 export function exportVigilCharacters() {

@@ -105,6 +105,8 @@ export function createDefaultState(config) {
     lifeGenLog: {},
     // V2 新增：上次成功匯出備份的時間戳（0 = 從未備份），供首頁備份提醒使用。
     lastBackupAt: 0,
+    // V10.5：上次成功自動備份的時間戳（0 = 從未自動備份）。
+    lastAutoBackupAt: 0,
     settings: {
       // V5.6：theme = 配色（blue 藍噪 / pink 粉噪 / green 綠噪 / violet 紫噪），
       // themeMode = 明暗（light / dark）。舊主題值由 migration 6→7 轉換。
@@ -139,7 +141,11 @@ export function createDefaultState(config) {
         : 3,
       lifeDailyLimit: typeof defaultSettings.lifeDailyLimit === 'number'
         ? defaultSettings.lifeDailyLimit
-        : 5
+        : 5,
+      // 0 = 關閉自動備份與提醒。
+      backupEveryDays: typeof defaultSettings.backupEveryDays === 'number'
+        ? defaultSettings.backupEveryDays
+        : 3
     },
     apiSettings: {
       provider: '',
@@ -245,7 +251,8 @@ export function normalizeState(state) {
     dreamEveryMessages: [1, 1000, 20],
     dreamDailyLimit: [0, 200, 10],
     lifeEveryDays: [0, 365, 3],
-    lifeDailyLimit: [0, 200, 5]
+    lifeDailyLimit: [0, 200, 5],
+    backupEveryDays: [0, 365, 3]
   };
   for (const [key, [min, max, fallback]] of Object.entries(numericSettings)) {
     const n = Number(merged.settings[key]);
@@ -365,6 +372,7 @@ export function normalizeState(state) {
     }));
 
   if (typeof merged.lastBackupAt !== 'number') merged.lastBackupAt = 0;
+  if (typeof merged.lastAutoBackupAt !== 'number') merged.lastAutoBackupAt = 0;
 
   if (typeof merged.currentConversationId !== 'string') merged.currentConversationId = '';
   if (typeof merged.currentCharacterId !== 'string') merged.currentCharacterId = '';

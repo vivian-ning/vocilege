@@ -4,6 +4,7 @@
 //   - "state"    ：單一 record（固定 key "app"），保存除 messages 以外的全部狀態
 //   - "messages" ：keyPath "id"，另建 "conversationId" 索引
 //   - "assets"   ：keyPath "id"，保存頭貼等二進位 Blob（V2 新增）
+//   - "handles"  ：固定 key 存放不能序列化進 state 的瀏覽器 handle（V10.5 新增）
 //
 // 拆開的原因：messages 是唯一會無限成長的資料。若塞進單一 state blob，每送一則
 // 訊息都要全量序列化重寫整包 state，聊天紀錄一多效能就會劣化。從 V0 就拆開，
@@ -11,15 +12,17 @@
 //
 // 所有函式一律回傳 Promise 並處理錯誤。
 //
-// V2：DB version 1 → 2，新增 assets store。onupgradeneeded 以「存在才略過」方式
-// 建立各 store，因此舊使用者升級時既有 state / messages 完好，只新增 assets。
+// V2：DB version 1 → 2，新增 assets store。V10.5：DB version 2 → 3，新增 handles store。
+// onupgradeneeded 以「存在才略過」方式建立各 store，因此舊使用者升級時既有資料完好。
 
 const DB_NAME = 'local-character-chat';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STATE_STORE = 'state';
 const MESSAGES_STORE = 'messages';
 const ASSETS_STORE = 'assets';
+const HANDLES_STORE = 'handles';
 const STATE_KEY = 'app';
+const AUTO_BACKUP_HANDLE_KEY = 'autoBackupDirectory';
 
 let dbPromise = null;
 
@@ -44,6 +47,11 @@ function openDB() {
       // assets store（V2 新增）：keyPath = id，保存 { id, kind, blob, mime, createdAt }。
       if (!db.objectStoreNames.contains(ASSETS_STORE)) {
         db.createObjectStore(ASSETS_STORE, { keyPath: 'id' });
+      }
+
+      // handles store：不可進 JSON/state 的 File System Access handle 只存在 IDB。
+      if (!db.objectStoreNames.contains(HANDLES_STORE)) {
+        db.createObjectStore(HANDLES_STORE);
       }
     };
 
@@ -201,10 +209,37 @@ export async function getAllAssets() {
   return Array.isArray(result) ? result : [];
 }
 
+// ---- handles（V10.5）----
+//
+// FileSystemDirectoryHandle 可被 IndexedDB structured clone，但不可進 state / 備份 JSON。
+
+export async function saveAutoBackupDirectoryHandle(handle) {
+  const transaction = await tx(HANDLES_STORE, 'readwrite');
+  const store = transaction.objectStore(HANDLES_STORE);
+  store.put(handle, AUTO_BACKUP_HANDLE_KEY);
+  await txDone(transaction);
+  return handle;
+}
+
+export async function getAutoBackupDirectoryHandle() {
+  const transaction = await tx(HANDLES_STORE, 'readonly');
+  const store = transaction.objectStore(HANDLES_STORE);
+  const result = await reqToPromise(store.get(AUTO_BACKUP_HANDLE_KEY));
+  return result || null;
+}
+
+export async function clearAutoBackupDirectoryHandle() {
+  const transaction = await tx(HANDLES_STORE, 'readwrite');
+  const store = transaction.objectStore(HANDLES_STORE);
+  store.delete(AUTO_BACKUP_HANDLE_KEY);
+  await txDone(transaction);
+}
+
 // ---- 清空 ----
 
 export async function clearAll() {
-  const transaction = await tx([STATE_STORE, MESSAGES_STORE, ASSETS_STORE], 'readwrite');
+  const storeNames = [STATE_STORE, MESSAGES_STORE, ASSETS_STORE];
+  const transaction = await tx(storeNames, 'readwrite');
   transaction.objectStore(STATE_STORE).clear();
   transaction.objectStore(MESSAGES_STORE).clear();
   transaction.objectStore(ASSETS_STORE).clear();

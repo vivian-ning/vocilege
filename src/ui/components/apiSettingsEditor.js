@@ -62,7 +62,7 @@ export function renderApiSettingsEditor(container, state) {
 
   const utilityModelInput = textInput(api.utilityModel || '', '');
   utilityModelInput.placeholder = '可留白，留白時使用主要 model';
-  form.appendChild(wrapField('utilityModel（輔助任務模型）', utilityModelInput));
+  form.appendChild(wrapField('utilityModel（輔助任務模型）', utilityModelInput, '背景小任務（摘要、生活內容）用的省錢模型，空 = 用主模型。'));
 
   // baseUrl（placeholder 依 provider 顯示預設值）
   const baseUrlInput = textInput(api.baseUrl || '', '');
@@ -108,7 +108,7 @@ export function renderApiSettingsEditor(container, state) {
   const thinkingToggle = createToggle({
     checked: api.showThinking === true,
     label: '顯示思考過程',
-    description: '需模型支援；會增加 token 消耗，思考內容計入聲量。'
+    description: '顯示模型思考過程；需模型支援，開了會變貴變慢。'
   });
   const thinkingInput = thinkingToggle.input;
   form.appendChild(thinkingToggle.el);
@@ -124,7 +124,7 @@ export function renderApiSettingsEditor(container, state) {
   };
   thinkingInput.addEventListener('change', syncThinkingBudget);
   syncThinkingBudget();
-  form.appendChild(wrapField('思考預算（tokens）', thinkingBudgetInput));
+  form.appendChild(wrapField('思考預算（tokens）', thinkingBudgetInput, '思考長度上限；開了會變貴變慢。'));
 
   // temperature（0–2）
   const tempInput = document.createElement('input');
@@ -134,7 +134,7 @@ export function renderApiSettingsEditor(container, state) {
   tempInput.max = '2';
   tempInput.step = '0.1';
   tempInput.value = api.temperature != null ? String(api.temperature) : '1';
-  form.appendChild(wrapField('temperature（0–2）', tempInput));
+  form.appendChild(wrapField('temperature（0–2）', tempInput, '回覆的隨機程度，越高越有創意、越低越穩定（建議 1）。'));
 
   // maxTokens
   const maxTokInput = document.createElement('input');
@@ -143,7 +143,7 @@ export function renderApiSettingsEditor(container, state) {
   maxTokInput.min = '1';
   maxTokInput.step = '1';
   maxTokInput.value = api.maxTokens != null ? String(api.maxTokens) : '2048';
-  form.appendChild(wrapField('maxTokens（回覆常被截斷請調高）', maxTokInput));
+  form.appendChild(wrapField('maxTokens', maxTokInput, '單次回覆長度上限，回覆常被截斷請調高。'));
 
   // memoryInjectionLimit（記憶注入上限）：屬 settings 而非 apiSettings，改動即時獨立
   // 儲存（不隨「儲存 API 設定」），避免與 apiKey 表單耦合。
@@ -159,7 +159,7 @@ export function renderApiSettingsEditor(container, state) {
     const n = Math.max(0, Math.round(clampNum(memLimitInput.value, 0, 1000, 10)));
     updateSettings({ memoryInjectionLimit: n });
   });
-  const memField = wrapField('記憶注入上限（一般記憶筆數；locked 不占名額，改動即時生效）', memLimitInput);
+  const memField = wrapField('記憶注入上限（一般記憶筆數；locked 不占名額，改動即時生效）', memLimitInput, '每次對話最多帶幾則聲痕（越多越記得妳、也越花聲量）。');
   form.appendChild(memField);
 
   const timeAwarenessToggle = createToggle({
@@ -311,7 +311,7 @@ async function loadCumulativeUsage() {
 
 // ---- 小工具 ----
 
-function wrapField(label, control) {
+function wrapField(label, control, description = '') {
   const el = document.createElement('label');
   el.className = 'form-field';
   const labelEl = document.createElement('span');
@@ -319,6 +319,12 @@ function wrapField(label, control) {
   labelEl.textContent = label;
   el.appendChild(labelEl);
   el.appendChild(control);
+  if (description) {
+    const desc = document.createElement('span');
+    desc.className = 'gp-desc api-field-desc';
+    desc.textContent = description;
+    el.appendChild(desc);
+  }
   return el;
 }
 

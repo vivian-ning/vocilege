@@ -1363,6 +1363,12 @@ export async function markBackupDone() {
   notify();
 }
 
+export async function markAutoBackupDone() {
+  state.lastAutoBackupAt = now();
+  await saveCurrentState();
+  notify();
+}
+
 export async function updateSettings(patch) {
   state.settings = { ...state.settings, ...patch };
   await saveCurrentState();

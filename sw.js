@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'vocilege-v6-20260708-vigil-1';
+const CACHE_VERSION = 'vocilege-v6-20260708-batch-1';
 const APP_SHELL = [
   './',
   './index.html',
@@ -11,10 +11,12 @@ const APP_SHELL = [
   './src/db/indexeddb.js',
   './src/services/aiService.js',
   './src/services/assetService.js',
+  './src/services/autoBackupService.js',
   './src/services/backupService.js',
   './src/services/mockAIService.js',
   './src/services/promptBuilder.js',
   './src/services/statsService.js',
+  './src/services/updateService.js',
   './src/state/migrations.js',
   './src/state/schema.js',
   './src/state/store.js',

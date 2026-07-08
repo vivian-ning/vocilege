@@ -49,9 +49,14 @@ export function validateBackup(data) {
     }
     if ('settings' in s && !isObject(s.settings)) {
       errors.push('state.settings 應為物件');
+    } else if (isObject(s.settings) && 'backupEveryDays' in s.settings && typeof s.settings.backupEveryDays !== 'number') {
+      errors.push('state.settings.backupEveryDays 應為數字');
     }
     if ('apiSettings' in s && !isObject(s.apiSettings)) {
       errors.push('state.apiSettings 應為物件');
+    }
+    if ('lastAutoBackupAt' in s && typeof s.lastAutoBackupAt !== 'number') {
+      errors.push('state.lastAutoBackupAt 應為數字');
     }
 
     // characters / conversations 基本欄位型別

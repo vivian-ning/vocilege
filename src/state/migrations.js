@@ -10,7 +10,7 @@
 
 import { createDefaultEcho, createExampleGlobalPrompt } from './schema.js';
 
-export const CURRENT_SCHEMA_VERSION = 12;
+export const CURRENT_SCHEMA_VERSION = 13;
 
 const DEFAULT_VIGIL = {
   enabled: false,
@@ -293,6 +293,16 @@ const migrators = {
       });
     }
     s.schemaVersion = 12;
+    return s;
+  },
+
+  // v12 -> v13（V10.5 安心版）：自動備份設定與上次自動備份時間。
+  12: (s) => {
+    const settings = (s.settings && typeof s.settings === 'object') ? { ...s.settings } : {};
+    if (typeof settings.backupEveryDays !== 'number') settings.backupEveryDays = 3;
+    s.settings = settings;
+    if (typeof s.lastAutoBackupAt !== 'number') s.lastAutoBackupAt = 0;
+    s.schemaVersion = 13;
     return s;
   },
 };

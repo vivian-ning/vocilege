@@ -16,6 +16,12 @@ import {
   setFirstMetAt
 } from '../../state/store.js';
 import { getStats } from '../../services/statsService.js';
+import {
+  downloadBackupNow,
+  getAutoBackupNotice,
+  requestAutoBackupAuthorization,
+  runAutoBackupOnBoot
+} from '../../services/autoBackupService.js';
 import { createAvatarEl } from '../avatar.js';
 import { createIcon } from '../icons.js';
 import { navigate } from '../router.js';
@@ -31,7 +37,6 @@ import { openMemoryDrawer } from './chatView.js';
 import { dateStamp, parseDateInput } from '../../utils/time.js';
 
 const DAY_MS = 86400000;
-const BACKUP_REMIND_DAYS = 14;
 const ANNIVERSARY_REMIND_DAYS = 3;
 
 export function renderHomeView(container, state) {
@@ -668,24 +673,40 @@ function buildGreetingCard(state) {
 }
 
 function buildBackupReminder(state) {
-  const last = state.lastBackupAt || 0;
-  const never = !last;
-  const stale = last && (Date.now() - last > BACKUP_REMIND_DAYS * DAY_MS);
-  if (!never && !stale) return null;
+  const notice = getAutoBackupNotice(state);
+  if (!notice) return null;
 
   const bar = document.createElement('div');
   bar.className = 'backup-reminder';
   const text = document.createElement('span');
-  text.textContent = never
-    ? '你還沒有備份過資料。本機資料存在瀏覽器中，清除瀏覽器資料就會消失，建議定期備份。'
-    : `距離上次備份已超過 ${BACKUP_REMIND_DAYS} 天，建議再備份一次。`;
+  text.textContent = notice.type === 'reauthorize'
+    ? '自動備份需要重新授權，點一下就能繼續寫入綁定的資料夾。'
+    : '回憶該備份了。本機資料只在這台瀏覽器裡，現在下載一份封聲比較安心。';
   bar.appendChild(text);
   const link = document.createElement('button');
   link.type = 'button';
   link.className = 'btn btn-primary';
-  link.textContent = '前往備份';
-  link.addEventListener('click', () => { setSettingsTab('data'); navigate('/settings'); });
+  link.textContent = notice.actionText;
+  link.addEventListener('click', async () => {
+    link.disabled = true;
+    try {
+      if (notice.type === 'reauthorize') {
+        await requestAutoBackupAuthorization();
+        await runAutoBackupOnBoot();
+      } else {
+        await downloadBackupNow();
+      }
+    } finally {
+      link.disabled = false;
+    }
+  });
   bar.appendChild(link);
+  const settings = document.createElement('button');
+  settings.type = 'button';
+  settings.className = 'btn';
+  settings.textContent = '備份設定';
+  settings.addEventListener('click', () => { setSettingsTab('data'); navigate('/settings'); });
+  bar.appendChild(settings);
   return bar;
 }
 

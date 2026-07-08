@@ -10,6 +10,7 @@ import { initDB } from './db/indexeddb.js';
 import { initStore, subscribe, getState, markAppOpened, maybeCreateGreeting, maybeCreateNightPatrol, maybeAutoFeedPost, maybeGenerateLifeContent } from './state/store.js';
 import { mountLayout, render, setAppName } from './ui/render.js';
 import { onRouteChange, ensureRoute } from './ui/router.js';
+import { runAutoBackupOnBoot } from './services/autoBackupService.js';
 
 async function loadConfig() {
   // 相對路徑：相對於 index.html 所在位置。
@@ -77,6 +78,13 @@ async function boot() {
 
     // 首次渲染。
     render(getState());
+    runAutoBackupOnBoot()
+      .then(() => render(getState()))
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.warn('自動備份檢查失敗', err);
+        render(getState());
+      });
     registerServiceWorker();
   } catch (err) {
     root.textContent = '';
