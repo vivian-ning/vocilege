@@ -11,6 +11,7 @@ import { initStore, subscribe, getState, markAppOpened, maybeCreateGreeting, may
 import { mountLayout, render, setAppName } from './ui/render.js';
 import { onRouteChange, ensureRoute } from './ui/router.js';
 import { runAutoBackupOnBoot } from './services/autoBackupService.js';
+import { refreshHealthSnapshot } from './services/vigilHealthService.js';
 
 async function loadConfig() {
   // 相對路徑：相對於 index.html 所在位置。
@@ -47,6 +48,7 @@ async function boot() {
       // eslint-disable-next-line no-console
       console.warn('角色生活內容檢查失敗', err);
     });
+    refreshHealthSnapshot().catch(() => {});
     window.setInterval(() => {
       maybeAutoFeedPost().catch((err) => {
         // eslint-disable-next-line no-console

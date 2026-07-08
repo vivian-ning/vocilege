@@ -8,6 +8,7 @@ import { renderGlobalPromptsEditor } from './globalPromptsEditor.js';
 import { renderPlayerEditor } from './playerEditor.js';
 import { renderBackupPanel } from './backupPanel.js';
 import { exportVigilCharacters } from '../../services/backupService.js';
+import { getVigilHealthSettings, saveVigilHealthSettings, testVigilHealthConnection } from '../../services/vigilHealthService.js';
 import { addSticker, updateSticker, deleteSticker, updateSettings } from '../../state/store.js';
 import { saveImageAsset, getObjectURL } from '../../services/assetService.js';
 import { getStats } from '../../services/statsService.js';
@@ -317,6 +318,8 @@ function renderVigilSettings(container, state) {
   });
   wrap.appendChild(copy);
 
+  renderVigilHealthSettings(wrap);
+
   refreshPushSubscriptionStatus(status, output, copy);
 
   subscribe.addEventListener('click', async () => {
@@ -380,6 +383,82 @@ function renderVigilSettings(container, state) {
   });
 
   container.appendChild(wrap);
+}
+
+function renderVigilHealthSettings(container) {
+  const settings = getVigilHealthSettings();
+  const box = document.createElement('div');
+  box.className = 'vigil-export-box';
+
+  const title = document.createElement('h3');
+  title.className = 'settings-subtitle';
+  title.textContent = '健康感知';
+  box.appendChild(title);
+
+  const desc = document.createElement('div');
+  desc.className = 'form-hint';
+  desc.textContent = '兩欄都填才啟用；資料只作為聊天語氣背景。設定存在此瀏覽器 localStorage，不會進備份。';
+  box.appendChild(desc);
+
+  const urlInput = document.createElement('input');
+  urlInput.type = 'text';
+  urlInput.className = 'form-control';
+  urlInput.placeholder = '例如 https://<node>.ts.net:8443';
+  urlInput.value = settings.url;
+  box.appendChild(wrapField('駐守健康網址', urlInput));
+
+  const tokenInput = document.createElement('input');
+  tokenInput.type = 'password';
+  tokenInput.className = 'form-control';
+  tokenInput.placeholder = '貼上健康通行碼';
+  tokenInput.autocomplete = 'off';
+  tokenInput.value = settings.token;
+  box.appendChild(wrapField('通行碼', tokenInput));
+
+  const healthStatus = document.createElement('div');
+  healthStatus.className = 'form-hint';
+  box.appendChild(healthStatus);
+
+  const actions = document.createElement('div');
+  actions.className = 'form-actions';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'btn';
+  saveBtn.textContent = '儲存健康感知';
+  saveBtn.addEventListener('click', () => {
+    saveVigilHealthSettings({ url: urlInput.value, token: tokenInput.value });
+    healthStatus.className = 'backup-status success';
+    healthStatus.textContent = '健康感知設定已儲存在此裝置。匯入備份後需重填。';
+  });
+  actions.appendChild(saveBtn);
+
+  const testBtn = document.createElement('button');
+  testBtn.type = 'button';
+  testBtn.className = 'btn btn-primary';
+  testBtn.textContent = '測試連線';
+  testBtn.addEventListener('click', async () => {
+    saveVigilHealthSettings({ url: urlInput.value, token: tokenInput.value });
+    healthStatus.className = 'form-hint';
+    healthStatus.textContent = '測試中…';
+    testBtn.disabled = true;
+    try {
+      const result = await testVigilHealthConnection({ url: urlInput.value, token: tokenInput.value });
+      healthStatus.className = 'backup-status success';
+      healthStatus.textContent = result.entry
+        ? '連線成功，已讀到最近 24 小時健康資料。'
+        : '連線成功，目前沒有最近 24 小時健康資料。';
+    } catch (err) {
+      healthStatus.className = 'backup-status error';
+      healthStatus.textContent = `連線失敗：${(err && err.message) || String(err)}`;
+    } finally {
+      testBtn.disabled = false;
+    }
+  });
+  actions.appendChild(testBtn);
+  box.appendChild(actions);
+
+  container.appendChild(box);
 }
 
 function getPushSupportState() {

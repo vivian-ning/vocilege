@@ -162,6 +162,22 @@ store.sendPlayerMessage
 
 **CORS 限制（重要）**：OpenAI 官方 API 與部分中轉服務**未對瀏覽器開放 CORS**，純前端的直連請求可能被瀏覽器擋下（顯示「無法連線，請檢查網路或 baseUrl」）。若遇到此情況，需改用有開放 CORS 的相容中轉服務，或改採（本專案範圍外的）自架代理。這是純前端本機工具的先天限制。
 
+### 拾聲橋／遠聲
+
+若透過 `vocilege-bridge` 使用 Claude Code 訂閱，provider 選 `openai-compatible`。本機使用時 baseUrl 可填：
+
+```text
+http://127.0.0.1:8787/v1
+```
+
+若已設定 Tailscale 遠聲，手機上填：
+
+```text
+https://<node>.ts.net/v1
+```
+
+`API 金鑰／橋通行碼` 欄位：橋未啟用通行碼時可填 `local`；啟用 `bridge-config.json` 的 `authToken` 後請填同一段通行碼。匯出備份會清空此欄，匯入備份後需重填。
+
 ### Google Gemini（gemini）
 
 | 欄位 | 值 |
@@ -248,10 +264,11 @@ schema 已預留：
 
 ## 資安說明（API 金鑰）
 
-- 金鑰**只存在本機瀏覽器**：勾選「記住金鑰」時，金鑰會以**明文**存進本機 IndexedDB；不勾選則只留在記憶體，重新整理後需重新輸入。**共用電腦請勿勾選「記住金鑰」。**
+- 金鑰／橋通行碼**只存在本機瀏覽器**：勾選「記住金鑰」時，會以**明文**存進本機 IndexedDB；不勾選則只留在記憶體，重新整理後需重新輸入。**共用電腦請勿勾選「記住金鑰」。**
 - 瀏覽器直連 API 代表金鑰會出現在**本機的網路請求**中（DevTools Network 可見）——這是個人本機工具的預期行為，並非漏洞。
 - 金鑰**不會**出現在：匯出備份（`apiSettings.apiKey` 一律清空）、console、錯誤訊息、URL；測試連線與正式請求都只透過 HTTP headers 傳遞金鑰。
 - 匯入他人備份時，會**保留你本機的金鑰與「記住金鑰」設定**（採合併而非覆蓋）。
+- 駐守健康感知的 `vigilHealthUrl` / `vigilHealthToken` 只存在 localStorage，不進 state、IndexedDB 或備份；換瀏覽器或匯入備份後需重填。
 
 ---
 

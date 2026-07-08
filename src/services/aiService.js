@@ -597,7 +597,12 @@ async function postJson(url, headers, body) {
 // 依 HTTP 狀態與 API 回傳的錯誤訊息組出可讀錯誤。
 async function toApiError(res) {
   const status = res.status;
-  const summary = await readErrorSummary(res);
+  const info = await readErrorInfo(res);
+  const summary = info.summary;
+
+  if (info.type === 'bridge_auth_error') {
+    return new ApiError('橋通行碼錯誤——請到 API 設定確認「API 金鑰／橋通行碼」欄位', { status, detail: summary });
+  }
 
   if (status === 401 || status === 403) {
     return new ApiError('API 金鑰無效或無權限', { status, detail: summary });
@@ -610,17 +615,19 @@ async function toApiError(res) {
 }
 
 // 從錯誤回應中萃取簡短、安全的訊息摘要（不含金鑰；金鑰本就不在 body 內）。
-async function readErrorSummary(res) {
+async function readErrorInfo(res) {
   let raw = '';
   try {
     raw = await res.text();
   } catch (e) {
-    return '';
+    return { summary: '', type: '' };
   }
-  if (!raw) return '';
+  if (!raw) return { summary: '', type: '' };
   let msg = '';
+  let type = '';
   try {
     const data = JSON.parse(raw);
+    type = (data && data.error && data.error.type) || '';
     msg =
       (data && data.error && (data.error.message || data.error.type)) ||
       (data && data.message) ||
@@ -630,7 +637,7 @@ async function readErrorSummary(res) {
   }
   msg = String(msg).replace(/\s+/g, ' ').trim();
   if (msg.length > 200) msg = msg.slice(0, 200) + '…';
-  return msg;
+  return { summary: msg, type: String(type || '') };
 }
 
 function intOr(v, fallback) {

@@ -85,14 +85,14 @@ export function renderApiSettingsEditor(container, state) {
   apiKeyInput.type = 'password';
   apiKeyInput.className = 'form-control';
   apiKeyInput.value = api.apiKey || '';
-  apiKeyInput.placeholder = '貼上 API 金鑰';
+  apiKeyInput.placeholder = '貼上 API 金鑰或橋通行碼';
   apiKeyInput.autocomplete = 'off';
-  form.appendChild(wrapField('API 金鑰 (apiKey)', apiKeyInput));
+  form.appendChild(wrapField('API 金鑰／橋通行碼 (apiKey)', apiKeyInput));
 
   const rememberToggle = createToggle({
     checked: !!api.rememberApiKey,
     label: '記住金鑰',
-    description: '開啟後金鑰將以明文存在本機瀏覽器資料中；關閉則重新整理後需重新輸入。'
+    description: '開啟後金鑰將以明文存在本機瀏覽器資料中；不記住則重新開啟後需重填（含橋通行碼）。'
   });
   const rememberInput = rememberToggle.input;
   form.appendChild(rememberToggle.el);

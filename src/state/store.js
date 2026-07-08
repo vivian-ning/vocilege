@@ -29,6 +29,7 @@ import { buildPrompt, truncateMemoryText } from '../services/promptBuilder.js';
 import { generateReply, generateUtilityText, parseReplyToParts, usesMock } from '../services/aiService.js';
 import { deleteAvatarAsset, deleteStoredAsset } from '../services/assetService.js';
 import { invalidateStats } from '../services/statsService.js';
+import { getCachedHealthSnapshot, refreshHealthSnapshot } from '../services/vigilHealthService.js';
 import { generateId } from '../utils/id.js';
 import { now } from '../utils/time.js';
 
@@ -161,6 +162,13 @@ function getActiveCharacter() {
 
 function getActiveConversation() {
   return state.conversations.find((c) => c.id === state.currentConversationId) || null;
+}
+
+function buildConversationPrompt(args) {
+  return buildPrompt({
+    ...args,
+    vigilHealthSnapshot: getCachedHealthSnapshot()
+  });
 }
 
 function getConversationMembers(conversation) {
@@ -518,6 +526,7 @@ export async function sendPlayerMessage(text, extraParts = []) {
 
   // 新送出：清掉舊錯誤條。
   pendingError = null;
+  refreshHealthSnapshot().catch(() => {});
 
   // 2) 新增 player message 並立即持久化（確保 API 失敗 / 重新整理都不遺失）。
   const playerMsg = makeMessage({
@@ -559,6 +568,7 @@ export async function retryLastReply() {
   const character = getActiveCharacter();
   if (!conversation) return;
   if (conversation.type !== 'group' && !character) return;
+  refreshHealthSnapshot().catch(() => {});
 
   let userText = pendingError ? pendingError.userText : '';
   if (!userText) {
@@ -586,12 +596,13 @@ export async function continueTruncatedReply(messageId) {
     ? state.characters.find((c) => c.id === (conversation.type === 'group' ? msg.senderId : conversation.primaryCharacterId))
     : null;
   if (!msg || msg.senderType !== 'character' || !conversation || !character || typing || msg.truncated !== true) return;
+  refreshHealthSnapshot().catch(() => {});
 
   typing = true;
   pendingError = null;
   notify();
   try {
-    const prompt = buildPrompt({
+    const prompt = buildConversationPrompt({
       conversation,
       activeCharacter: character,
       characters: state.characters,
@@ -672,7 +683,7 @@ async function runGeneration(conversation, character, userText) {
 
   try {
     // 3) buildPrompt（回傳 { systemBlocks, messages }）
-    const prompt = buildPrompt({
+    const prompt = buildConversationPrompt({
       conversation,
       activeCharacter: character,
       characters: state.characters,
@@ -767,7 +778,7 @@ async function runGroupGeneration(conversation, userText) {
 
   try {
     for (const character of speakers) {
-      const prompt = buildPrompt({
+      const prompt = buildConversationPrompt({
         conversation,
         activeCharacter: character,
         characters: state.characters,
@@ -2147,6 +2158,7 @@ export async function regenerateMessage(messageId) {
     ? state.characters.find((c) => c.id === (conversation.type === 'group' ? msg.senderId : conversation.primaryCharacterId))
     : getActiveCharacter();
   if (!msg || msg.senderType !== 'character' || !conversation || !character || typing) return;
+  refreshHealthSnapshot().catch(() => {});
 
   let userText = '';
   const idx = messages.findIndex((m) => m.id === msg.id);
@@ -2165,7 +2177,7 @@ export async function regenerateMessage(messageId) {
   notify();
   try {
     const history = messages.slice(0, idx);
-    const prompt = buildPrompt({
+    const prompt = buildConversationPrompt({
       conversation,
       activeCharacter: character,
       characters: state.characters,
