@@ -11,6 +11,7 @@ import {
 } from '../../services/autoBackupService.js';
 import { forceRefreshApp } from '../../services/updateService.js';
 import { getState, updateSettings } from '../../state/store.js';
+import { confirmDialog } from '../dialog.js';
 
 export function renderBackupPanel(container) {
   container.textContent = '';
@@ -101,7 +102,12 @@ export function renderBackupPanel(container) {
     const status = document.createElement('div');
     status.className = 'backup-status';
     const btn = button('清空資料', 'btn-danger', async () => {
-      const ok = window.confirm('確定要清空全部資料嗎？此動作無法復原。建議先匯出備份。');
+      const ok = await confirmDialog({
+        title: '清空全部資料',
+        message: '確定要清空全部資料嗎？此動作無法復原。建議先匯出備份。',
+        confirmText: '清空資料',
+        danger: true
+      });
       if (!ok) return;
       await clearData();
       status.textContent = '已清空並重設 ✓';
@@ -114,7 +120,11 @@ export function renderBackupPanel(container) {
     const status = document.createElement('div');
     status.className = 'backup-status';
     const btn = button('強制更新', 'btn', async () => {
-      const ok = window.confirm('確定要強制更新嗎？這只會清除更新快取，不會刪除角色、對話或聲痕。');
+      const ok = await confirmDialog({
+        title: '強制更新',
+        message: '確定要強制更新嗎？這只會清除更新快取，不會刪除角色、對話或聲痕。',
+        confirmText: '強制更新'
+      });
       if (!ok) return;
       status.className = 'form-hint';
       status.textContent = '正在清除更新快取…';

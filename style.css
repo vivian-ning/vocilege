@@ -1832,6 +1832,170 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 .journal-actions { display: flex; gap: 4px; }
 .journal-content { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
 
+/* V12 日常／拾日 */
+.daily-page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 20px 16px 90px;
+}
+.daily-head,
+.daily-panel-head,
+.daily-month-nav,
+.daily-entry-actions,
+.confirm-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.daily-calendar,
+.daily-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--r-l);
+  background: var(--glass-bg);
+  box-shadow: var(--shadow-1);
+  backdrop-filter: blur(18px) saturate(125%);
+}
+.daily-calendar { padding: 14px; }
+.daily-panel { margin-top: 14px; padding: 16px; }
+.daily-month-label {
+  font-size: 17px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.daily-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 12px;
+}
+.daily-weekday {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+.daily-day {
+  min-height: 78px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-m);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 8px;
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+}
+.daily-day:hover,
+.daily-day.selected {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.daily-day.selected { transform: translateY(-1px); }
+.daily-day.muted { color: var(--muted); opacity: .72; }
+.daily-day.today .daily-day-number {
+  min-width: 28px;
+  min-height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 800;
+}
+.daily-day-marks {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 10px;
+}
+.daily-mood-dot,
+.daily-beat-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--surface) 80%, transparent);
+}
+.daily-beat-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--primary);
+}
+.mood-1 { background: var(--danger); }
+.mood-2 { background: color-mix(in srgb, var(--danger) 56%, var(--primary)); }
+.mood-3, .mood-none { background: var(--muted); }
+.mood-4 { background: color-mix(in srgb, var(--ok) 54%, var(--primary)); }
+.mood-5 { background: var(--ok); }
+.daily-panel-head h2 { margin: 0; font-size: 18px; }
+.daily-entry-list { display: flex; flex-direction: column; gap: 10px; }
+.daily-entry {
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-m);
+  background: var(--surface);
+  padding: 12px;
+}
+.daily-entry-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.daily-entry-mood {
+  border-radius: 999px;
+  color: var(--on-primary);
+  padding: 2px 8px;
+}
+.daily-entry-content {
+  margin-top: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.daily-entry-actions {
+  justify-content: flex-start;
+  margin-top: 10px;
+}
+.daily-empty {
+  color: var(--muted);
+  text-align: center;
+  padding: 24px 8px;
+}
+.daily-modal { width: min(620px, calc(100vw - 32px)); }
+.daily-form,
+.daily-mood-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.daily-mood-picker {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.daily-mood-choice {
+  width: 44px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-s);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+}
+.daily-mood-choice[aria-pressed="true"] {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.confirm-dialog { width: min(420px, calc(100vw - 32px)); }
+.confirm-message { margin: 0 0 16px; color: var(--text); white-space: pre-wrap; }
+
 /* 已停用的舊指示（保留空殼避免殘留引用出錯） */
 .global-prompt-indicator { display: none; }
 
@@ -1845,7 +2009,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
   .bottom-nav {
     flex: 0 0 auto;
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 4px;
     padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0));
     border-top: 1px solid var(--border);

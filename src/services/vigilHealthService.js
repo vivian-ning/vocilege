@@ -116,7 +116,7 @@ function latestUrl(rawUrl) {
 function normalizeSnapshot(entry) {
   if (!entry || typeof entry !== 'object') return null;
   const out = {};
-  for (const field of ['sleepHours', 'restingHeartRate', 'heartRateAvg', 'hrv', 'steps']) {
+  for (const field of ['sleepHours', 'restingHeartRate', 'heartRateAvg', 'heartRate', 'hrv', 'steps']) {
     const value = Number(entry[field]);
     if (Number.isFinite(value)) out[field] = value;
   }

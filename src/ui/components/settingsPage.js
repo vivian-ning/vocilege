@@ -13,8 +13,9 @@ import { addSticker, updateSticker, deleteSticker, updateSettings } from '../../
 import { saveImageAsset, getObjectURL } from '../../services/assetService.js';
 import { getStats } from '../../services/statsService.js';
 import { createIcon } from '../icons.js';
+import { confirmDialog } from '../dialog.js';
 
-export const SECTION_KEYS = new Set(['player', 'api', 'appearance', 'life', 'vigil', 'stickers', 'prompts', 'usage', 'data']);
+export const SECTION_KEYS = new Set(['player', 'api', 'appearance', 'life', 'daily', 'vigil', 'stickers', 'prompts', 'usage', 'data']);
 const VIGIL_VAPID_KEY = 'vigilVapidKey';
 let pendingScrollTarget = '';
 const expandedSections = new Set();
@@ -49,6 +50,7 @@ export function renderSettingsPage(container, state) {
   page.appendChild(settingsSection('api', 'API', (body) => renderApiSettingsEditor(body, state)));
   page.appendChild(settingsSection('appearance', '外觀', (body) => renderAppearance(body, state)));
   page.appendChild(settingsSection('life', '角色生活感', (body) => renderLifeSettings(body, state)));
+  page.appendChild(settingsSection('daily', '日常', (body) => renderDailySettings(body, state)));
   page.appendChild(settingsSection('vigil', '駐守', (body) => renderVigilSettings(body, state)));
   page.appendChild(settingsSection('stickers', '貼圖', (body) => renderStickerManager(body, state)));
   page.appendChild(settingsSection('prompts', 'Prompt', (body) => renderGlobalPromptsEditor(body, state)));
@@ -641,6 +643,31 @@ function renderLifeSettings(container, state) {
   container.appendChild(wrap);
 }
 
+function renderDailySettings(container, state) {
+  const wrap = document.createElement('div');
+  wrap.className = 'life-settings';
+
+  const desc = document.createElement('p');
+  desc.className = 'gp-desc';
+  desc.textContent = '控制角色是否能感知妳主動勾選「讓 TA 們知道」的拾日。私密拾日永遠不會注入聊天。';
+  wrap.appendChild(desc);
+
+  const enabled = document.createElement('label');
+  enabled.className = 'form-field form-check';
+  const toggle = document.createElement('input');
+  toggle.type = 'checkbox';
+  toggle.checked = state.settings.dailyAwarenessEnabled !== false;
+  toggle.addEventListener('change', () => updateSettings({ dailyAwarenessEnabled: toggle.checked }));
+  const enabledText = document.createElement('span');
+  enabledText.className = 'form-check-label';
+  enabledText.textContent = '打開後，角色會知道妳最近勾了「讓 TA 們知道」的拾日';
+  enabled.appendChild(toggle);
+  enabled.appendChild(enabledText);
+  wrap.appendChild(enabled);
+
+  container.appendChild(wrap);
+}
+
 function renderStickerManager(container, state) {
   const form = document.createElement('form');
   form.className = 'char-form sticker-form';
@@ -715,8 +742,13 @@ function renderStickerManager(container, state) {
     del.type = 'button';
     del.className = 'btn btn-danger';
     del.textContent = '刪除';
-    del.addEventListener('click', () => {
-      if (window.confirm('刪除這張貼圖？')) deleteSticker(sticker.id);
+    del.addEventListener('click', async () => {
+      if (await confirmDialog({
+        title: '刪除貼圖',
+        message: '刪除這張貼圖？',
+        confirmText: '刪除',
+        danger: true
+      })) deleteSticker(sticker.id);
     });
     actions.appendChild(save);
     actions.appendChild(del);

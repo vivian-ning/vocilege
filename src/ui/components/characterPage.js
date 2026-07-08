@@ -32,6 +32,8 @@ import { createAvatarEl } from '../avatar.js';
 import { navigate } from '../router.js';
 import { dateStamp, parseDateInput } from '../../utils/time.js';
 import { createToggle } from '../toggle.js';
+import { confirmDialog } from '../dialog.js';
+import { showToast } from '../toast.js';
 
 const DAY_MS = 86400000;
 const TABS = [
@@ -151,9 +153,12 @@ export function renderSettingsTab(container, state, character, options = {}) {
   delBtn.className = 'btn btn-danger';
   delBtn.textContent = '刪除這個角色';
   delBtn.addEventListener('click', async () => {
-    const ok = window.confirm(
-      `確定要刪除角色「${character.name}」嗎？\n\n將同時刪除該角色的所有對話、聊天紀錄、記憶、節拍、約定，此動作無法復原。`
-    );
+    const ok = await confirmDialog({
+      title: '刪除角色',
+      message: `確定要刪除角色「${character.name}」嗎？\n\n將同時刪除該角色的所有對話、聊天紀錄、記憶、節拍、約定，此動作無法復原。`,
+      confirmText: '刪除',
+      danger: true
+    });
     if (!ok) return;
     await deleteCharacter(character.id);
     if (typeof options.onDelete === 'function') options.onDelete();
@@ -221,8 +226,13 @@ function buildKeepsakeItem(item) {
   const collect = iconBtn('轉聲痕', '轉成聲痕');
   collect.addEventListener('click', () => collectKeepsakeAsMemory(item.id));
   const del = iconBtn('刪', '刪除拾貝');
-  del.addEventListener('click', () => {
-    if (window.confirm('要刪除這則拾貝嗎？')) deleteKeepsake(item.id);
+  del.addEventListener('click', async () => {
+    if (await confirmDialog({
+      title: '刪除拾貝',
+      message: '要刪除這則拾貝嗎？',
+      confirmText: '刪除',
+      danger: true
+    })) deleteKeepsake(item.id);
   });
   actions.appendChild(collect);
   actions.appendChild(del);
@@ -386,8 +396,13 @@ function buildMemoryItem(m) {
   actions.className = 'mem-actions';
   const editBtn = iconBtn('✎', '編輯');
   const delBtn = iconBtn('🗑', '刪除');
-  delBtn.addEventListener('click', () => {
-    if (window.confirm('確定要刪除這筆記憶嗎？此動作無法復原。')) deleteMemory(m.id);
+  delBtn.addEventListener('click', async () => {
+    if (await confirmDialog({
+      title: '刪除聲痕',
+      message: '確定要刪除這筆記憶嗎？此動作無法復原。',
+      confirmText: '刪除',
+      danger: true
+    })) deleteMemory(m.id);
   });
   actions.appendChild(editBtn);
   actions.appendChild(delBtn);
@@ -489,7 +504,7 @@ function buildMemoryForm({ submitLabel, onSubmit, initial, onCancel }) {
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     if (!content.value.trim()) {
-      window.alert('請輸入聲痕內容');
+      showToast('請輸入聲痕內容');
       return;
     }
     onSubmit({
@@ -557,11 +572,11 @@ export function buildAnniversarySection(state, character) {
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     if (!title.value.trim()) {
-      window.alert('請輸入節拍名稱');
+      showToast('請輸入節拍名稱');
       return;
     }
     if (!date.value) {
-      window.alert('請選擇日期');
+      showToast('請選擇日期');
       return;
     }
     addAnniversary(character.id, {
@@ -609,8 +624,13 @@ function buildAnniversaryItem(a) {
   actions.className = 'anniv-actions';
   const editBtn = iconBtn('✎', '編輯');
   const delBtn = iconBtn('🗑', '刪除');
-  delBtn.addEventListener('click', () => {
-    if (window.confirm(`確定要刪除節拍「${a.title || '未命名'}」嗎？`)) deleteAnniversary(a.id);
+  delBtn.addEventListener('click', async () => {
+    if (await confirmDialog({
+      title: '刪除節拍',
+      message: `確定要刪除節拍「${a.title || '未命名'}」嗎？`,
+      confirmText: '刪除',
+      danger: true
+    })) deleteAnniversary(a.id);
   });
   actions.appendChild(editBtn);
   actions.appendChild(delBtn);
@@ -645,7 +665,7 @@ function buildAnniversaryItem(a) {
     editForm.addEventListener('submit', (e) => {
       e.preventDefault();
       if (!title.value.trim() || !date.value) {
-        window.alert('請輸入名稱與日期');
+        showToast('請輸入名稱與日期');
         return;
       }
       updateAnniversary(a.id, { title: title.value, date: date.value, repeat: repeat.value });
@@ -680,7 +700,7 @@ export function buildWishlistSection(state, character) {
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     if (!title.value.trim()) {
-      window.alert('請輸入項目名稱');
+      showToast('請輸入項目名稱');
       return;
     }
     addWishlist(character.id, { title: title.value, note: note.value });
@@ -737,8 +757,13 @@ function buildWishlistItem(w) {
   actions.className = 'wish-actions';
   const editBtn = iconBtn('✎', '編輯');
   const delBtn = iconBtn('🗑', '刪除');
-  delBtn.addEventListener('click', () => {
-    if (window.confirm(`確定要刪除「${w.title || '未命名'}」嗎？`)) deleteWishlist(w.id);
+  delBtn.addEventListener('click', async () => {
+    if (await confirmDialog({
+      title: '刪除約定',
+      message: `確定要刪除「${w.title || '未命名'}」嗎？`,
+      confirmText: '刪除',
+      danger: true
+    })) deleteWishlist(w.id);
   });
   actions.appendChild(editBtn);
   actions.appendChild(delBtn);
@@ -772,7 +797,7 @@ function buildWishlistItem(w) {
     editForm.addEventListener('submit', (e) => {
       e.preventDefault();
       if (!title.value.trim()) {
-        window.alert('請輸入項目名稱');
+        showToast('請輸入項目名稱');
         return;
       }
       updateWishlist(w.id, { title: title.value, note: note.value });

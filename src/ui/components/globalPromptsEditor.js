@@ -16,6 +16,7 @@ import {
   moveGlobalPrompt
 } from '../../state/store.js';
 import { createToggle } from '../toggle.js';
+import { confirmDialog } from '../dialog.js';
 
 export function renderGlobalPromptsEditor(container, state) {
   container.textContent = '';
@@ -83,8 +84,13 @@ function renderBlock(gp, idx, total) {
 
   const upBtn = iconBtn('▲', '上移', idx === 0, () => moveGlobalPrompt(gp.id, -1));
   const downBtn = iconBtn('▼', '下移', idx === total - 1, () => moveGlobalPrompt(gp.id, 1));
-  const delBtn = iconBtn('🗑', '刪除', false, () => {
-    if (window.confirm(`確定要刪除全域 Prompt「${gp.title || '未命名'}」嗎？此動作無法復原。`)) {
+  const delBtn = iconBtn('🗑', '刪除', false, async () => {
+    if (await confirmDialog({
+      title: '刪除全域 Prompt',
+      message: `確定要刪除全域 Prompt「${gp.title || '未命名'}」嗎？此動作無法復原。`,
+      confirmText: '刪除',
+      danger: true
+    })) {
       deleteGlobalPrompt(gp.id);
     }
   });

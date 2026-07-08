@@ -10,6 +10,7 @@ import { createCharacter, updateCharacter } from '../../state/store.js';
 import { normalizeVigil } from '../../state/schema.js';
 import { buildAvatarInput } from '../avatarInput.js';
 import { createIcon } from '../icons.js';
+import { showToast } from '../toast.js';
 
 // 文字欄位定義（頭貼改用 buildAvatarInput，不在此列）。
 const FIELDS = [
@@ -140,7 +141,7 @@ export function openCharacterCreator() {
     e.preventDefault();
     const data = collect(getters, avatarInput);
     if (!data.name || !data.name.trim()) {
-      window.alert('請輸入角色名稱');
+      showToast('請輸入角色名稱');
       return;
     }
     submit.disabled = true;
@@ -225,7 +226,7 @@ export function renderCharacterEditor(container, state, characterId, options = {
     e.preventDefault();
     const data = collect(getters, avatarInput, vigilEditor.getValue);
     if (!data.name || !data.name.trim()) {
-      window.alert('請輸入角色名稱');
+      showToast('請輸入角色名稱');
       return;
     }
     await updateCharacter(character.id, data);

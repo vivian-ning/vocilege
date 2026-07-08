@@ -4,6 +4,7 @@
 //
 // 路由：
 //   #/home                     首頁主控台
+//   #/daily                    日常
 //   #/chat/:conversationId     聊天頁（兩欄式）
 //   #/chats                    對話列表
 //   #/character/:characterId   舊路由：轉回首頁並選取角色
@@ -19,6 +20,7 @@ export function getRoute() {
   const parts = clean.split('/').filter((p) => p.length > 0); // ['chat','id']
 
   if (parts[0] === 'home') return { name: 'home', params: {} };
+  if (parts[0] === 'daily') return { name: 'daily', params: {} };
   if (parts[0] === 'feed') return { name: 'feed', params: {} };
   if (parts[0] === 'chats') return { name: 'chats', params: {} };
   if (parts[0] === 'settings') return { name: 'settings', params: {} };
@@ -49,7 +51,7 @@ export function onRouteChange(cb) {
 // 啟動時若 hash 為空或不合法，導向 #/home（應用預設落點）。
 export function ensureRoute() {
   const hash = location.hash || '';
-  if (!/^#\/(home|feed|chats|chat|character|settings)(\/|$)/.test(hash)) {
+  if (!/^#\/(home|daily|feed|chats|chat|character|settings)(\/|$)/.test(hash)) {
     location.hash = '#/home';
     return true; // 有調整（會觸發一次 hashchange）
   }

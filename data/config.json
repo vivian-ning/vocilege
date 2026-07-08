@@ -1,7 +1,7 @@
 {
   "appName": "拾聲",
   "appNameLatin": "Vocilège",
-  "schemaVersion": 13,
+  "schemaVersion": 14,
   "defaultPlayer": {
     "id": "player",
     "playerName": "",
@@ -24,6 +24,7 @@
     "lifeEnabled": true,
     "lifeEveryDays": 3,
     "lifeDailyLimit": 5,
+    "dailyAwarenessEnabled": true,
     "backupEveryDays": 3
   },
   "defaultApiSettings": {

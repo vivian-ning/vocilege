@@ -28,6 +28,7 @@ import { getObjectURL, saveImageAsset } from '../../services/assetService.js';
 import { applyAvatar } from '../avatar.js';
 import { navigate } from '../router.js';
 import { createWaveBars } from '../wave.js';
+import { confirmDialog } from '../dialog.js';
 import { iconButton } from '../icons.js';
 import { createToggle } from '../toggle.js';
 
@@ -327,7 +328,7 @@ export function renderChatView(container, state) {
       applyAvatar(avatarEl, member.avatar);
       const nameEl = document.createElement('span');
       nameEl.className = 'mention-name';
-      nameEl.textContent = member.name || '角色';
+      nameEl.textContent = mentionDisplayName(member, groupMembers);
       btn.appendChild(avatarEl);
       btn.appendChild(nameEl);
       menu.appendChild(btn);
@@ -347,6 +348,13 @@ export function renderChatView(container, state) {
       document.addEventListener('pointerdown', closeOnPointer);
       document.addEventListener('keydown', closeOnKey);
     });
+  }
+
+  function mentionDisplayName(member, members) {
+    const name = member.name || '角色';
+    const sameNameCount = (members || []).filter((m) => (m.name || '角色') === name).length;
+    if (sameNameCount <= 1) return name;
+    return `${name} ·${String(member.id || '').slice(-4)}`;
   }
 
   function insertMention(member, mention) {
@@ -396,9 +404,12 @@ export function renderChatView(container, state) {
     if (conv.type !== 'group') addItem('此對話的我', () => openPersonaPanel(conv), !!conv.playerPersona);
     if (conv.type === 'group') {
       addItem('刪除群聊', async () => {
-        const ok = window.confirm(
-          `確定要刪除群聊「${conv.title || '合聲'}」嗎？\n\n將刪除此群聊與聊天紀錄，但不會刪除任何角色、聲痕、節拍或約定。`
-        );
+        const ok = await confirmDialog({
+          title: '刪除群聊',
+          message: `確定要刪除群聊「${conv.title || '合聲'}」嗎？\n\n將刪除此群聊與聊天紀錄，但不會刪除任何角色、聲痕、節拍或約定。`,
+          confirmText: '刪除',
+          danger: true
+        });
         if (!ok) return;
         await deleteGroupConversation(conv.id);
         navigate('/chats');
@@ -820,8 +831,13 @@ function memoryDrawerItem(m, characterId) {
   del.setAttribute('aria-label', '刪除聲痕');
   del.title = '刪除聲痕';
   del.textContent = '×';
-  del.addEventListener('click', () => {
-    if (window.confirm('確定要刪除這筆聲痕嗎？')) deleteMemory(m.id);
+  del.addEventListener('click', async () => {
+    if (await confirmDialog({
+      title: '刪除聲痕',
+      message: '確定要刪除這筆聲痕嗎？',
+      confirmText: '刪除',
+      danger: true
+    })) deleteMemory(m.id);
   });
   row.appendChild(edit);
   row.appendChild(del);

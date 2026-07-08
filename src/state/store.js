@@ -167,6 +167,7 @@ function getActiveConversation() {
 function buildConversationPrompt(args) {
   return buildPrompt({
     ...args,
+    journals: state.journals,
     vigilHealthSnapshot: getCachedHealthSnapshot()
   });
 }
@@ -865,7 +866,8 @@ async function maybeChatHeartVoice(conversation, character, roundState = null) {
   if (item) {
     emitToast(`「${character.name || '角色'}」把一句話藏進了弦外之音`, {
       type: 'heartVoice',
-      characterId: character.id
+      characterId: character.id,
+      itemId: item.id
     });
   }
   return item;
@@ -1476,7 +1478,7 @@ function canUseDaily(kind, limit) {
 }
 
 function windowAlert(message) {
-  if (typeof window !== 'undefined' && window.alert) window.alert(message);
+  emitToast(message);
 }
 
 function emitToast(message, action = null) {
@@ -1742,6 +1744,72 @@ export async function maybeGenerateLifeContent() {
     }
   }
   return out;
+}
+
+export async function addDailyJournal({ entryDate, content, moodLevel = null, mood = '', share = 'private' }) {
+  const text = String(content || '').trim();
+  if (!text) return null;
+  const ts = now();
+  const item = {
+    id: generateId('journal'),
+    ownerType: 'player',
+    ownerId: 'player',
+    content: text,
+    entryDate: normalizeEntryDate(entryDate, ts),
+    moodLevel: normalizeMoodLevel(moodLevel),
+    mood: String(mood || '').trim().slice(0, 8),
+    share: share === 'aware' ? 'aware' : 'private',
+    sharedPostId: null,
+    createdAt: ts,
+    updatedAt: ts
+  };
+  state.journals = state.journals || [];
+  state.journals.push(item);
+  await saveCurrentState();
+  notify();
+  return item;
+}
+
+export async function updateDailyJournal(id, patch = {}) {
+  const item = (state.journals || []).find((j) => j && j.id === id && j.ownerType === 'player');
+  if (!item) return null;
+  if ('content' in patch) item.content = String(patch.content || '').trim();
+  if ('entryDate' in patch) item.entryDate = normalizeEntryDate(patch.entryDate, item.createdAt);
+  if ('moodLevel' in patch) item.moodLevel = normalizeMoodLevel(patch.moodLevel);
+  if ('mood' in patch) item.mood = String(patch.mood || '').trim().slice(0, 8);
+  if ('share' in patch) item.share = patch.share === 'aware' ? 'aware' : 'private';
+  item.updatedAt = now();
+  await saveCurrentState();
+  notify();
+  return item;
+}
+
+export async function deleteDailyJournal(id) {
+  state.journals = (state.journals || []).filter((j) => !(j && j.id === id && j.ownerType === 'player'));
+  await saveCurrentState();
+  notify();
+}
+
+export async function shareDailyJournalToFeed(id) {
+  const item = (state.journals || []).find((j) => j && j.id === id && j.ownerType === 'player');
+  if (!item || item.sharedPostId) return null;
+  const post = await addPost({ content: item.content, mood: item.mood || '' });
+  if (!post) return null;
+  item.sharedPostId = post.id;
+  item.updatedAt = now();
+  await saveCurrentState();
+  notify();
+  return post;
+}
+
+function normalizeEntryDate(value, fallbackTs) {
+  const raw = String(value || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : localDayKey(fallbackTs || now());
+}
+
+function normalizeMoodLevel(value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 1 && n <= 5 ? n : null;
 }
 
 export async function deleteJournal(id) {

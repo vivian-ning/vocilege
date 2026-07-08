@@ -5,6 +5,7 @@ import {
   addPostComment
 } from '../../state/store.js';
 import { createAvatarEl } from '../avatar.js';
+import { confirmDialog } from '../dialog.js';
 
 export function renderFeedView(container, state) {
   container.textContent = '';
@@ -27,7 +28,7 @@ export function renderFeedView(container, state) {
   if (!posts.length) {
     const empty = document.createElement('div');
     empty.className = 'feed-empty';
-    empty.textContent = '還沒有迴聲。寫一則日記般的貼文，讓角色有東西可以回應。';
+    empty.textContent = '還沒有迴聲。私密的記錄寫在日常的拾日；想聽角色回應，可以在這裡發布，或從拾日一鍵分享過來。';
     list.appendChild(empty);
   } else {
     for (const post of posts) list.appendChild(buildPost(post, state));
@@ -100,8 +101,13 @@ function buildPost(post, state) {
     del.className = 'gp-icon-btn feed-delete';
     del.textContent = '刪';
     del.title = '刪除貼文';
-    del.addEventListener('click', () => {
-      if (window.confirm('要刪除這則迴聲嗎？')) deletePost(post.id);
+    del.addEventListener('click', async () => {
+      if (await confirmDialog({
+        title: '刪除迴聲',
+        message: '要刪除這則迴聲嗎？',
+        confirmText: '刪除',
+        danger: true
+      })) deletePost(post.id);
     });
     head.appendChild(del);
   }

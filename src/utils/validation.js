@@ -49,8 +49,13 @@ export function validateBackup(data) {
     }
     if ('settings' in s && !isObject(s.settings)) {
       errors.push('state.settings 應為物件');
-    } else if (isObject(s.settings) && 'backupEveryDays' in s.settings && typeof s.settings.backupEveryDays !== 'number') {
-      errors.push('state.settings.backupEveryDays 應為數字');
+    } else if (isObject(s.settings)) {
+      if ('backupEveryDays' in s.settings && typeof s.settings.backupEveryDays !== 'number') {
+        errors.push('state.settings.backupEveryDays 應為數字');
+      }
+      if ('dailyAwarenessEnabled' in s.settings && typeof s.settings.dailyAwarenessEnabled !== 'boolean') {
+        errors.push('state.settings.dailyAwarenessEnabled 應為布林值');
+      }
     }
     if ('apiSettings' in s && !isObject(s.apiSettings)) {
       errors.push('state.apiSettings 應為物件');
@@ -132,6 +137,17 @@ export function validateBackup(data) {
         if ('source' in m && typeof m.source !== 'string') errors.push(`memories[${i}].source 應為字串`);
         if ('sourceId' in m && typeof m.sourceId !== 'string') errors.push(`memories[${i}].sourceId 應為字串`);
         if ('summary' in m && typeof m.summary !== 'string') errors.push(`memories[${i}].summary 應為字串`);
+      });
+    }
+    if (Array.isArray(s.journals)) {
+      s.journals.forEach((j, i) => {
+        if (!isObject(j)) return;
+        if ('entryDate' in j && typeof j.entryDate !== 'string') errors.push(`journals[${i}].entryDate 應為字串`);
+        if ('moodLevel' in j && j.moodLevel !== null && typeof j.moodLevel !== 'number') errors.push(`journals[${i}].moodLevel 應為數字或 null`);
+        if ('mood' in j && typeof j.mood !== 'string') errors.push(`journals[${i}].mood 應為字串`);
+        if ('share' in j && !['private', 'aware'].includes(j.share)) errors.push(`journals[${i}].share 應為 private 或 aware`);
+        if ('sharedPostId' in j && j.sharedPostId !== null && typeof j.sharedPostId !== 'string') errors.push(`journals[${i}].sharedPostId 應為字串或 null`);
+        if ('updatedAt' in j && typeof j.updatedAt !== 'number') errors.push(`journals[${i}].updatedAt 應為數字`);
       });
     }
   }

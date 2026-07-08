@@ -14,6 +14,7 @@ import { renderChatView } from './components/chatView.js';
 import { renderSettingsPage } from './components/settingsPage.js';
 import { renderHomeView } from './components/homeView.js';
 import { renderFeedView } from './components/feedView.js';
+import { renderDailyView } from './components/dailyView.js';
 import { getRoute, navigate } from './router.js';
 import { selectCharacter, selectConversation, getState } from '../state/store.js';
 import { createWaveBars } from './wave.js';
@@ -69,8 +70,12 @@ function installToastHost(root) {
     if (clickable) {
       toast.type = 'button';
       toast.classList.add('app-toast-clickable');
-      toast.title = '前往首頁查看弦外之音';
+      toast.title = '開啟弦外之音';
       toast.addEventListener('click', async () => {
+        sessionStorage.setItem('vocilege:openHeartVoice', JSON.stringify({
+          characterId: action.characterId,
+          itemId: action.itemId || ''
+        }));
         await selectCharacter(action.characterId);
         navigate('/home');
         toast.remove();
@@ -103,6 +108,8 @@ export function render(state) {
   refs.content.textContent = '';
   if (route.name === 'settings') {
     renderSettingsPage(refs.content, state);
+  } else if (route.name === 'daily') {
+    renderDailyView(refs.content, state);
   } else if (route.name === 'feed') {
     renderFeedView(refs.content, state);
   } else if (route.name === 'chats') {
@@ -142,6 +149,7 @@ function renderNav(nav, route, state) {
   links.className = 'nav-links';
 
   links.appendChild(navLink('首頁', route.name === 'home', () => navigate('/home')));
+  links.appendChild(navLink('日常', route.name === 'daily', () => navigate('/daily')));
   links.appendChild(navLink('迴聲', route.name === 'feed', () => navigate('/feed')));
 
   links.appendChild(navLink('聊天', route.name === 'chat' || route.name === 'chats', () => navigate('/chats')));
@@ -164,6 +172,7 @@ function renderBottomNav(nav, route, state) {
   nav.textContent = '';
   const items = [
     { label: '首頁', icon: 'home', active: route.name === 'home', onClick: () => navigate('/home') },
+    { label: '日常', icon: 'daily', active: route.name === 'daily', onClick: () => navigate('/daily') },
     { label: '聊天', icon: 'chat', active: route.name === 'chat' || route.name === 'chats', onClick: () => navigate('/chats') },
     { label: '迴聲', icon: 'feed', active: route.name === 'feed', onClick: () => navigate('/feed') },
     { label: '設定', icon: 'settings', active: route.name === 'settings', onClick: () => navigate('/settings') }

@@ -25,6 +25,8 @@ import {
 import { createAvatarEl } from '../avatar.js';
 import { createIcon } from '../icons.js';
 import { navigate } from '../router.js';
+import { confirmDialog } from '../dialog.js';
+import { showToast } from '../toast.js';
 import { setSettingsTab } from './settingsPage.js';
 import { openCharacterCreator } from './characterEditor.js';
 import {
@@ -67,11 +69,29 @@ export function renderHomeView(container, state) {
   }
 
   container.appendChild(page);
+  openPendingHeartVoice(state);
 }
 
 function selectedCharacter(state) {
   const chars = state.characters || [];
   return chars.find((c) => c.id === state.currentCharacterId) || chars[0] || null;
+}
+
+function openPendingHeartVoice(state) {
+  const raw = sessionStorage.getItem('vocilege:openHeartVoice');
+  if (!raw) return;
+  sessionStorage.removeItem('vocilege:openHeartVoice');
+  let payload = null;
+  try {
+    payload = JSON.parse(raw);
+  } catch (e) {
+    return;
+  }
+  const character = (state.characters || []).find((c) => c.id === payload.characterId);
+  if (!character) return;
+  requestAnimationFrame(() => {
+    openCharacterModal('弦外之音', (body) => renderHeartVoiceList(body, state, character));
+  });
 }
 
 function buildCharacterRail(state) {
@@ -382,7 +402,7 @@ async function handleGenerateLife(characterId, kind) {
   try {
     await generateLifeContent(characterId, kind, { automatic: false });
   } catch (err) {
-    window.alert((err && err.userMessage) || (err && err.message) || '產生失敗');
+    showToast((err && err.userMessage) || (err && err.message) || '產生失敗');
   }
 }
 
@@ -590,7 +610,12 @@ function deleteButton(label, action) {
   btn.textContent = '刪除';
   btn.setAttribute('aria-label', label);
   btn.addEventListener('click', async () => {
-    if (!window.confirm(`${label}？`)) return;
+    if (!await confirmDialog({
+      title: label,
+      message: `${label}？`,
+      confirmText: '刪除',
+      danger: true
+    })) return;
     btn.disabled = true;
     try {
       await action();

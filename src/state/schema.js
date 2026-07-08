@@ -142,6 +142,7 @@ export function createDefaultState(config) {
       lifeDailyLimit: typeof defaultSettings.lifeDailyLimit === 'number'
         ? defaultSettings.lifeDailyLimit
         : 5,
+      dailyAwarenessEnabled: defaultSettings.dailyAwarenessEnabled !== false,
       // 0 = 關閉自動備份與提醒。
       backupEveryDays: typeof defaultSettings.backupEveryDays === 'number'
         ? defaultSettings.backupEveryDays
@@ -175,6 +176,36 @@ function cloneAvatar(avatar) {
     return { type: 'emoji', value: avatar.value || '🙂' };
   }
   return { type: 'emoji', value: '🙂' };
+}
+
+function localDateKey(ts) {
+  const d = new Date(ts || Date.now());
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function normalizeJournal(j) {
+  const createdAt = typeof j.createdAt === 'number' ? j.createdAt : Date.now();
+  const ownerType = j.ownerType === 'character' ? 'character' : 'player';
+  const base = {
+    id: String(j.id || generateId('journal')),
+    ownerType,
+    ownerId: String(j.ownerId || j.characterId || (ownerType === 'player' ? 'player' : '')),
+    content: String(j.content || ''),
+    createdAt
+  };
+  if (ownerType === 'character') return base;
+  const moodLevel = Number(j.moodLevel);
+  return {
+    ...base,
+    entryDate: typeof j.entryDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(j.entryDate)
+      ? j.entryDate
+      : localDateKey(createdAt),
+    moodLevel: Number.isInteger(moodLevel) && moodLevel >= 1 && moodLevel <= 5 ? moodLevel : null,
+    mood: String(j.mood || '').trim().slice(0, 8),
+    share: j.share === 'aware' ? 'aware' : 'private',
+    sharedPostId: typeof j.sharedPostId === 'string' && j.sharedPostId ? j.sharedPostId : null,
+    updatedAt: typeof j.updatedAt === 'number' ? j.updatedAt : createdAt
+  };
 }
 
 export function normalizeVigil(vigil) {
@@ -264,6 +295,7 @@ export function normalizeState(state) {
   merged.settings.feedAutoPost = !!merged.settings.feedAutoPost;
   merged.settings.dreamEnabled = merged.settings.dreamEnabled !== false;
   merged.settings.lifeEnabled = merged.settings.lifeEnabled !== false;
+  merged.settings.dailyAwarenessEnabled = merged.settings.dailyAwarenessEnabled !== false;
   merged.apiSettings.visionEnabled = merged.apiSettings.visionEnabled === true;
   merged.apiSettings.showThinking = merged.apiSettings.showThinking === true;
   if (typeof merged.apiSettings.thinkingBudget !== 'number' ||
@@ -343,13 +375,7 @@ export function normalizeState(state) {
 
   merged.journals = merged.journals
     .filter((j) => j && typeof j === 'object')
-    .map((j) => ({
-      id: String(j.id || generateId('journal')),
-      ownerType: j.ownerType === 'character' ? 'character' : String(j.ownerType || 'player'),
-      ownerId: String(j.ownerId || j.characterId || ''),
-      content: String(j.content || ''),
-      createdAt: typeof j.createdAt === 'number' ? j.createdAt : Date.now()
-    }));
+    .map((j) => normalizeJournal(j));
 
   merged.heartVoices = merged.heartVoices
     .filter((h) => h && typeof h === 'object')

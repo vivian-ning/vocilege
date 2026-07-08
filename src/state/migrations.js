@@ -10,7 +10,7 @@
 
 import { createDefaultEcho, createExampleGlobalPrompt } from './schema.js';
 
-export const CURRENT_SCHEMA_VERSION = 13;
+export const CURRENT_SCHEMA_VERSION = 14;
 
 const DEFAULT_VIGIL = {
   enabled: false,
@@ -305,7 +305,42 @@ const migrators = {
     s.schemaVersion = 13;
     return s;
   },
+
+  // v13 -> v14（V12 日常：拾日手帳與角色感知）。
+  13: (s) => {
+    const journals = Array.isArray(s.journals) ? s.journals : [];
+    s.journals = journals.map((journal) => {
+      if (!journal || typeof journal !== 'object') return journal;
+      if (journal.ownerType === 'character') return journal;
+      const createdAt = typeof journal.createdAt === 'number' ? journal.createdAt : Date.now();
+      return {
+        ...journal,
+        ownerType: 'player',
+        ownerId: journal.ownerId || 'player',
+        entryDate: typeof journal.entryDate === 'string' && journal.entryDate
+          ? journal.entryDate
+          : localDateKey(createdAt),
+        moodLevel: Number.isInteger(journal.moodLevel) && journal.moodLevel >= 1 && journal.moodLevel <= 5
+          ? journal.moodLevel
+          : null,
+        mood: typeof journal.mood === 'string' ? journal.mood.slice(0, 8) : '',
+        share: journal.share === 'aware' ? 'aware' : 'private',
+        sharedPostId: typeof journal.sharedPostId === 'string' && journal.sharedPostId ? journal.sharedPostId : null,
+        updatedAt: typeof journal.updatedAt === 'number' ? journal.updatedAt : createdAt
+      };
+    });
+    const settings = (s.settings && typeof s.settings === 'object') ? { ...s.settings } : {};
+    if (typeof settings.dailyAwarenessEnabled !== 'boolean') settings.dailyAwarenessEnabled = true;
+    s.settings = settings;
+    s.schemaVersion = 14;
+    return s;
+  },
 };
+
+function localDateKey(ts) {
+  const d = new Date(ts || Date.now());
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 export function migrateState(state) {
   let s = state && typeof state === 'object' ? { ...state } : {};

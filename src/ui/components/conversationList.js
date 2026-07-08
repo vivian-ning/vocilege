@@ -7,6 +7,7 @@ import { getStats } from '../../services/statsService.js';
 import { applyAvatar } from '../avatar.js';
 import { navigate } from '../router.js';
 import { openCharacterCreator } from './characterEditor.js';
+import { confirmDialog } from '../dialog.js';
 
 let activeType = 'direct';
 
@@ -151,9 +152,12 @@ function renderItem(conv, state) {
   del.addEventListener('click', async (e) => {
     e.stopPropagation();
     if (conv.type === 'group') {
-      const ok = window.confirm(
-        `確定要刪除群聊「${deriveTitle(conv, character)}」嗎？\n\n將刪除此群聊與聊天紀錄，但不會刪除任何角色、聲痕、節拍或約定。`
-      );
+      const ok = await confirmDialog({
+        title: '刪除群聊',
+        message: `確定要刪除群聊「${deriveTitle(conv, character)}」嗎？\n\n將刪除此群聊與聊天紀錄，但不會刪除任何角色、聲痕、節拍或約定。`,
+        confirmText: '刪除',
+        danger: true
+      });
       if (!ok) return;
       const wasCurrent = conv.id === state.currentConversationId;
       await deleteGroupConversation(conv.id);
@@ -161,9 +165,12 @@ function renderItem(conv, state) {
       return;
     }
     if (!character) return;
-    const ok = window.confirm(
-      `確定要刪除角色「${character.name}」嗎？\n\n將同時刪除該角色的所有對話與聊天紀錄，此動作無法復原。`
-    );
+    const ok = await confirmDialog({
+      title: '刪除角色',
+      message: `確定要刪除角色「${character.name}」嗎？\n\n將同時刪除該角色的所有對話與聊天紀錄，此動作無法復原。`,
+      confirmText: '刪除',
+      danger: true
+    });
     if (ok) deleteCharacter(character.id);
   });
 
