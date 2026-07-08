@@ -18,6 +18,21 @@
 //     （前綴快取由 provider 自動處理，分區順序本身就是優化）。
 
 const RECENT_LIMIT = 30; // 最近聊天紀錄取樣上限（可調整）。
+const IMPORTANCE_WEIGHT = 3;
+const RELEVANCE_WEIGHT = 5;
+const RECENCY_WINDOW_MS = 30 * 86400000;
+const HEAT_COOLDOWN_MS = 90 * 86400000;
+const MAX_GENERAL_MEMORY_CHARS = 160;
+const MAX_DYNAMIC_MEMORY_CHARS = 2500;
+
+let segmenter = null;
+const tokenCache = new Map();
+const TOKEN_CACHE_LIMIT = 800;
+const STOP_WORDS = new Set([
+  '這個', '那個', '一個', '我們', '你們', '他們', '她們', '自己', '可以', '不是', '沒有',
+  '就是', '只是', '如果', '因為', '所以', '但是', '然後', '覺得', '知道', '現在', '今天',
+  '明天', '昨天', '真的', '好像', '一下', '什麼', '怎麼', '為什麼'
+]);
 
 // 固定的輸出格式指示：要求模型把旁白與對話分開，方便 parseReplyToParts 還原成 parts。
 // 對話 → 純文字；旁白（動作 / 神態 / 場景）→ 獨立成段並以全形星號包裹。
@@ -41,7 +56,8 @@ export function buildPrompt({
   memoryInjectionLimit, // V3：非 locked 記憶注入上限（預設 10）
   settings,
   anniversaries,
-  stickers
+  stickers,
+  currentUserText
 }) {
   const character = activeCharacter || {};
   const p = player || {};
@@ -62,7 +78,7 @@ export function buildPrompt({
     (p.playerDescription || '').trim();
 
   // 記憶選取：locked → 靜態區、general（非 locked）→ 動態區。
-  const { locked, general } = selectInjectedMemories(memories, character.id, memoryInjectionLimit);
+  const { locked, general } = selectInjectedMemories(memories, character.id, memoryInjectionLimit, currentUserText);
 
   // ---- 靜態區（穩定前綴，逐字不變）----
   const staticParts = [];
@@ -109,9 +125,21 @@ export function buildPrompt({
 
   // ---- 動態區（每輪可能變動；不進穩定前綴）----
   const dynamicParts = [];
-  const generalText = memoriesToText(general);
-  if (generalText) {
-    dynamicParts.push(`【關於${playerName}與你的記憶】\n${generalText}`);
+  const memoryDynamicParts = [];
+  const echoSummary = conversation && conversation.echo && conversation.echo.dirty !== true
+    ? String(conversation.echo.summary || '').trim()
+    : '';
+  if (echoSummary) {
+    memoryDynamicParts.push(`【餘音｜更早的對話回憶】\n${echoSummary}`);
+  }
+  const generalLines = memoryLines(general, { maxChars: MAX_GENERAL_MEMORY_CHARS });
+  if (generalLines.length) {
+    memoryDynamicParts.push(`【關於${playerName}與你的記憶】`);
+    memoryDynamicParts.push(...generalLines);
+  }
+  const limitedMemoryText = limitDynamicMemoryText(memoryDynamicParts);
+  if (limitedMemoryText) {
+    dynamicParts.push(limitedMemoryText);
   }
   if (!settings || settings.timeAwareness !== false) {
     const timeText = buildTimeAwarenessText(anniversaries, character.id);
@@ -179,29 +207,157 @@ function speakerLabel(message, activeCharacterId, characters, playerName) {
 //   - 只取該角色、status === "active" 的記憶
 //   - locked：全部（不占 N 名額）
 //   - general（非 locked）：依 importance 由高到低、同分以 updatedAt 新者優先，取前 limit 筆
-export function selectInjectedMemories(memories, characterId, limit) {
+export function selectInjectedMemories(memories, characterId, limit, currentUserText = '') {
   const all = (memories || []).filter(
     (m) => m && m.characterId === characterId && (m.status || 'active') === 'active' && m.enabled !== false
   );
   const locked = all.filter((m) => m.locked);
   const general = all
     .filter((m) => !m.locked)
-    .sort(
-      (a, b) =>
-        (b.importance || 0) - (a.importance || 0) ||
-        (b.updatedAt || 0) - (a.updatedAt || 0)
-    );
+    .map((m) => ({ memory: m, score: memoryScore(m, currentUserText) }))
+    .sort((a, b) => b.score - a.score || (b.memory.updatedAt || 0) - (a.memory.updatedAt || 0))
+    .map((row) => row.memory);
   const n = Number.isFinite(Number(limit)) ? Math.max(0, Math.floor(Number(limit))) : 10;
   return { locked, general: general.slice(0, n) };
 }
 
 // 把記憶清單組成注入文字（每筆一行、以「・」起頭；空 content 略過）。
-function memoriesToText(list) {
+function memoriesToText(list, options = {}) {
+  return memoryLines(list, options).join('\n');
+}
+
+function memoryLines(list, options = {}) {
+  const maxChars = Number.isFinite(Number(options.maxChars)) ? Math.max(0, Math.floor(Number(options.maxChars))) : 0;
   return (list || [])
     .map((m) => (m && m.content ? String(m.content).trim() : ''))
     .filter(Boolean)
-    .map((t) => `・${t}`)
-    .join('\n');
+    .map((t) => maxChars ? truncateMemoryText(t, maxChars) : t)
+    .map((t) => `・${t}`);
+}
+
+function memoryScore(memory, currentUserText) {
+  return (Number(memory && memory.importance) || 0) * IMPORTANCE_WEIGHT +
+    recencyScore(memory && memory.updatedAt) +
+    heatScore(memory) +
+    relevanceScore(memory, currentUserText);
+}
+
+export function recencyScore(updatedAt, nowTs = Date.now()) {
+  const ts = Number(updatedAt) || 0;
+  if (!ts) return 0;
+  const age = Math.max(0, nowTs - ts);
+  if (age >= RECENCY_WINDOW_MS) return 0;
+  return 3 * (1 - age / RECENCY_WINDOW_MS);
+}
+
+export function heatScore(memory, nowTs = Date.now()) {
+  const count = Math.max(0, Number(memory && memory.recallCount) || 0);
+  let score = Math.min(3, Math.log2(1 + count));
+  const last = Number(memory && memory.lastRecalledAt) || 0;
+  if (last && nowTs - last > HEAT_COOLDOWN_MS) score *= 0.5;
+  return score;
+}
+
+export function relevanceScore(memory, currentUserText) {
+  const query = String(currentUserText || '').trim();
+  if (!query) return 0;
+  const text = [memory && memory.content, memory && memory.summary].filter(Boolean).join('\n');
+  if (!text.trim()) return 0;
+  return overlapTokenCount(query, text, memory) * RELEVANCE_WEIGHT;
+}
+
+function overlapTokenCount(query, text, memory) {
+  if (canSegment()) {
+    const queryTokens = segmentWords(query);
+    const memoryTokens = memoryTokensFor(memory, text);
+    let count = 0;
+    for (const token of queryTokens) {
+      if (memoryTokens.has(token)) count++;
+    }
+    if (count || queryTokens.size) return count;
+    const compact = query.toLowerCase().replace(/\s+/g, '');
+    return compact && text.toLowerCase().includes(compact) ? 1 : 0;
+  }
+  const fragments = slidingFragments(query);
+  if (!fragments.size) return 0;
+  const haystack = text.toLowerCase();
+  let count = 0;
+  for (const fragment of fragments) {
+    if (haystack.includes(fragment)) count++;
+  }
+  return count;
+}
+
+function canSegment() {
+  return typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function';
+}
+
+function getSegmenter() {
+  if (!segmenter && canSegment()) {
+    segmenter = new Intl.Segmenter('zh-Hant', { granularity: 'word' });
+  }
+  return segmenter;
+}
+
+function segmentWords(text) {
+  const seg = getSegmenter();
+  if (!seg) return new Set();
+  const out = new Set();
+  for (const part of seg.segment(String(text || '').toLowerCase())) {
+    const token = String(part.segment || '').trim();
+    if (!token || token.length <= 1 || STOP_WORDS.has(token)) continue;
+    if (/^\p{P}+$/u.test(token) || /^\d+$/u.test(token)) continue;
+    out.add(token);
+  }
+  return out;
+}
+
+function memoryTokensFor(memory, text) {
+  const key = `${memory && memory.id ? memory.id : 'mem'}:${Number(memory && memory.updatedAt) || 0}`;
+  if (tokenCache.has(key)) return tokenCache.get(key);
+  const tokens = segmentWords(text);
+  tokenCache.set(key, tokens);
+  while (tokenCache.size > TOKEN_CACHE_LIMIT) {
+    const first = tokenCache.keys().next().value;
+    tokenCache.delete(first);
+  }
+  return tokens;
+}
+
+function slidingFragments(text) {
+  const source = String(text || '').toLowerCase().replace(/\s+/g, '');
+  const out = new Set();
+  for (let len = 2; len <= 4; len++) {
+    for (let i = 0; i <= source.length - len; i++) out.add(source.slice(i, i + len));
+  }
+  return out;
+}
+
+export function truncateMemoryText(text, maxChars = 80) {
+  const raw = String(text || '').trim();
+  const n = Math.max(0, Math.floor(Number(maxChars) || 0));
+  if (!n || raw.length <= n) return raw;
+  const head = raw.slice(0, n);
+  const match = /[。！？!?…](?![\s\S]*[。！？!?…])/.exec(head);
+  if (match) return head.slice(0, match.index + match[0].length);
+  return `${head}…`;
+}
+
+function limitDynamicMemoryText(parts) {
+  const out = [];
+  let total = 0;
+  for (const part of parts || []) {
+    const text = String(part || '').trim();
+    if (!text) continue;
+    const nextTotal = total + text.length + (out.length ? 2 : 0);
+    if (nextTotal > MAX_DYNAMIC_MEMORY_CHARS) break;
+    out.push(text);
+    total = nextTotal;
+  }
+  return out.reduce((acc, text) => {
+    if (!acc) return text;
+    return text.startsWith('・') ? `${acc}\n${text}` : `${acc}\n\n${text}`;
+  }, '');
 }
 
 // 把 systemBlocks 依序（靜態在前、動態在後）串接為單一 system 字串。

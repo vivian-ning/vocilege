@@ -2,7 +2,7 @@
 // 匯入資料前的結構驗證（第十三節）。回傳 { ok, errors }。
 // 不修改輸入，只做檢查。
 
-const CURRENT_SCHEMA_VERSION = 11;
+import { CURRENT_SCHEMA_VERSION } from '../state/migrations.js';
 
 function isObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -106,6 +106,27 @@ export function validateBackup(data) {
             errors.push(`conversations[${i}].primaryCharacterId 應為字串`);
           }
         }
+        if ('echo' in c) {
+          if (!isObject(c.echo)) {
+            errors.push(`conversations[${i}].echo 應為物件`);
+          } else {
+            if ('summary' in c.echo && typeof c.echo.summary !== 'string') errors.push(`conversations[${i}].echo.summary 應為字串`);
+            if ('coveredUntil' in c.echo && typeof c.echo.coveredUntil !== 'number') errors.push(`conversations[${i}].echo.coveredUntil 應為數字`);
+            if ('coveredUntilId' in c.echo && typeof c.echo.coveredUntilId !== 'string') errors.push(`conversations[${i}].echo.coveredUntilId 應為字串`);
+            if ('dirty' in c.echo && typeof c.echo.dirty !== 'boolean') errors.push(`conversations[${i}].echo.dirty 應為布林值`);
+            if ('updatedAt' in c.echo && typeof c.echo.updatedAt !== 'number') errors.push(`conversations[${i}].echo.updatedAt 應為數字`);
+          }
+        }
+      });
+    }
+    if (Array.isArray(s.memories)) {
+      s.memories.forEach((m, i) => {
+        if (!isObject(m)) return;
+        if ('recallCount' in m && typeof m.recallCount !== 'number') errors.push(`memories[${i}].recallCount 應為數字`);
+        if ('lastRecalledAt' in m && typeof m.lastRecalledAt !== 'number') errors.push(`memories[${i}].lastRecalledAt 應為數字`);
+        if ('source' in m && typeof m.source !== 'string') errors.push(`memories[${i}].source 應為字串`);
+        if ('sourceId' in m && typeof m.sourceId !== 'string') errors.push(`memories[${i}].sourceId 應為字串`);
+        if ('summary' in m && typeof m.summary !== 'string') errors.push(`memories[${i}].summary 應為字串`);
       });
     }
   }

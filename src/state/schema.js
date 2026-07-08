@@ -41,6 +41,16 @@ export function createDefaultVigil() {
   };
 }
 
+export function createDefaultEcho() {
+  return {
+    summary: '',
+    coveredUntil: 0,
+    coveredUntilId: '',
+    dirty: false,
+    updatedAt: 0
+  };
+}
+
 // state record 完整結構（第六節）。
 export function createDefaultState(config) {
   const defaultPlayer = (config && config.defaultPlayer) || {
@@ -176,6 +186,21 @@ export function normalizeVigil(vigil) {
   };
 }
 
+export function normalizeEcho(echo) {
+  const source = echo && typeof echo === 'object' && !Array.isArray(echo) ? echo : {};
+  return {
+    summary: typeof source.summary === 'string' ? source.summary : '',
+    coveredUntil: typeof source.coveredUntil === 'number' && Number.isFinite(source.coveredUntil)
+      ? source.coveredUntil
+      : 0,
+    coveredUntilId: typeof source.coveredUntilId === 'string' ? source.coveredUntilId : '',
+    dirty: source.dirty === true,
+    updatedAt: typeof source.updatedAt === 'number' && Number.isFinite(source.updatedAt)
+      ? source.updatedAt
+      : 0
+  };
+}
+
 // 補齊缺漏欄位，回傳一個新物件（不深層修改輸入）。
 // 只負責「欄位存在性」與型別修正，不動 schemaVersion 的升級邏輯。
 export function normalizeState(state) {
@@ -281,14 +306,23 @@ export function normalizeState(state) {
       title: type === 'group' ? String(c.title || '合聲') : null,
       memberIds: memberIds.length ? normalizedMemberIds : ['player'].concat(c.primaryCharacterId ? [c.primaryCharacterId] : []),
       primaryCharacterId: type === 'group' ? null : (typeof c.primaryCharacterId === 'string' ? c.primaryCharacterId : ''),
-      lastDreamMessageCount: typeof c.lastDreamMessageCount === 'number' ? c.lastDreamMessageCount : 0
+      lastDreamMessageCount: typeof c.lastDreamMessageCount === 'number' ? c.lastDreamMessageCount : 0,
+      echo: normalizeEcho(c.echo)
     };
     return normalized;
   });
 
   merged.memories = merged.memories.map((m) => {
     if (!m || typeof m !== 'object') return m;
-    return { ...m, enabled: m.enabled !== false };
+    return {
+      ...m,
+      enabled: m.enabled !== false,
+      recallCount: typeof m.recallCount === 'number' && Number.isFinite(m.recallCount) ? m.recallCount : 0,
+      lastRecalledAt: typeof m.lastRecalledAt === 'number' && Number.isFinite(m.lastRecalledAt) ? m.lastRecalledAt : 0,
+      source: typeof m.source === 'string' ? m.source : '',
+      sourceId: typeof m.sourceId === 'string' ? m.sourceId : '',
+      summary: typeof m.summary === 'string' ? m.summary : ''
+    };
   });
 
   merged.stickers = merged.stickers

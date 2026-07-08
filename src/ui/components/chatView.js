@@ -19,7 +19,9 @@ import {
   sendPhotoMessage,
   exportConversationBook,
   selectCharacter,
-  deleteGroupConversation
+  deleteGroupConversation,
+  getConversationEcho,
+  rebuildConversationEcho
 } from '../../state/store.js';
 import { usesMock } from '../../services/aiService.js';
 import { getObjectURL, saveImageAsset } from '../../services/assetService.js';
@@ -390,6 +392,7 @@ export function renderChatView(container, state) {
     };
     addItem('成書（HTML）', () => exportConversationBook('html'));
     addItem('成書（Markdown）', () => exportConversationBook('markdown'));
+    addItem('查看餘音', () => openEchoModal(conv));
     if (conv.type !== 'group') addItem('此對話的我', () => openPersonaPanel(conv), !!conv.playerPersona);
     if (conv.type === 'group') {
       addItem('刪除群聊', async () => {
@@ -609,6 +612,64 @@ function personaField(label, type, value, placeholder) {
   return { el, getValue: () => control.value };
 }
 
+function openEchoModal(conversation) {
+  if (!conversation) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+
+  const title = document.createElement('h2');
+  title.className = 'modal-title';
+  title.textContent = '餘音';
+  modal.appendChild(title);
+
+  const body = document.createElement('div');
+  body.className = 'memory-drawer-preview';
+  body.style.whiteSpace = 'pre-wrap';
+  const renderBody = () => {
+    const echo = getConversationEcho(conversation.id);
+    body.textContent = echo.summary
+      ? echo.summary
+      : (echo.dirty ? '餘音需要重新濃縮。' : '尚未形成餘音。');
+  };
+  renderBody();
+  modal.appendChild(body);
+
+  const actions = document.createElement('div');
+  actions.className = 'form-actions';
+  const rebuild = document.createElement('button');
+  rebuild.type = 'button';
+  rebuild.className = 'btn btn-primary';
+  rebuild.textContent = '重新濃縮';
+  rebuild.addEventListener('click', async () => {
+    rebuild.disabled = true;
+    rebuild.textContent = '濃縮中…';
+    try {
+      const ok = await rebuildConversationEcho(conversation.id);
+      renderBody();
+      showToast(ok ? '餘音已更新' : '目前沒有可濃縮的餘音');
+    } finally {
+      rebuild.disabled = false;
+      rebuild.textContent = '重新濃縮';
+    }
+  });
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'btn';
+  close.textContent = '關閉';
+  close.addEventListener('click', () => overlay.remove());
+  actions.appendChild(rebuild);
+  actions.appendChild(close);
+  modal.appendChild(actions);
+
+  overlay.appendChild(modal);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+  document.body.appendChild(overlay);
+}
+
 export function openMemoryDrawer(state, character, conversation) {
   const overlay = document.createElement('div');
   overlay.className = 'memory-drawer-overlay';
@@ -662,18 +723,54 @@ export function openMemoryDrawer(state, character, conversation) {
   });
   panel.appendChild(dreamBtn);
 
+  const echoBtn = document.createElement('button');
+  echoBtn.type = 'button';
+  echoBtn.className = 'btn memory-dream-btn';
+  echoBtn.textContent = '查看餘音';
+  echoBtn.disabled = !conversation;
+  echoBtn.addEventListener('click', () => openEchoModal(conversation));
+  panel.appendChild(echoBtn);
+
+  const searchWrap = document.createElement('label');
+  searchWrap.className = 'form-field memory-search-field';
+  const searchLabel = document.createElement('span');
+  searchLabel.className = 'form-label';
+  searchLabel.textContent = '搜尋聲痕';
+  searchWrap.appendChild(searchLabel);
+  const searchInput = document.createElement('input');
+  searchInput.type = 'search';
+  searchInput.className = 'form-control';
+  searchInput.placeholder = '輸入關鍵字';
+  searchWrap.appendChild(searchInput);
+  const searchCount = document.createElement('div');
+  searchCount.className = 'form-hint';
+  searchWrap.appendChild(searchCount);
+  panel.appendChild(searchWrap);
+
   const list = document.createElement('div');
   list.className = 'memory-drawer-list';
   const memories = (state.memories || [])
     .filter((m) => m.characterId === character.id && (m.status || 'active') === 'active')
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-  for (const m of memories) list.appendChild(memoryDrawerItem(m, character.id));
-  if (!memories.length) {
-    const empty = document.createElement('div');
-    empty.className = 'form-hint';
-    empty.textContent = '還沒有聲痕。';
-    list.appendChild(empty);
-  }
+  const renderMemoryList = () => {
+    const query = searchInput.value.trim().toLowerCase();
+    const filtered = memories.filter((m) => {
+      if (!query) return true;
+      const haystack = `${String(m.content || '')}\n${String(m.summary || '')}`.toLowerCase();
+      return haystack.includes(query);
+    });
+    list.textContent = '';
+    for (const m of filtered) list.appendChild(memoryDrawerItem(m, character.id));
+    if (!filtered.length) {
+      const empty = document.createElement('div');
+      empty.className = 'form-hint';
+      empty.textContent = memories.length ? '沒有符合的聲痕。' : '還沒有聲痕。';
+      list.appendChild(empty);
+    }
+    searchCount.textContent = `找到 ${filtered.length} 則`;
+  };
+  searchInput.addEventListener('input', renderMemoryList);
+  renderMemoryList();
   panel.appendChild(list);
 
   const enabled = memories.filter((m) => m.enabled !== false);

@@ -8,9 +8,9 @@
 // 逐版套用直到 schemaVersion === CURRENT_SCHEMA_VERSION，確保任何舊備份都能一步步
 // 升級上來，而非只支援「上一版」。
 
-import { createExampleGlobalPrompt } from './schema.js';
+import { createDefaultEcho, createExampleGlobalPrompt } from './schema.js';
 
-export const CURRENT_SCHEMA_VERSION = 11;
+export const CURRENT_SCHEMA_VERSION = 12;
 
 const DEFAULT_VIGIL = {
   enabled: false,
@@ -263,6 +263,36 @@ const migrators = {
       ));
     }
     s.schemaVersion = 11;
+    return s;
+  },
+
+  // v11 -> v12（V10 記憶版）：對話新增餘音游標；聲痕補齊熱度與來源欄位。
+  11: (s) => {
+    if (Array.isArray(s.conversations)) {
+      s.conversations = s.conversations.map((conversation) => (
+        conversation && typeof conversation === 'object'
+          ? { ...conversation, echo: { ...createDefaultEcho(), ...(conversation.echo || {}) } }
+          : conversation
+      ));
+    }
+    if (Array.isArray(s.memories)) {
+      s.memories = s.memories.map((memory) => {
+        if (!memory || typeof memory !== 'object') return memory;
+        return {
+          ...memory,
+          recallCount: typeof memory.recallCount === 'number' && Number.isFinite(memory.recallCount)
+            ? memory.recallCount
+            : 0,
+          lastRecalledAt: typeof memory.lastRecalledAt === 'number' && Number.isFinite(memory.lastRecalledAt)
+            ? memory.lastRecalledAt
+            : 0,
+          source: typeof memory.source === 'string' ? memory.source : '',
+          sourceId: typeof memory.sourceId === 'string' ? memory.sourceId : '',
+          summary: typeof memory.summary === 'string' ? memory.summary : ''
+        };
+      });
+    }
+    s.schemaVersion = 12;
     return s;
   },
 };

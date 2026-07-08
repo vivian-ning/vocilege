@@ -23,9 +23,9 @@ import {
   updateMessage,
   deleteMessagesByConversation
 } from '../db/indexeddb.js';
-import { createDefaultState, createDefaultVigil, normalizeState } from './schema.js';
+import { createDefaultEcho, createDefaultState, createDefaultVigil, normalizeEcho, normalizeState } from './schema.js';
 import { migrateState } from './migrations.js';
-import { buildPrompt } from '../services/promptBuilder.js';
+import { buildPrompt, truncateMemoryText } from '../services/promptBuilder.js';
 import { generateReply, generateUtilityText, parseReplyToParts, usesMock } from '../services/aiService.js';
 import { deleteAvatarAsset, deleteStoredAsset } from '../services/assetService.js';
 import { invalidateStats } from '../services/statsService.js';
@@ -63,6 +63,10 @@ const listeners = new Set();
 const CHAT_HEART_VOICE_CHANCE = 0.2;
 const CHAT_HEART_VOICE_COOLDOWN_MS = 30 * 60 * 1000;
 const chatHeartVoiceLastTriggeredAt = new Map();
+const ECHO_RECENT_LIMIT = 30;
+const ECHO_TRIGGER_COUNT = 20;
+const ECHO_BATCH_LIMIT = 60;
+const echoDaily = { dayKey: '', global: 0, byConversation: new Map() };
 
 // ---- 基本存取 ----
 
@@ -282,6 +286,7 @@ export async function createCharacter(data) {
     title: null, // direct 一律 null，標題由角色 name 派生（第七節 title 規則）
     memberIds: ['player', character.id],
     primaryCharacterId: character.id,
+    echo: createDefaultEcho(),
     createdAt: ts,
     updatedAt: ts,
     lastMessageAt: ts
@@ -327,6 +332,7 @@ export async function createGroupConversation(data = {}) {
     title: String(data.title || '').trim() || '合聲',
     memberIds: ['player', ...characterIds],
     primaryCharacterId: null,
+    echo: createDefaultEcho(),
     createdAt: ts,
     updatedAt: ts,
     lastMessageAt: ts
@@ -598,7 +604,8 @@ export async function continueTruncatedReply(messageId) {
       memoryInjectionLimit: state.settings.memoryInjectionLimit,
       settings: state.settings,
       anniversaries: state.anniversaries,
-      stickers: state.stickers
+      stickers: state.stickers,
+      currentUserText: findPlayerTextBeforeMessage(msg) || ''
     });
     prompt.messages = (prompt.messages || []).concat({
       role: 'user',
@@ -678,7 +685,8 @@ async function runGeneration(conversation, character, userText) {
       memoryInjectionLimit: state.settings.memoryInjectionLimit,
       settings: state.settings,
       anniversaries: state.anniversaries,
-      stickers: state.stickers
+      stickers: state.stickers,
+      currentUserText: userText
     });
 
     // 記憶「被想起」：凡實際注入 prompt 的記憶（locked 與非 locked 都算），
@@ -724,6 +732,7 @@ async function runGeneration(conversation, character, userText) {
     conversation.lastMessageAt = replyMsg.createdAt;
     conversation.updatedAt = replyMsg.createdAt;
     await saveCurrentState();
+    triggerEchoCompression(conversation.id);
     triggerChatHeartVoice(conversation, character);
     maybeExtractDreamMemories(conversation.id, { automatic: true })
       .then((added) => {
@@ -771,7 +780,8 @@ async function runGroupGeneration(conversation, userText) {
         memoryInjectionLimit: state.settings.memoryInjectionLimit,
         settings: state.settings,
         anniversaries: state.anniversaries,
-        stickers: state.stickers
+        stickers: state.stickers,
+        currentUserText: userText
       });
       await markMemoriesRecalled(prompt.meta && prompt.meta.injectedMemoryIds);
       const result = await generateReply({
@@ -803,6 +813,7 @@ async function runGroupGeneration(conversation, userText) {
       conversation.updatedAt = replyMsg.createdAt;
       invalidateStats();
       await saveCurrentState();
+      triggerEchoCompression(conversation.id);
       triggerChatHeartVoice(conversation, character, heartVoiceRound);
       notify();
     }
@@ -901,6 +912,156 @@ function partsToPlainText(parts) {
     if (p.type === 'image') return p.altText ? `[照片] ${p.altText}` : '[照片]';
     return p.content ? String(p.content) : '';
   }).join('\n').trim();
+}
+
+function findPlayerTextBeforeMessage(message) {
+  if (!message) return '';
+  const idx = messages.findIndex((m) => m.id === message.id);
+  if (idx < 0) return '';
+  for (let i = idx - 1; i >= 0; i--) {
+    if (messages[i] && messages[i].senderType === 'player') {
+      return partsToPlainText(messages[i].parts);
+    }
+  }
+  return '';
+}
+
+function compareMessageCursor(a, b) {
+  const at = Number(a && a.createdAt) || 0;
+  const bt = Number(b && b.createdAt) || 0;
+  if (at !== bt) return at - bt;
+  return String(a && a.id || '').localeCompare(String(b && b.id || ''));
+}
+
+function isMessageCoveredByEcho(message, conversation) {
+  const echo = normalizeEcho(conversation && conversation.echo);
+  if (!message || !echo.coveredUntil) return false;
+  return compareMessageCursor(
+    { createdAt: message.createdAt, id: message.id },
+    { createdAt: echo.coveredUntil, id: echo.coveredUntilId }
+  ) <= 0;
+}
+
+function markEchoDirtyIfCovered(message) {
+  if (!message) return false;
+  const conversation = (state.conversations || []).find((c) => c.id === message.conversationId);
+  if (!conversation || !isMessageCoveredByEcho(message, conversation)) return false;
+  conversation.echo = { ...normalizeEcho(conversation.echo), dirty: true };
+  return true;
+}
+
+function triggerEchoCompression(conversationId, options = {}) {
+  maybeCompressEcho(conversationId, options).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.warn('餘音濃縮失敗', err);
+  });
+}
+
+function resetEchoDaily() {
+  const key = localDayKey(now());
+  if (echoDaily.dayKey !== key) {
+    echoDaily.dayKey = key;
+    echoDaily.global = 0;
+    echoDaily.byConversation = new Map();
+  }
+}
+
+function canUseEchoDaily(conversationId, { manual = false } = {}) {
+  if (manual) return true;
+  resetEchoDaily();
+  const convCount = echoDaily.byConversation.get(conversationId) || 0;
+  return echoDaily.global < 6 && convCount < 2;
+}
+
+function consumeEchoDaily(conversationId, { manual = false } = {}) {
+  if (manual) return true;
+  if (!canUseEchoDaily(conversationId)) return false;
+  echoDaily.global += 1;
+  echoDaily.byConversation.set(conversationId, (echoDaily.byConversation.get(conversationId) || 0) + 1);
+  return true;
+}
+
+async function maybeCompressEcho(conversationId, { manual = false } = {}) {
+  const conversation = (state.conversations || []).find((c) => c.id === conversationId);
+  if (!conversation || usesMock(state.apiSettings)) return false;
+  conversation.echo = normalizeEcho(conversation.echo);
+  const list = conversation.id === state.currentConversationId
+    ? messages.slice()
+    : normalizeMessageList(await getMessagesByConversation(conversation.id));
+  const sorted = list
+    .filter((m) => m && m.id && typeof m.createdAt === 'number')
+    .slice()
+    .sort(compareMessageCursor);
+  if (sorted.length <= ECHO_RECENT_LIMIT) return false;
+
+  const echo = normalizeEcho(conversation.echo);
+  const cursor = echo.dirty ? { createdAt: 0, id: '' } : { createdAt: echo.coveredUntil, id: echo.coveredUntilId };
+  const cutoff = Math.max(0, sorted.length - ECHO_RECENT_LIMIT);
+  const candidates = sorted
+    .slice(0, cutoff)
+    .filter((m) => compareMessageCursor(m, cursor) > 0);
+  const shouldTrigger = manual || (echo.dirty ? candidates.length >= 1 : candidates.length >= ECHO_TRIGGER_COUNT);
+  if (!shouldTrigger || !candidates.length) return false;
+  if (!consumeEchoDaily(conversation.id, { manual })) return false;
+
+  const batch = candidates.slice(0, ECHO_BATCH_LIMIT);
+  const transcript = batch.map((m) => `${messageSpeakerName(m, conversation)}：${partsToPlainText(activeParts(m))}`)
+    .filter((line) => line.trim())
+    .join('\n');
+  if (!transcript.trim()) return false;
+
+  const result = await generateUtilityText({
+    apiSettings: state.apiSettings,
+    maxTokens: 700,
+    system: [
+      '你要維護一段角色互動工具的「餘音」滾動摘要。',
+      '請輸出新的完整摘要，使用繁體中文，400 字內。',
+      '保留具體事實：暱稱、約定、事件、情感轉折；不要逐句流水帳。',
+      '不要輸出標題、項目符號、JSON 或說明文字。'
+    ].join('\n'),
+    userText: [
+      echo.dirty || !echo.summary ? '' : `既有餘音：\n${echo.summary}`,
+      `新增對話轉錄：\n${transcript}`
+    ].filter(Boolean).join('\n\n')
+  });
+  const summary = String(result && result.text || '').trim().slice(0, 400);
+  if (!summary) return false;
+  const last = batch[batch.length - 1];
+  conversation.echo = {
+    summary,
+    coveredUntil: Number(last.createdAt) || 0,
+    coveredUntilId: String(last.id || ''),
+    dirty: false,
+    updatedAt: now()
+  };
+  if (result && result.usage) pushUsageLog({ kind: 'echo', characterId: '', usage: result.usage });
+  await saveCurrentState();
+  notify();
+  return true;
+}
+
+function messageSpeakerName(message, conversation) {
+  if (!message) return '系統';
+  if (message.senderType === 'player') return (state.player && state.player.playerName) || '玩家';
+  if (message.senderType === 'character') {
+    const character = (state.characters || []).find((c) => c.id === message.senderId);
+    return (character && character.name) || '角色';
+  }
+  return conversation && conversation.type === 'group' ? '系統' : '系統';
+}
+
+export function getConversationEcho(conversationId) {
+  const conversation = (state.conversations || []).find((c) => c.id === conversationId);
+  return normalizeEcho(conversation && conversation.echo);
+}
+
+export async function rebuildConversationEcho(conversationId) {
+  const conversation = (state.conversations || []).find((c) => c.id === conversationId);
+  if (!conversation) return false;
+  conversation.echo = { ...normalizeEcho(conversation.echo), summary: '', coveredUntil: 0, coveredUntilId: '', dirty: true };
+  await saveCurrentState();
+  notify();
+  return maybeCompressEcho(conversationId, { manual: true });
 }
 
 export async function updatePlayer(patch) {
@@ -1134,6 +1295,7 @@ export async function addMemory(characterId, data = {}) {
     recallCount: 0,
     status: 'active',
     source: data.source || 'manual',
+    sourceId: data.sourceId || '',
     createdAt: ts,
     updatedAt: ts
   });
@@ -1574,10 +1736,40 @@ export async function deleteJournal(id) {
 export async function revealHeartVoice(id) {
   const item = (state.heartVoices || []).find((h) => h.id === id);
   if (!item) return null;
+  const wasRevealed = item.revealed === true;
   item.revealed = true;
+  if (!wasRevealed) addHeartVoiceMemory(item);
   await saveCurrentState();
   notify();
   return item;
+}
+
+function addHeartVoiceMemory(item) {
+  if (!item || !item.characterId || !item.id) return null;
+  state.memories = state.memories || [];
+  if (state.memories.some((m) => m && m.source === 'heartVoice' && m.sourceId === item.id)) return null;
+  const content = truncateMemoryText(item.content, 80);
+  if (!content || isDuplicateMemory(content, state.memories.filter((m) => m && m.characterId === item.characterId))) return null;
+  const ts = now();
+  const memory = {
+    id: generateId('mem'),
+    characterId: item.characterId,
+    content,
+    summary: '弦外之音',
+    importance: 2,
+    emotionWeight: 3,
+    locked: false,
+    enabled: true,
+    lastRecalledAt: 0,
+    recallCount: 0,
+    status: 'active',
+    source: 'heartVoice',
+    sourceId: item.id,
+    createdAt: ts,
+    updatedAt: ts
+  };
+  state.memories.push(memory);
+  return memory;
 }
 
 export async function deleteHeartVoice(id) {
@@ -1916,8 +2108,10 @@ export async function switchMessageVersion(messageId, dir) {
   msg.usage = activeUsage(msg);
   msg.thinking = activeThinking(msg);
   msg.truncated = activeTruncated(msg);
+  markEchoDirtyIfCovered(msg);
   await updateMessage(msg);
   invalidateStats();
+  await saveCurrentState();
   notify();
 }
 
@@ -1933,8 +2127,10 @@ export async function editMessageParts(messageId, text) {
     const idx = Math.min(msg.versions.length - 1, Math.max(0, Number(msg.activeVersion) || 0));
     msg.versions[idx] = { ...msg.versions[idx], parts: msg.parts, editedAt: msg.editedAt };
   }
+  markEchoDirtyIfCovered(msg);
   await updateMessage(msg);
   invalidateStats();
+  await saveCurrentState();
   notify();
 }
 
@@ -1950,6 +2146,8 @@ export async function regenerateMessage(messageId) {
   const idx = messages.findIndex((m) => m.id === msg.id);
   const lastCharIdx = findLastCharacterMessageIndex(msg.conversationId);
   if (idx !== lastCharIdx) return;
+  const echoDirty = markEchoDirtyIfCovered(msg);
+  if (echoDirty) await saveCurrentState();
   for (let i = idx - 1; i >= 0; i--) {
     if (messages[i].senderType === 'player') {
       userText = partsToPlainText(messages[i].parts);
@@ -1974,7 +2172,8 @@ export async function regenerateMessage(messageId) {
       memoryInjectionLimit: state.settings.memoryInjectionLimit,
       settings: state.settings,
       anniversaries: state.anniversaries,
-      stickers: state.stickers
+      stickers: state.stickers,
+      currentUserText: userText
     });
     const result = await generateReply({
       prompt,
@@ -2005,6 +2204,7 @@ export async function regenerateMessage(messageId) {
     if (usage) msg.usage = usage;
     await updateMessage(msg);
     invalidateStats();
+    await saveCurrentState();
   } catch (err) {
     pendingError = {
       message: (err && err.userMessage) || (err && err.message) || 'AI 回覆失敗',
@@ -2226,6 +2426,7 @@ export async function maybeExtractDreamMemories(conversationId, { automatic = fa
     recallCount: 0,
     status: 'active',
     source: 'extracted',
+    sourceId: '',
     createdAt: ts,
     updatedAt: ts
   };
