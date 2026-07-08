@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'vocilege-v6-20260705-1';
+const CACHE_VERSION = 'vocilege-v6-20260708-vigil-1';
 const APP_SHELL = [
   './',
   './index.html',
@@ -81,3 +81,65 @@ self.addEventListener('fetch', (event) => {
       .catch(() => caches.match(request).then((cached) => cached || caches.match('./index.html')))
   );
 });
+
+self.addEventListener('push', (event) => {
+  const payload = parsePushPayload(event);
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      data: { url: payload.url || './' },
+      icon: './icons/icon-192.svg',
+      badge: './icons/icon-192.svg'
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = safeNotificationUrl(event.notification && event.notification.data);
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true })
+      .then((clientList) => {
+        for (const client of clientList) {
+          try {
+            const url = new URL(client.url);
+            if (url.origin === target.origin && 'focus' in client) {
+              return client.focus();
+            }
+          } catch (e) {
+            // Ignore malformed client URLs.
+          }
+        }
+        return clients.openWindow(target.href);
+      })
+  );
+});
+
+function parsePushPayload(event) {
+  const fallback = { title: '拾聲', body: '', url: './' };
+  if (!event.data) return fallback;
+  const raw = event.data.text();
+  try {
+    const data = JSON.parse(raw);
+    return {
+      title: typeof data.title === 'string' && data.title.trim() ? data.title.trim() : '拾聲',
+      body: typeof data.body === 'string' ? data.body : '',
+      url: typeof data.url === 'string' && data.url.trim() ? data.url : './'
+    };
+  } catch (e) {
+    return { title: '拾聲', body: raw, url: './' };
+  }
+}
+
+function safeNotificationUrl(data) {
+  let url;
+  try {
+    url = new URL((data && data.url) || './', self.location.origin);
+  } catch (e) {
+    url = new URL('./', self.location.origin);
+  }
+  if (url.origin !== self.location.origin) {
+    url = new URL('./', self.location.origin);
+  }
+  return url;
+}

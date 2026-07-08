@@ -77,7 +77,7 @@ export function createDefaultState(config) {
     notifications: [],
     usageLog: [],
     pendingGreeting: null,
-    dailyCounters: { date: '', feed: 0, dream: 0, background: 0 },
+    dailyCounters: { date: '', feed: 0, dream: 0, life: 0, nightPatrol: 0, background: 0 },
     lastOpenedAt: 0,
     lastGreetingAt: 0,
     lastFeedAutoPostAt: 0,
@@ -230,7 +230,7 @@ export function normalizeState(state) {
   }
   if (!merged.pendingGreeting || typeof merged.pendingGreeting !== 'object') merged.pendingGreeting = null;
   if (!merged.dailyCounters || typeof merged.dailyCounters !== 'object') {
-    merged.dailyCounters = { date: '', feed: 0, dream: 0, background: 0 };
+    merged.dailyCounters = { date: '', feed: 0, dream: 0, life: 0, nightPatrol: 0, background: 0 };
   }
 
   merged.usageLog = merged.usageLog

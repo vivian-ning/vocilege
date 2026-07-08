@@ -12,7 +12,8 @@ import { saveImageAsset, getObjectURL } from '../../services/assetService.js';
 import { getStats } from '../../services/statsService.js';
 import { createIcon } from '../icons.js';
 
-const SECTION_KEYS = new Set(['player', 'api', 'appearance', 'life', 'stickers', 'prompts', 'usage', 'data']);
+export const SECTION_KEYS = new Set(['player', 'api', 'appearance', 'life', 'vigil', 'stickers', 'prompts', 'usage', 'data']);
+const VIGIL_VAPID_KEY = 'vigilVapidKey';
 let pendingScrollTarget = '';
 const expandedSections = new Set();
 
@@ -46,6 +47,7 @@ export function renderSettingsPage(container, state) {
   page.appendChild(settingsSection('api', 'API', (body) => renderApiSettingsEditor(body, state)));
   page.appendChild(settingsSection('appearance', '外觀', (body) => renderAppearance(body, state)));
   page.appendChild(settingsSection('life', '角色生活感', (body) => renderLifeSettings(body, state)));
+  page.appendChild(settingsSection('vigil', '駐守', (body) => renderVigilSettings(body)));
   page.appendChild(settingsSection('stickers', '貼圖', (body) => renderStickerManager(body, state)));
   page.appendChild(settingsSection('prompts', 'Prompt', (body) => renderGlobalPromptsEditor(body, state)));
   page.appendChild(settingsSection('usage', '聲量', (body) => renderUsageStats(body, state)));
@@ -196,6 +198,231 @@ function renderPlayerProfile(container, state) {
   editor.className = 'settings-card-inner';
   renderPlayerEditor(editor, state);
   container.appendChild(editor);
+}
+
+function renderVigilSettings(container) {
+  const wrap = document.createElement('div');
+  wrap.className = 'vigil-settings';
+
+  const desc = document.createElement('p');
+  desc.className = 'gp-desc';
+  desc.textContent = '駐守需在電腦執行 vocilege-vigil；iPhone 需 iOS 16.4+，並從主畫面啟動拾聲後才能訂閱推播。';
+  wrap.appendChild(desc);
+
+  const support = getPushSupportState();
+  const supportNote = document.createElement('div');
+  supportNote.className = support.ok ? 'form-hint' : 'backup-status error';
+  supportNote.textContent = support.message;
+  wrap.appendChild(supportNote);
+
+  const keyInput = document.createElement('textarea');
+  keyInput.className = 'form-control';
+  keyInput.rows = 3;
+  keyInput.placeholder = '貼上 python vigil.py show-key 輸出的 VAPID 公鑰';
+  keyInput.value = localStorage.getItem(VIGIL_VAPID_KEY) || '';
+  wrap.appendChild(wrapField('VAPID 公鑰', keyInput));
+
+  const status = document.createElement('div');
+  status.className = 'form-hint';
+  wrap.appendChild(status);
+
+  const actions = document.createElement('div');
+  actions.className = 'form-actions';
+
+  const saveKey = document.createElement('button');
+  saveKey.type = 'button';
+  saveKey.className = 'btn';
+  saveKey.textContent = '儲存公鑰';
+  saveKey.addEventListener('click', () => {
+    const raw = keyInput.value.trim();
+    const valid = validateVapidKey(raw);
+    if (!valid.ok) {
+      status.className = 'backup-status error';
+      status.textContent = valid.message;
+      return;
+    }
+    localStorage.setItem(VIGIL_VAPID_KEY, raw);
+    status.className = 'backup-status success';
+    status.textContent = '公鑰已儲存在此裝置。';
+  });
+  actions.appendChild(saveKey);
+
+  const subscribe = document.createElement('button');
+  subscribe.type = 'button';
+  subscribe.className = 'btn btn-primary';
+  subscribe.textContent = '訂閱推播';
+  subscribe.disabled = !support.ok;
+  actions.appendChild(subscribe);
+
+  const unsubscribe = document.createElement('button');
+  unsubscribe.type = 'button';
+  unsubscribe.className = 'btn';
+  unsubscribe.textContent = '取消訂閱';
+  unsubscribe.disabled = !support.ok;
+  actions.appendChild(unsubscribe);
+  wrap.appendChild(actions);
+
+  const output = document.createElement('textarea');
+  output.className = 'form-control';
+  output.rows = 8;
+  output.readOnly = true;
+  output.placeholder = '訂閱成功後，這裡會顯示要貼給 python vigil.py add-sub 的 JSON。';
+  wrap.appendChild(wrapField('訂閱 JSON', output));
+
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'btn';
+  copy.textContent = '複製訂閱 JSON';
+  copy.disabled = true;
+  copy.addEventListener('click', async () => {
+    if (!output.value) return;
+    try {
+      await navigator.clipboard.writeText(output.value);
+      status.className = 'backup-status success';
+      status.textContent = '已複製。到電腦執行 python vigil.py add-sub 後貼上。';
+    } catch (e) {
+      output.select();
+      status.className = 'form-hint';
+      status.textContent = '無法自動複製，請手動複製文字。';
+    }
+  });
+  wrap.appendChild(copy);
+
+  refreshPushSubscriptionStatus(status, output, copy);
+
+  subscribe.addEventListener('click', async () => {
+    const raw = keyInput.value.trim() || localStorage.getItem(VIGIL_VAPID_KEY) || '';
+    const valid = validateVapidKey(raw);
+    if (!valid.ok) {
+      status.className = 'backup-status error';
+      status.textContent = valid.message;
+      return;
+    }
+    localStorage.setItem(VIGIL_VAPID_KEY, raw);
+    status.className = 'form-hint';
+    status.textContent = '正在等待推播服務…';
+    try {
+      const registration = await serviceWorkerReadyWithTimeout();
+      if (!registration) {
+        status.className = 'backup-status error';
+        status.textContent = '首次啟用請重新開啟拾聲再試。';
+        return;
+      }
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        status.className = 'backup-status error';
+        status.textContent = '你尚未允許拾聲傳送通知。';
+        return;
+      }
+      const existing = await registration.pushManager.getSubscription();
+      if (existing) await existing.unsubscribe();
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: base64urlToUint8Array(raw)
+      });
+      output.value = JSON.stringify(subscription.toJSON(), null, 2);
+      copy.disabled = false;
+      status.className = 'backup-status success';
+      status.textContent = '已訂閱。複製後到電腦執行 python vigil.py add-sub 貼上。';
+    } catch (err) {
+      status.className = 'backup-status error';
+      status.textContent = `訂閱失敗：${(err && err.message) || String(err)}`;
+    }
+  });
+
+  unsubscribe.addEventListener('click', async () => {
+    try {
+      const registration = await serviceWorkerReadyWithTimeout();
+      const subscription = registration ? await registration.pushManager.getSubscription() : null;
+      if (!subscription) {
+        status.className = 'form-hint';
+        status.textContent = '目前沒有訂閱。';
+        return;
+      }
+      await subscription.unsubscribe();
+      output.value = '';
+      copy.disabled = true;
+      status.className = 'backup-status success';
+      status.textContent = '已取消此裝置的推播訂閱。';
+    } catch (err) {
+      status.className = 'backup-status error';
+      status.textContent = `取消失敗：${(err && err.message) || String(err)}`;
+    }
+  });
+
+  container.appendChild(wrap);
+}
+
+function getPushSupportState() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    return { ok: false, message: '此瀏覽器不支援推播。' };
+  }
+  if (isIosLike() && !isStandaloneWebApp()) {
+    return { ok: false, message: '請先把拾聲加入主畫面，並從主畫面開啟後再訂閱。' };
+  }
+  return { ok: true, message: '此裝置可嘗試訂閱推播。訂閱 JSON 只會顯示在這裡，不會寫入拾聲資料。' };
+}
+
+function isIosLike() {
+  const platform = navigator.platform || '';
+  const ua = navigator.userAgent || '';
+  return /iPad|iPhone|iPod/.test(platform) ||
+    (/Macintosh/.test(platform) && navigator.maxTouchPoints > 1) ||
+    /iPad|iPhone|iPod/.test(ua);
+}
+
+function isStandaloneWebApp() {
+  return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+    navigator.standalone === true;
+}
+
+function validateVapidKey(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return { ok: false, message: '請先貼上 VAPID 公鑰。' };
+  if (!/^[A-Za-z0-9_-]+$/.test(value) || value.includes('=')) {
+    return { ok: false, message: '公鑰格式不對：請貼 show-key 輸出的 base64url 字串，不要 PEM、JWK 或等號 padding。' };
+  }
+  try {
+    const bytes = base64urlToUint8Array(value);
+    if (bytes.length !== 65) {
+      return { ok: false, message: `公鑰格式不對：解碼後應為 65 bytes，目前是 ${bytes.length} bytes。` };
+    }
+  } catch (e) {
+    return { ok: false, message: '公鑰不是有效的 base64url 字串。' };
+  }
+  return { ok: true, message: '' };
+}
+
+function base64urlToUint8Array(raw) {
+  const normalized = String(raw || '').replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+  const binary = atob(padded);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
+  return out;
+}
+
+async function serviceWorkerReadyWithTimeout() {
+  if (!navigator.serviceWorker) return null;
+  return Promise.race([
+    navigator.serviceWorker.ready,
+    new Promise((resolve) => window.setTimeout(() => resolve(null), 5000))
+  ]);
+}
+
+async function refreshPushSubscriptionStatus(status, output, copy) {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  const registration = await serviceWorkerReadyWithTimeout();
+  if (!registration) return;
+  const subscription = await registration.pushManager.getSubscription();
+  if (!subscription) {
+    status.textContent = status.textContent || '目前尚未訂閱。';
+    return;
+  }
+  output.value = JSON.stringify(subscription.toJSON(), null, 2);
+  copy.disabled = false;
+  status.className = 'backup-status success';
+  status.textContent = '此裝置已訂閱。若更換 VAPID 金鑰，請取消後重新訂閱。';
 }
 
 // ---- 外觀：四配色 × 明暗 ----

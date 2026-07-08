@@ -1262,8 +1262,9 @@ function resetDailyCounters() {
   const key = localDayKey(now());
   state.dailyCounters = state.dailyCounters || {};
   if (state.dailyCounters.date !== key) {
-    state.dailyCounters = { date: key, feed: 0, dream: 0, life: 0, background: 0 };
+    state.dailyCounters = { date: key, feed: 0, dream: 0, life: 0, nightPatrol: 0, background: 0 };
   }
+  if (typeof state.dailyCounters.nightPatrol !== 'number') state.dailyCounters.nightPatrol = 0;
   return state.dailyCounters;
 }
 
@@ -2057,6 +2058,60 @@ export async function maybeCreateGreeting() {
   await saveCurrentState();
   notify();
   return state.pendingGreeting;
+}
+
+export async function maybeCreateNightPatrol() {
+  if (state.settings.lifeEnabled === false) return null;
+  if (usesMock(state.apiSettings)) return null;
+  if (state.pendingGreeting) return state.pendingGreeting;
+  const current = new Date(now());
+  const hour = current.getHours();
+  if (hour < 1 || hour >= 5) return null;
+  const counters = resetDailyCounters();
+  if ((Number(counters.nightPatrol) || 0) >= 1) return null;
+  const directConversations = (state.conversations || [])
+    .filter((c) => c.type === 'direct' && c.primaryCharacterId)
+    .sort((a, b) => (b.lastMessageAt || 0) - (a.lastMessageAt || 0));
+  const candidates = directConversations
+    .map((conv) => ({
+      conv,
+      character: (state.characters || []).find((c) => c.id === conv.primaryCharacterId)
+    }))
+    .filter((row) => row.character);
+  if (!candidates.length) return null;
+  const pick = candidates[Math.floor(Math.random() * candidates.length)];
+  counters.nightPatrol = (Number(counters.nightPatrol) || 0) + 1;
+  await saveCurrentState();
+
+  try {
+    const result = await generateUtilityText({
+      apiSettings: state.apiSettings,
+      maxTokens: 100,
+      system: [
+        '你要以指定角色語氣寫一則凌晨催睡的喚聲。',
+        '請使用繁體中文、口吻溫柔、一句話，要有「該睡了」的意思。',
+        '不要加角色名、引號、標題或任何說明。',
+        characterBrief(pick.character),
+        topMemoryText(pick.character.id) ? `聲痕：\n${topMemoryText(pick.character.id)}` : ''
+      ].filter(Boolean).join('\n\n'),
+      userText: '現在是凌晨，玩家還在使用拾聲。請用角色口吻輕聲提醒玩家該睡了。'
+    });
+    const content = stripSpeakerName(result.text, pick.character);
+    if (!content) return null;
+    state.pendingGreeting = {
+      characterId: pick.character.id,
+      content,
+      createdAt: now()
+    };
+    pushUsageLog({ kind: 'nightPatrol', characterId: pick.character.id, usage: result.usage });
+    await saveCurrentState();
+    notify();
+    return state.pendingGreeting;
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('夜巡產生失敗', e);
+    return null;
+  }
 }
 
 export async function clearPendingGreeting() {
