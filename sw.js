@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'vocilege-v6-20260708-batch-1';
+const CACHE_VERSION = 'vocilege-v12.5-20260709';
 const APP_SHELL = [
   './',
   './index.html',
@@ -17,14 +17,17 @@ const APP_SHELL = [
   './src/services/promptBuilder.js',
   './src/services/statsService.js',
   './src/services/updateService.js',
+  './src/services/vigilHealthService.js',
   './src/state/migrations.js',
   './src/state/schema.js',
   './src/state/store.js',
   './src/ui/avatar.js',
   './src/ui/avatarInput.js',
+  './src/ui/dialog.js',
   './src/ui/icons.js',
   './src/ui/render.js',
   './src/ui/router.js',
+  './src/ui/toast.js',
   './src/ui/toggle.js',
   './src/ui/wave.js',
   './src/ui/components/apiSettingsEditor.js',
@@ -33,6 +36,7 @@ const APP_SHELL = [
   './src/ui/components/characterPage.js',
   './src/ui/components/chatView.js',
   './src/ui/components/conversationList.js',
+  './src/ui/components/dailyView.js',
   './src/ui/components/feedView.js',
   './src/ui/components/globalPromptsEditor.js',
   './src/ui/components/homeView.js',

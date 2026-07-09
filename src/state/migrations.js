@@ -10,7 +10,7 @@
 
 import { createDefaultEcho, createExampleGlobalPrompt } from './schema.js';
 
-export const CURRENT_SCHEMA_VERSION = 14;
+export const CURRENT_SCHEMA_VERSION = 15;
 
 const DEFAULT_VIGIL = {
   enabled: false,
@@ -333,6 +333,23 @@ const migrators = {
     if (typeof settings.dailyAwarenessEnabled !== 'boolean') settings.dailyAwarenessEnabled = true;
     s.settings = settings;
     s.schemaVersion = 14;
+    return s;
+  },
+
+  // v14 -> v15（V12.5 日課＋週回顧聲箋）：
+  //   - habits / habitLogs 啟用為空陣列
+  //   - letters.kind 為選填欄位，舊資料不補值（維持原樣）
+  //   - settings.weeklyReviewEnabled 預設 false、settings.weeklyReviewCharacterId 預設 ''
+  //   - state.lastWeeklyReviewAt 預設 0
+  14: (s) => {
+    if (!Array.isArray(s.habits)) s.habits = [];
+    if (!Array.isArray(s.habitLogs)) s.habitLogs = [];
+    const settings = (s.settings && typeof s.settings === 'object') ? { ...s.settings } : {};
+    if (typeof settings.weeklyReviewEnabled !== 'boolean') settings.weeklyReviewEnabled = false;
+    if (typeof settings.weeklyReviewCharacterId !== 'string') settings.weeklyReviewCharacterId = '';
+    s.settings = settings;
+    if (typeof s.lastWeeklyReviewAt !== 'number') s.lastWeeklyReviewAt = 0;
+    s.schemaVersion = 15;
     return s;
   },
 };

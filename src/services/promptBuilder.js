@@ -57,6 +57,8 @@ export function buildPrompt({
   settings,
   anniversaries,
   journals,
+  habits,       // V12.5：日課清單（供尾端本週彙總）
+  habitLogs,    // V12.5：日課打卡紀錄
   stickers,
   vigilHealthSnapshot,
   currentUserText
@@ -149,7 +151,7 @@ export function buildPrompt({
   }
   const healthText = buildVigilHealthText(vigilHealthSnapshot);
   if (healthText) dynamicParts.push(healthText);
-  const dailyText = buildDailyContext({ journals, settings });
+  const dailyText = buildDailyContext({ journals, settings, habits, habitLogs });
   if (dailyText) dynamicParts.push(dailyText);
   const dynamicText = dynamicParts.join('\n\n');
 
@@ -411,7 +413,7 @@ function buildTimeAwarenessText(anniversaries, characterId) {
   return upcoming ? `${today}${upcoming}` : today;
 }
 
-function buildVigilHealthText(snapshot) {
+export function buildVigilHealthText(snapshot) {
   if (!snapshot || typeof snapshot !== 'object') return '';
   const parts = [];
   if (Number.isFinite(Number(snapshot.sleepHours))) {
@@ -443,8 +445,16 @@ function buildVigilHealthText(snapshot) {
   ].join('\n');
 }
 
-export function buildDailyContext({ journals, settings } = {}) {
+// buildDailyContext 尾端只加一行日課彙總（見 buildHabitWeeklySummaryLine），
+// 既有拾日區塊格式不變——兩段各自獨立產生，空的一段自動略過（快取鐵律：只進動態區）。
+export function buildDailyContext({ journals, settings, habits, habitLogs } = {}) {
   if (settings && settings.dailyAwarenessEnabled === false) return '';
+  const dailySection = buildDailyJournalSection(journals);
+  const habitLine = buildHabitWeeklySummaryLine(habits, habitLogs);
+  return [dailySection, habitLine].filter(Boolean).join('\n\n');
+}
+
+function buildDailyJournalSection(journals) {
   const today = startOfLocalDay(new Date());
   const min = new Date(today);
   min.setDate(min.getDate() - 2);
@@ -466,6 +476,53 @@ export function buildDailyContext({ journals, settings } = {}) {
     ...rows,
     '語氣指引：不逐條複述、不每次都提，只在自然合適時輕輕提起。'
   ].join('\n');
+}
+
+// V12.5：近 7 天（含今天）日課打卡彙總，單行文字，例如「本週日課：💪運動×3、🧋奶茶×4」。
+// 無任何打卡時回傳空字串（整行省略）。habits 依 order 排序、只列有打卡次數的項目。
+export function buildHabitWeeklySummaryLine(habits, habitLogs, referenceDate = new Date()) {
+  const list = Array.isArray(habits) ? habits : [];
+  const logs = Array.isArray(habitLogs) ? habitLogs : [];
+  if (!list.length || !logs.length) return '';
+  const today = startOfLocalDay(referenceDate);
+  const min = new Date(today);
+  min.setDate(min.getDate() - 6);
+  const counts = new Map();
+  for (const log of logs) {
+    if (!log || !log.habitId || !log.entryDate) continue;
+    const date = parseLocalDate(log.entryDate);
+    if (!date || date < min || date > today) continue;
+    counts.set(log.habitId, (counts.get(log.habitId) || 0) + 1);
+  }
+  if (!counts.size) return '';
+  const parts = list
+    .slice()
+    .sort((a, b) => (a.order || 0) - (b.order || 0))
+    .map((h) => {
+      const count = counts.get(h.id) || 0;
+      if (!count) return '';
+      return `${h.emoji || ''}${h.name || ''}×${count}`;
+    })
+    .filter(Boolean);
+  return parts.length ? `本週日課：${parts.join('、')}` : '';
+}
+
+// V12.5：週回顧聲箋素材——近 7 天（含今天）share==='aware' 的拾日，日期＋心情＋內容截 80 字。
+// 私密拾日（share!=='aware'）一律不進，供 store.js 組週回顧信件內容使用。
+export function buildWeeklyAwareJournalLines(journals, referenceDate = new Date()) {
+  const today = startOfLocalDay(referenceDate);
+  const min = new Date(today);
+  min.setDate(min.getDate() - 6);
+  return (journals || [])
+    .filter((j) => j && j.ownerType === 'player' && j.share === 'aware' && j.entryDate)
+    .map((j) => ({ item: j, date: parseLocalDate(j.entryDate) }))
+    .filter((row) => row.date && row.date >= min && row.date <= today)
+    .sort((a, b) => a.date - b.date)
+    .map(({ item, date }) => {
+      const moodLevel = Number.isInteger(item.moodLevel) ? `${item.moodLevel}/5` : '未選';
+      const mood = item.mood ? `·${String(item.mood).slice(0, 8)}` : '';
+      return `・${date.getMonth() + 1}/${date.getDate()}（心情 ${moodLevel}${mood}）：${truncateMemoryText(item.content, 80)}`;
+    });
 }
 
 function startOfLocalDay(date) {

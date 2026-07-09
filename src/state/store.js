@@ -25,7 +25,13 @@ import {
 } from '../db/indexeddb.js';
 import { createDefaultEcho, createDefaultState, createDefaultVigil, normalizeEcho, normalizeState } from './schema.js';
 import { migrateState } from './migrations.js';
-import { buildPrompt, truncateMemoryText } from '../services/promptBuilder.js';
+import {
+  buildPrompt,
+  truncateMemoryText,
+  buildVigilHealthText,
+  buildHabitWeeklySummaryLine,
+  buildWeeklyAwareJournalLines
+} from '../services/promptBuilder.js';
 import { generateReply, generateUtilityText, parseReplyToParts, usesMock } from '../services/aiService.js';
 import { deleteAvatarAsset, deleteStoredAsset } from '../services/assetService.js';
 import { invalidateStats } from '../services/statsService.js';
@@ -168,6 +174,8 @@ function buildConversationPrompt(args) {
   return buildPrompt({
     ...args,
     journals: state.journals,
+    habits: state.habits,
+    habitLogs: state.habitLogs,
     vigilHealthSnapshot: getCachedHealthSnapshot()
   });
 }
@@ -1816,6 +1824,202 @@ export async function deleteJournal(id) {
   state.journals = (state.journals || []).filter((j) => j.id !== id);
   await saveCurrentState();
   notify();
+}
+
+// ---- V12.5 日課（habits）----
+const HABIT_LIMIT = 8; // 含封存
+const HABIT_NAME_MAX = 6;
+
+function todayLocalDateKey() {
+  return localDayKey(now());
+}
+
+function isFutureDateKey(key) {
+  return String(key || '') > todayLocalDateKey();
+}
+
+function normalizeHabitEmoji(value, fallback = '✅') {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return fallback;
+  return Array.from(trimmed)[0] || fallback;
+}
+
+// 新增日課：上限 8（含封存）。emoji／name 缺一不可，name 截 6 字。
+export async function addHabit({ emoji, name } = {}) {
+  state.habits = state.habits || [];
+  if (state.habits.length >= HABIT_LIMIT) {
+    windowAlert('日課最多 8 個');
+    return null;
+  }
+  const cleanEmoji = normalizeHabitEmoji(emoji);
+  const cleanName = String(name || '').trim().slice(0, HABIT_NAME_MAX);
+  if (!cleanEmoji || !cleanName) return null;
+  const maxOrder = state.habits.reduce((m, h) => Math.max(m, h.order || 0), -1);
+  const habit = {
+    id: generateId('habit'),
+    emoji: cleanEmoji,
+    name: cleanName,
+    order: maxOrder + 1,
+    archived: false,
+    createdAt: now()
+  };
+  state.habits.push(habit);
+  await saveCurrentState();
+  notify();
+  return habit;
+}
+
+// 改名（可選連帶改 emoji）；封存／排序皆為獨立 action，不動 name/emoji。
+export async function updateHabit(id, patch = {}) {
+  const habit = (state.habits || []).find((h) => h.id === id);
+  if (!habit) return null;
+  if ('name' in patch) {
+    const cleanName = String(patch.name || '').trim().slice(0, HABIT_NAME_MAX);
+    if (cleanName) habit.name = cleanName;
+  }
+  if ('emoji' in patch) {
+    habit.emoji = normalizeHabitEmoji(patch.emoji, habit.emoji);
+  }
+  await saveCurrentState();
+  notify();
+  return habit;
+}
+
+// 封存／取消封存：不刪 habitLogs（歷史保留）。
+export async function setHabitArchived(id, archived) {
+  const habit = (state.habits || []).find((h) => h.id === id);
+  if (!habit) return null;
+  habit.archived = !!archived;
+  await saveCurrentState();
+  notify();
+  return habit;
+}
+
+// 排序上下移：dir = -1 上移、+1 下移（依目前 order 排序後交換相鄰兩塊的 order）。
+export async function moveHabit(id, dir) {
+  const sorted = (state.habits || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+  const idx = sorted.findIndex((h) => h.id === id);
+  if (idx < 0) return;
+  const swapIdx = idx + (dir < 0 ? -1 : 1);
+  if (swapIdx < 0 || swapIdx >= sorted.length) return;
+  const a = sorted[idx];
+  const b = sorted[swapIdx];
+  const tmp = a.order;
+  a.order = b.order;
+  b.order = tmp;
+  await saveCurrentState();
+  notify();
+}
+
+// 打卡切換：同一 habitId＋entryDate 唯一，再點＝取消打卡（刪該筆）。未來日期不可打卡（比照拾日）。
+// 回傳 true（已打卡）／false（已取消）／null（無效操作）。
+export async function toggleHabitLog(habitId, entryDate) {
+  const habit = (state.habits || []).find((h) => h.id === habitId);
+  if (!habit) return null;
+  const key = /^\d{4}-\d{2}-\d{2}$/.test(String(entryDate || '')) ? entryDate : todayLocalDateKey();
+  if (isFutureDateKey(key)) return null;
+  state.habitLogs = state.habitLogs || [];
+  const existing = state.habitLogs.find((l) => l && l.habitId === habitId && l.entryDate === key);
+  if (existing) {
+    state.habitLogs = state.habitLogs.filter((l) => l !== existing);
+  } else {
+    state.habitLogs.push({ id: generateId('habitlog'), habitId, entryDate: key, createdAt: now() });
+  }
+  await saveCurrentState();
+  notify();
+  return !existing;
+}
+
+// ---- V12.5 週回顧聲箋 ----
+// 產生管線沿用 V9 generateLifeContent 的真呼叫路徑：真呼叫 aiService.generateUtilityText、
+// 未設 API 不自動觸發（手動跳「需要連接 AI 服務」）、計入聲量與 lifeGenLog、受 lifeDailyLimit 管。
+function weeklyReviewMaterialText() {
+  const lines = buildWeeklyAwareJournalLines(state.journals);
+  const habitLine = buildHabitWeeklySummaryLine(state.habits, state.habitLogs);
+  const healthText = buildVigilHealthText(getCachedHealthSnapshot());
+  const parts = [
+    lines.length ? `這週的拾日：\n${lines.join('\n')}` : '這週沒有標記「讓 TA 們知道」的拾日，可以只依日課與健康資料自然書寫，或單純表達關心。'
+  ];
+  if (habitLine) parts.push(habitLine);
+  if (healthText) parts.push(healthText);
+  return parts.join('\n\n');
+}
+
+async function generateWeeklyReview(characterId, { automatic = false } = {}) {
+  const character = (state.characters || []).find((c) => c.id === characterId);
+  if (!character) return null;
+  if (usesMock(state.apiSettings)) {
+    if (!automatic) windowAlert('需要連接 AI 服務');
+    return null;
+  }
+  if (!consumeDaily('life', state.settings.lifeDailyLimit, { manual: !automatic })) return null;
+  const result = await generateUtilityText({
+    apiSettings: state.apiSettings,
+    maxTokens: 900,
+    system: [
+      '你要以指定角色第一人稱寫一封「聲箋」，主題是幫玩家回顧剛過去的一週。',
+      '語氣溫柔、不說教、不做健康或心理診斷，像朋友一起回顧這週的生活。',
+      '長度 200 到 400 字，可分成數段，取材自下方這週的拾日、日課與健康資料（若有）。',
+      '請使用繁體中文、角色口吻，不要加標題、角色名或項目符號。',
+      characterBrief(character)
+    ].filter(Boolean).join('\n\n'),
+    userText: [
+      weeklyReviewMaterialText(),
+      '請只輸出週回顧聲箋正文。直接以正文第一個字開始輸出，不要任何開場白、規劃、段落標號或說明。'
+    ].join('\n\n')
+  });
+  const content = cleanLifeContent(result.text, character, { truncated: result && result.truncated === true });
+  if (!content) {
+    if (!automatic) windowAlert('這次沒寫好，再試一次');
+    return null;
+  }
+  const ts = now();
+  const item = {
+    id: generateId('letter'),
+    characterId: character.id,
+    content,
+    isRead: false,
+    kind: 'weeklyReview',
+    createdAt: ts
+  };
+  state.letters = state.letters || [];
+  state.letters.push(item);
+  pushUsageLog({ kind: 'weeklyReview', characterId: character.id, usage: result.usage });
+  state.lifeGenLog = state.lifeGenLog || {};
+  state.lifeGenLog[character.id] = ts;
+  state.lastWeeklyReviewAt = ts;
+  await saveCurrentState();
+  notify();
+  return item;
+}
+
+// 開 app 時 fire-and-forget 檢查：開關開＋角色存在＋距上次 ≥7 天 → 背景產生。失敗靜默，下次開 app 再試。
+export async function maybeGenerateWeeklyReview() {
+  if (state.settings.weeklyReviewEnabled !== true) return null;
+  const characterId = state.settings.weeklyReviewCharacterId;
+  if (!characterId) return null;
+  const character = (state.characters || []).find((c) => c.id === characterId);
+  if (!character) return null;
+  if (usesMock(state.apiSettings)) return null;
+  const last = Number(state.lastWeeklyReviewAt) || 0;
+  if (last && now() - last < 7 * 86400000) return null;
+  try {
+    return await generateWeeklyReview(characterId, { automatic: true });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('週回顧產生失敗', e);
+    return null;
+  }
+}
+
+// 手動鈕「讓 TA 現在回顧這週」：同管線、同上限，立即產生，成功後 lastWeeklyReviewAt 照更新。
+export async function triggerWeeklyReviewNow() {
+  const characterId = state.settings.weeklyReviewCharacterId;
+  if (!characterId) {
+    windowAlert('請先在設定選一位角色');
+    return null;
+  }
+  return generateWeeklyReview(characterId, { automatic: false });
 }
 
 export async function revealHeartVoice(id) {

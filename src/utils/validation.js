@@ -36,7 +36,8 @@ export function validateBackup(data) {
     const arrayFields = [
       'characters', 'conversations', 'memories', 'worldbooks',
       'journals', 'globalPrompts', 'posts', 'heartVoices', 'keepsakes', 'relationshipData',
-      'wishlists', 'anniversaries', 'notifications', 'usageLog', 'stickers', 'letters'
+      'wishlists', 'anniversaries', 'notifications', 'usageLog', 'stickers', 'letters',
+      'habits', 'habitLogs'
     ];
     for (const f of arrayFields) {
       if (f in s && !Array.isArray(s[f])) {
@@ -56,12 +57,21 @@ export function validateBackup(data) {
       if ('dailyAwarenessEnabled' in s.settings && typeof s.settings.dailyAwarenessEnabled !== 'boolean') {
         errors.push('state.settings.dailyAwarenessEnabled 應為布林值');
       }
+      if ('weeklyReviewEnabled' in s.settings && typeof s.settings.weeklyReviewEnabled !== 'boolean') {
+        errors.push('state.settings.weeklyReviewEnabled 應為布林值');
+      }
+      if ('weeklyReviewCharacterId' in s.settings && typeof s.settings.weeklyReviewCharacterId !== 'string') {
+        errors.push('state.settings.weeklyReviewCharacterId 應為字串');
+      }
     }
     if ('apiSettings' in s && !isObject(s.apiSettings)) {
       errors.push('state.apiSettings 應為物件');
     }
     if ('lastAutoBackupAt' in s && typeof s.lastAutoBackupAt !== 'number') {
       errors.push('state.lastAutoBackupAt 應為數字');
+    }
+    if ('lastWeeklyReviewAt' in s && typeof s.lastWeeklyReviewAt !== 'number') {
+      errors.push('state.lastWeeklyReviewAt 應為數字');
     }
 
     // characters / conversations 基本欄位型別
@@ -148,6 +158,36 @@ export function validateBackup(data) {
         if ('share' in j && !['private', 'aware'].includes(j.share)) errors.push(`journals[${i}].share 應為 private 或 aware`);
         if ('sharedPostId' in j && j.sharedPostId !== null && typeof j.sharedPostId !== 'string') errors.push(`journals[${i}].sharedPostId 應為字串或 null`);
         if ('updatedAt' in j && typeof j.updatedAt !== 'number') errors.push(`journals[${i}].updatedAt 應為數字`);
+      });
+    }
+    if (Array.isArray(s.letters)) {
+      s.letters.forEach((l, i) => {
+        if (!isObject(l)) return;
+        if ('kind' in l && typeof l.kind !== 'string') errors.push(`letters[${i}].kind 應為字串`);
+      });
+    }
+    if (Array.isArray(s.habits)) {
+      s.habits.forEach((h, i) => {
+        if (!isObject(h) || typeof h.id !== 'string') {
+          errors.push(`habits[${i}] 缺少字串 id`);
+          return;
+        }
+        if ('emoji' in h && typeof h.emoji !== 'string') errors.push(`habits[${i}].emoji 應為字串`);
+        if ('name' in h && typeof h.name !== 'string') errors.push(`habits[${i}].name 應為字串`);
+        if ('order' in h && typeof h.order !== 'number') errors.push(`habits[${i}].order 應為數字`);
+        if ('archived' in h && typeof h.archived !== 'boolean') errors.push(`habits[${i}].archived 應為布林值`);
+        if ('createdAt' in h && typeof h.createdAt !== 'number') errors.push(`habits[${i}].createdAt 應為數字`);
+      });
+    }
+    if (Array.isArray(s.habitLogs)) {
+      s.habitLogs.forEach((l, i) => {
+        if (!isObject(l) || typeof l.id !== 'string') {
+          errors.push(`habitLogs[${i}] 缺少字串 id`);
+          return;
+        }
+        if ('habitId' in l && typeof l.habitId !== 'string') errors.push(`habitLogs[${i}].habitId 應為字串`);
+        if ('entryDate' in l && typeof l.entryDate !== 'string') errors.push(`habitLogs[${i}].entryDate 應為字串`);
+        if ('createdAt' in l && typeof l.createdAt !== 'number') errors.push(`habitLogs[${i}].createdAt 應為數字`);
       });
     }
   }

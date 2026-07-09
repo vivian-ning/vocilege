@@ -2,10 +2,18 @@ import {
   addDailyJournal,
   updateDailyJournal,
   deleteDailyJournal,
-  shareDailyJournalToFeed
+  shareDailyJournalToFeed,
+  addHabit,
+  updateHabit,
+  setHabitArchived,
+  moveHabit,
+  toggleHabitLog,
+  triggerWeeklyReviewNow,
+  getState
 } from '../../state/store.js';
 import { createIcon } from '../icons.js';
 import { confirmDialog } from '../dialog.js';
+import { showToast } from '../toast.js';
 
 let visibleMonth = null;
 let selectedDate = localDateKey(Date.now());
@@ -33,18 +41,45 @@ export function renderDailyView(container, state) {
   const title = document.createElement('h1');
   title.className = 'page-title';
   title.textContent = '日常';
+  const actions = document.createElement('div');
+  actions.className = 'daily-head-actions';
+  const reviewBtn = buildWeeklyReviewButton(state);
+  if (reviewBtn) actions.appendChild(reviewBtn);
   const action = document.createElement('button');
   action.type = 'button';
   action.className = 'btn btn-primary';
   action.textContent = '寫一則拾日';
   action.addEventListener('click', () => openDailyEditor({ entryDate: selectedDate }));
+  actions.appendChild(action);
   head.appendChild(title);
-  head.appendChild(action);
+  head.appendChild(actions);
   page.appendChild(head);
 
   page.appendChild(buildCalendar(state));
   page.appendChild(buildDayPanel(state));
   container.appendChild(page);
+}
+
+// 手動鈕「讓 TA 現在回顧這週」：僅 weeklyReviewEnabled 且已選角色時顯示。
+function buildWeeklyReviewButton(state) {
+  if (!state.settings || state.settings.weeklyReviewEnabled !== true) return null;
+  if (!state.settings.weeklyReviewCharacterId) return null;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn';
+  btn.textContent = '讓 TA 現在回顧這週';
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      const item = await triggerWeeklyReviewNow();
+      if (item) showToast('週回顧聲箋已送達');
+    } catch (err) {
+      showToast((err && err.userMessage) || (err && err.message) || '產生失敗');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  return btn;
 }
 
 function buildCalendar(state) {
@@ -78,6 +113,7 @@ function buildCalendar(state) {
   const today = localDateKey(Date.now());
   const journalsByDate = groupPlayerJournals(state);
   const beatDates = monthBeatDates(state);
+  const habitDates = habitCheckedDates(state);
   for (let i = 0; i < 42; i += 1) {
     const date = new Date(start);
     date.setDate(start.getDate() + i);
@@ -116,6 +152,12 @@ function buildCalendar(state) {
       beat.title = '節拍';
       marks.appendChild(beat);
     }
+    if (habitDates.has(key)) {
+      const habitDot = document.createElement('i');
+      habitDot.className = 'daily-habit-dot';
+      habitDot.title = '日課';
+      marks.appendChild(habitDot);
+    }
     btn.appendChild(marks);
     grid.appendChild(btn);
   }
@@ -139,6 +181,8 @@ function buildDayPanel(state) {
   head.appendChild(add);
   panel.appendChild(head);
 
+  panel.appendChild(buildHabitBar(state));
+
   const list = document.createElement('div');
   list.className = 'daily-entry-list';
   const entries = playerJournals(state).filter((j) => j.entryDate === selectedDate);
@@ -151,6 +195,204 @@ function buildDayPanel(state) {
   for (const item of entries) list.appendChild(buildEntry(item));
   panel.appendChild(list);
   return panel;
+}
+
+// ---- 日課打卡列（當日面板頂部）----
+
+function activeHabits(state) {
+  return (state.habits || [])
+    .filter((h) => h && !h.archived)
+    .slice()
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+}
+
+function isHabitCheckedOn(state, habitId, dateKey) {
+  return (state.habitLogs || []).some((l) => l && l.habitId === habitId && l.entryDate === dateKey);
+}
+
+function buildHabitBar(state) {
+  const wrap = document.createElement('div');
+  wrap.className = 'daily-habit-bar';
+
+  const habits = activeHabits(state);
+  const isFuture = selectedDate > localDateKey(Date.now());
+
+  const chips = document.createElement('div');
+  chips.className = 'daily-habit-chips';
+  if (!habits.length) {
+    const empty = document.createElement('span');
+    empty.className = 'daily-habit-empty-hint';
+    empty.textContent = '還沒有日課，點「管理日課」新增。';
+    chips.appendChild(empty);
+  }
+  for (const habit of habits) {
+    const checked = isHabitCheckedOn(state, habit.id, selectedDate);
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'daily-habit-chip' + (checked ? ' checked' : '');
+    chip.setAttribute('aria-pressed', checked ? 'true' : 'false');
+    chip.title = isFuture ? `${habit.name}（未來日期不可打卡）` : habit.name;
+    chip.textContent = habit.emoji;
+    chip.disabled = isFuture;
+    chip.addEventListener('click', () => toggleHabitLog(habit.id, selectedDate));
+    chips.appendChild(chip);
+  }
+  wrap.appendChild(chips);
+
+  const manageBtn = document.createElement('button');
+  manageBtn.type = 'button';
+  manageBtn.className = 'btn daily-habit-manage-btn';
+  manageBtn.textContent = '管理日課';
+  manageBtn.addEventListener('click', () => openHabitManager());
+  wrap.appendChild(manageBtn);
+
+  return wrap;
+}
+
+// 管理日課 modal 是獨立 overlay（掛在 document.body，不在 renderDailyView 的容器內），
+// 因此不會隨全域 render 自動更新——每個動作完成後手動 refresh() 重繪 list／新增表單。
+function openHabitManager() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const modal = document.createElement('div');
+  modal.className = 'modal habit-manage-modal';
+  const title = document.createElement('h2');
+  title.className = 'modal-title';
+  title.textContent = '管理日課';
+  modal.appendChild(title);
+
+  const hint = document.createElement('p');
+  hint.className = 'form-hint';
+  hint.textContent = '最多 8 個（含封存）；封存不會刪除歷史打卡紀錄。';
+  modal.appendChild(hint);
+
+  const list = document.createElement('div');
+  list.className = 'habit-manage-list';
+  modal.appendChild(list);
+
+  const formHost = document.createElement('div');
+  modal.appendChild(formHost);
+
+  function refresh() {
+    const habits = (getState().habits || []);
+    renderHabitManageList(list, habits, refresh);
+    formHost.textContent = '';
+    if (habits.length < 8) formHost.appendChild(buildHabitAddForm(refresh));
+  }
+  refresh();
+
+  const close = document.createElement('div');
+  close.className = 'form-actions';
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'btn btn-primary';
+  closeBtn.textContent = '完成';
+  closeBtn.addEventListener('click', () => overlay.remove());
+  close.appendChild(closeBtn);
+  modal.appendChild(close);
+
+  overlay.appendChild(modal);
+  overlay.addEventListener('click', (event) => { if (event.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
+function renderHabitManageList(list, habits, refresh) {
+  list.textContent = '';
+  const sorted = habits.slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+  if (!sorted.length) {
+    const empty = document.createElement('div');
+    empty.className = 'list-empty';
+    empty.textContent = '還沒有日課。';
+    list.appendChild(empty);
+    return;
+  }
+  sorted.forEach((habit, idx) => {
+    list.appendChild(buildHabitManageRow(habit, idx, sorted.length, refresh));
+  });
+}
+
+function buildHabitManageRow(habit, idx, total, refresh) {
+  const row = document.createElement('div');
+  row.className = 'habit-manage-row' + (habit.archived ? ' archived' : '');
+
+  const emoji = document.createElement('span');
+  emoji.className = 'habit-manage-emoji';
+  emoji.textContent = habit.emoji;
+  row.appendChild(emoji);
+
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.className = 'form-control habit-manage-name-input';
+  nameInput.maxLength = 6;
+  nameInput.value = habit.name || '';
+  nameInput.addEventListener('change', async () => {
+    const value = nameInput.value.trim();
+    if (!value) {
+      nameInput.value = habit.name || '';
+      return;
+    }
+    await updateHabit(habit.id, { name: value });
+    refresh();
+  });
+  row.appendChild(nameInput);
+
+  const upBtn = habitIconBtn('▲', '上移', idx === 0, async () => { await moveHabit(habit.id, -1); refresh(); });
+  const downBtn = habitIconBtn('▼', '下移', idx === total - 1, async () => { await moveHabit(habit.id, 1); refresh(); });
+  row.appendChild(upBtn);
+  row.appendChild(downBtn);
+
+  const archiveBtn = document.createElement('button');
+  archiveBtn.type = 'button';
+  archiveBtn.className = 'btn';
+  archiveBtn.textContent = habit.archived ? '取消封存' : '封存';
+  archiveBtn.addEventListener('click', async () => { await setHabitArchived(habit.id, !habit.archived); refresh(); });
+  row.appendChild(archiveBtn);
+
+  return row;
+}
+
+function habitIconBtn(text, title, disabled, onClick) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'gp-icon-btn';
+  b.textContent = text;
+  b.title = title;
+  b.disabled = disabled;
+  if (!disabled) b.addEventListener('click', onClick);
+  return b;
+}
+
+function buildHabitAddForm(refresh) {
+  const form = document.createElement('form');
+  form.className = 'habit-manage-form';
+
+  const emojiInput = document.createElement('input');
+  emojiInput.type = 'text';
+  emojiInput.className = 'form-control habit-emoji-input';
+  emojiInput.placeholder = '🙂';
+  emojiInput.maxLength = 4;
+  form.appendChild(wrapField('emoji', emojiInput));
+
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.className = 'form-control habit-manage-name-input';
+  nameInput.placeholder = '名字（最多 6 字）';
+  nameInput.maxLength = 6;
+  form.appendChild(wrapField('名字', nameInput));
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'submit';
+  addBtn.className = 'btn btn-primary';
+  addBtn.textContent = '新增日課';
+  form.appendChild(addBtn);
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const habit = await addHabit({ emoji: emojiInput.value, name: nameInput.value });
+    if (habit) refresh();
+  });
+
+  return form;
 }
 
 function buildEntry(item) {
@@ -325,6 +567,15 @@ function monthBeatDates(state) {
       const d = new Date(visibleMonth.year, visibleMonth.month, day);
       if (isBeatOnDate(beat, d, start, end)) set.add(localDateKey(d.getTime()));
     }
+  }
+  return set;
+}
+
+// 有日課打卡（任一習慣、完成數 ≥1）的日期集合，供月曆低調記號使用。
+function habitCheckedDates(state) {
+  const set = new Set();
+  for (const log of state.habitLogs || []) {
+    if (log && log.entryDate) set.add(log.entryDate);
   }
   return set;
 }

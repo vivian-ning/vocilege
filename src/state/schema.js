@@ -96,6 +96,9 @@ export function createDefaultState(config) {
     anniversaries: [],
     notifications: [],
     usageLog: [],
+    // V12.5：日課（習慣打卡）。habits 上限 8（含封存）；habitLogs 同 habitId＋entryDate 唯一。
+    habits: [],
+    habitLogs: [],
     pendingGreeting: null,
     dailyCounters: { date: '', feed: 0, dream: 0, life: 0, nightPatrol: 0, background: 0 },
     lastOpenedAt: 0,
@@ -107,6 +110,8 @@ export function createDefaultState(config) {
     lastBackupAt: 0,
     // V10.5：上次成功自動備份的時間戳（0 = 從未自動備份）。
     lastAutoBackupAt: 0,
+    // V12.5：上次成功產生「週回顧聲箋」的時間戳（0 = 從未產生）。
+    lastWeeklyReviewAt: 0,
     settings: {
       // V5.6：theme = 配色（blue 藍噪 / pink 粉噪 / green 綠噪 / violet 紫噪），
       // themeMode = 明暗（light / dark）。舊主題值由 migration 6→7 轉換。
@@ -146,7 +151,12 @@ export function createDefaultState(config) {
       // 0 = 關閉自動備份與提醒。
       backupEveryDays: typeof defaultSettings.backupEveryDays === 'number'
         ? defaultSettings.backupEveryDays
-        : 3
+        : 3,
+      // V12.5：週回顧聲箋，預設關閉；角色下拉預設未選。
+      weeklyReviewEnabled: defaultSettings.weeklyReviewEnabled === true,
+      weeklyReviewCharacterId: typeof defaultSettings.weeklyReviewCharacterId === 'string'
+        ? defaultSettings.weeklyReviewCharacterId
+        : ''
     },
     apiSettings: {
       provider: '',
@@ -262,7 +272,7 @@ export function normalizeState(state) {
   const arrayFields = [
     'characters', 'conversations', 'memories', 'worldbooks',
     'journals', 'globalPrompts', 'posts', 'heartVoices', 'letters', 'keepsakes', 'relationshipData',
-    'wishlists', 'anniversaries', 'notifications', 'usageLog', 'stickers'
+    'wishlists', 'anniversaries', 'notifications', 'usageLog', 'stickers', 'habits', 'habitLogs'
   ];
   for (const f of arrayFields) {
     if (!Array.isArray(merged[f])) merged[f] = [];
@@ -296,6 +306,10 @@ export function normalizeState(state) {
   merged.settings.dreamEnabled = merged.settings.dreamEnabled !== false;
   merged.settings.lifeEnabled = merged.settings.lifeEnabled !== false;
   merged.settings.dailyAwarenessEnabled = merged.settings.dailyAwarenessEnabled !== false;
+  merged.settings.weeklyReviewEnabled = merged.settings.weeklyReviewEnabled === true;
+  merged.settings.weeklyReviewCharacterId = typeof merged.settings.weeklyReviewCharacterId === 'string'
+    ? merged.settings.weeklyReviewCharacterId
+    : '';
   merged.apiSettings.visionEnabled = merged.apiSettings.visionEnabled === true;
   merged.apiSettings.showThinking = merged.apiSettings.showThinking === true;
   if (typeof merged.apiSettings.thinkingBudget !== 'number' ||
@@ -389,16 +403,45 @@ export function normalizeState(state) {
 
   merged.letters = merged.letters
     .filter((l) => l && typeof l === 'object')
+    .map((l) => {
+      const item = {
+        id: String(l.id || generateId('letter')),
+        characterId: String(l.characterId || ''),
+        content: String(l.content || ''),
+        isRead: l.isRead === true,
+        createdAt: typeof l.createdAt === 'number' ? l.createdAt : Date.now()
+      };
+      // V12.5：kind 選填（例如 'weeklyReview'）；舊資料無此欄位時不補值，維持原樣渲染。
+      if (typeof l.kind === 'string' && l.kind) item.kind = l.kind;
+      return item;
+    });
+
+  // V12.5：日課（habits）與打卡紀錄（habitLogs）。
+  merged.habits = merged.habits
+    .filter((h) => h && typeof h === 'object')
+    .map((h) => ({
+      id: String(h.id || generateId('habit')),
+      emoji: String(h.emoji || '✅').trim().slice(0, 8) || '✅',
+      name: String(h.name || '').trim().slice(0, 6),
+      order: typeof h.order === 'number' && Number.isFinite(h.order) ? h.order : 0,
+      archived: h.archived === true,
+      createdAt: typeof h.createdAt === 'number' ? h.createdAt : Date.now()
+    }));
+
+  merged.habitLogs = merged.habitLogs
+    .filter((l) => l && typeof l === 'object' && l.habitId)
     .map((l) => ({
-      id: String(l.id || generateId('letter')),
-      characterId: String(l.characterId || ''),
-      content: String(l.content || ''),
-      isRead: l.isRead === true,
+      id: String(l.id || generateId('habitlog')),
+      habitId: String(l.habitId || ''),
+      entryDate: typeof l.entryDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(l.entryDate)
+        ? l.entryDate
+        : localDateKey(Date.now()),
       createdAt: typeof l.createdAt === 'number' ? l.createdAt : Date.now()
     }));
 
   if (typeof merged.lastBackupAt !== 'number') merged.lastBackupAt = 0;
   if (typeof merged.lastAutoBackupAt !== 'number') merged.lastAutoBackupAt = 0;
+  if (typeof merged.lastWeeklyReviewAt !== 'number') merged.lastWeeklyReviewAt = 0;
 
   if (typeof merged.currentConversationId !== 'string') merged.currentConversationId = '';
   if (typeof merged.currentCharacterId !== 'string') merged.currentCharacterId = '';

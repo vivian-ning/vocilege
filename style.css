@@ -1996,6 +1996,56 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 .confirm-dialog { width: min(420px, calc(100vw - 32px)); }
 .confirm-message { margin: 0 0 16px; color: var(--text); white-space: pre-wrap; }
 
+/* V12.5 日課（habits）＋週回顧聲箋 */
+.daily-head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.daily-habit-dot { width: 6px; height: 6px; background: color-mix(in srgb, var(--text) 55%, transparent); opacity: .7; }
+.daily-habit-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 12px 0 4px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+.daily-habit-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.daily-habit-empty-hint { font-size: 12px; color: var(--muted); }
+.daily-habit-chip {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  font-size: 20px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+}
+.daily-habit-chip:hover:not(:disabled) { border-color: var(--primary); transform: translateY(-1px); }
+.daily-habit-chip.checked { border-color: var(--primary); background: var(--primary-soft); }
+.daily-habit-chip:disabled { opacity: .4; cursor: not-allowed; }
+.daily-habit-manage-btn { margin-left: auto; }
+.habit-manage-modal { width: min(560px, calc(100vw - 32px)); }
+.habit-manage-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+.habit-manage-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-m);
+  background: var(--surface);
+  padding: 8px 10px;
+}
+.habit-manage-row.archived { opacity: .55; }
+.habit-manage-emoji { font-size: 20px; flex: 0 0 auto; }
+.habit-manage-name-input { flex: 1; min-width: 0; }
+.habit-manage-form { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin: 4px 0 16px; }
+.habit-emoji-input { width: 64px; text-align: center; }
+.weekly-review-settings { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--hairline); display: flex; flex-direction: column; gap: 10px; }
+
 /* 已停用的舊指示（保留空殼避免殘留引用出錯） */
 .global-prompt-indicator { display: none; }
 

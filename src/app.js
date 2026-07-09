@@ -7,7 +7,7 @@
 // username.github.io/repo/ 子路徑下，絕對路徑會失效。
 
 import { initDB } from './db/indexeddb.js';
-import { initStore, subscribe, getState, markAppOpened, maybeCreateGreeting, maybeCreateNightPatrol, maybeAutoFeedPost, maybeGenerateLifeContent } from './state/store.js';
+import { initStore, subscribe, getState, markAppOpened, maybeCreateGreeting, maybeCreateNightPatrol, maybeAutoFeedPost, maybeGenerateLifeContent, maybeGenerateWeeklyReview } from './state/store.js';
 import { mountLayout, render, setAppName } from './ui/render.js';
 import { onRouteChange, ensureRoute } from './ui/router.js';
 import { runAutoBackupOnBoot } from './services/autoBackupService.js';
@@ -47,6 +47,10 @@ async function boot() {
     maybeGenerateLifeContent().catch((err) => {
       // eslint-disable-next-line no-console
       console.warn('角色生活內容檢查失敗', err);
+    });
+    maybeGenerateWeeklyReview().catch((err) => {
+      // eslint-disable-next-line no-console
+      console.warn('週回顧檢查失敗', err);
     });
     refreshHealthSnapshot().catch(() => {});
     window.setInterval(() => {

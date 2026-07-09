@@ -665,7 +665,72 @@ function renderDailySettings(container, state) {
   enabled.appendChild(enabledText);
   wrap.appendChild(enabled);
 
+  wrap.appendChild(buildWeeklyReviewSettings(state));
+
   container.appendChild(wrap);
+}
+
+// V12.5：週回顧聲箋——每週由指定角色寄一封信，回顧這週的拾日、日課與身體狀態。
+function buildWeeklyReviewSettings(state) {
+  const box = document.createElement('div');
+  box.className = 'weekly-review-settings';
+
+  const desc = document.createElement('p');
+  desc.className = 'gp-desc';
+  desc.textContent = '每週由 TA 寄一封信，幫妳回顧這週的拾日、日課與身體狀態。';
+  box.appendChild(desc);
+
+  const enabled = document.createElement('label');
+  enabled.className = 'form-field form-check';
+  const toggle = document.createElement('input');
+  toggle.type = 'checkbox';
+  toggle.checked = state.settings.weeklyReviewEnabled === true;
+  const enabledText = document.createElement('span');
+  enabledText.className = 'form-check-label';
+  enabledText.textContent = '啟用週回顧聲箋';
+  enabled.appendChild(toggle);
+  enabled.appendChild(enabledText);
+  box.appendChild(enabled);
+
+  const select = document.createElement('select');
+  select.className = 'form-control';
+  const emptyOpt = document.createElement('option');
+  emptyOpt.value = '';
+  emptyOpt.textContent = '請選擇角色';
+  select.appendChild(emptyOpt);
+  for (const character of state.characters || []) {
+    const opt = document.createElement('option');
+    opt.value = character.id;
+    opt.textContent = character.name || '未命名角色';
+    if (character.id === state.settings.weeklyReviewCharacterId) opt.selected = true;
+    select.appendChild(opt);
+  }
+  box.appendChild(wrapField('由誰寄信', select));
+
+  const hint = document.createElement('div');
+  box.appendChild(hint);
+
+  function syncHint() {
+    if (toggle.checked && !select.value) {
+      hint.className = 'backup-status error';
+      hint.textContent = '請選一位角色，週回顧才會寄出。';
+    } else {
+      hint.className = 'form-hint';
+      hint.textContent = '開啟後每 7 天開 app 自動寄一封；也可以在「日常」頁手動觸發。';
+    }
+  }
+  syncHint();
+
+  toggle.addEventListener('change', () => {
+    updateSettings({ weeklyReviewEnabled: toggle.checked });
+    syncHint();
+  });
+  select.addEventListener('change', () => {
+    updateSettings({ weeklyReviewCharacterId: select.value });
+    syncHint();
+  });
+
+  return box;
 }
 
 function renderStickerManager(container, state) {
