@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'vocilege-v14.5-20260711';
+const CACHE_VERSION = 'vocilege-v15-20260711';
 const APP_SHELL = [
   './',
   './index.html',
@@ -40,6 +40,7 @@ const APP_SHELL = [
   './src/ui/components/feedView.js',
   './src/ui/components/globalPromptsEditor.js',
   './src/ui/components/homeView.js',
+  './src/ui/components/lettersInboxView.js',
   './src/ui/components/messageRenderer.js',
   './src/ui/components/playerEditor.js',
   './src/ui/components/settingsPage.js',

@@ -10,7 +10,7 @@
 
 import { createDefaultEcho, createExampleGlobalPrompt } from './schema.js';
 
-export const CURRENT_SCHEMA_VERSION = 19;
+export const CURRENT_SCHEMA_VERSION = 20;
 
 const DEFAULT_VIGIL = {
   enabled: false,
@@ -432,6 +432,22 @@ const migrators = {
     if (settings.themeMode !== 'dark' && settings.themeMode !== 'light') settings.themeMode = 'light';
     s.settings = settings;
     s.schemaVersion = 19;
+    return s;
+  },
+
+  // v19 -> v20（V15 約定日期）：
+  //   - wishlists 每筆新增 date，null = 未定
+  19: (s) => {
+    if (Array.isArray(s.wishlists)) {
+      s.wishlists = s.wishlists.map((wish) => {
+        if (!wish || typeof wish !== 'object') return wish;
+        return {
+          ...wish,
+          date: /^\d{4}-\d{2}-\d{2}$/.test(String(wish.date || '')) ? wish.date : null
+        };
+      });
+    }
+    s.schemaVersion = 20;
     return s;
   },
 };

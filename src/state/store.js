@@ -1290,13 +1290,19 @@ export async function deleteAnniversary(id) {
 }
 
 // ---- 約定 wishlists ----
-export async function addWishlist(characterId, { title, note } = {}) {
+function normalizeWishlistDate(value) {
+  const raw = String(value || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
+}
+
+export async function addWishlist(characterId, { title, note, date } = {}) {
   state.wishlists.push({
     id: generateId('wish'),
     characterId,
     title: (title || '').trim() || '未命名',
     done: false,
     note: (note || '').trim(),
+    date: normalizeWishlistDate(date),
     createdAt: now(),
     doneAt: 0
   });
@@ -1309,6 +1315,7 @@ export async function updateWishlist(id, patch) {
   if (!w) return;
   if ('title' in patch) w.title = (patch.title || '').trim() || '未命名';
   if ('note' in patch) w.note = (patch.note || '').trim();
+  if ('date' in patch) w.date = normalizeWishlistDate(patch.date);
   if ('done' in patch) {
     w.done = !!patch.done;
     w.doneAt = w.done ? now() : 0;

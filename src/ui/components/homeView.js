@@ -268,7 +268,9 @@ function buildLetterHero(state, letter) {
     title: `${character.name || '角色'}留了一封信`,
     excerpt: compactText(letter.content, 40) || '一封尚未展開的聲箋',
     actionText: '未讀 · 打開信',
-    onClick: () => openLetterReader(letter, character)
+    onClick: () => openLetterReader(letter, character),
+    secondaryText: '全部聲箋',
+    secondaryClick: () => navigate('/letters')
   });
 }
 
@@ -294,12 +296,36 @@ function buildHeartVoiceHero(state, heart) {
   });
 }
 
-function heroCard({ sealed, title, excerpt, actionText, onClick }) {
+function heroCard({ sealed, title, excerpt, actionText, onClick, secondaryText = '', secondaryClick = null }) {
+  if (secondaryText && secondaryClick) {
+    const card = document.createElement('article');
+    card.className = 'today-hero-card today-hero-with-actions' + (sealed ? ' is-sealed' : '');
+
+    const main = document.createElement('button');
+    main.type = 'button';
+    main.className = 'today-hero-main';
+    main.addEventListener('click', onClick);
+    fillHeroContent(main, { title, excerpt, actionText });
+    card.appendChild(main);
+
+    const secondary = document.createElement('button');
+    secondary.type = 'button';
+    secondary.className = 'text-action today-hero-secondary';
+    secondary.textContent = secondaryText;
+    secondary.addEventListener('click', secondaryClick);
+    card.appendChild(secondary);
+    return card;
+  }
+
   const card = document.createElement('button');
   card.type = 'button';
   card.className = 'today-hero-card' + (sealed ? ' is-sealed' : '');
   card.addEventListener('click', onClick);
+  fillHeroContent(card, { title, excerpt, actionText });
+  return card;
+}
 
+function fillHeroContent(card, { title, excerpt, actionText }) {
   const top = document.createElement('div');
   top.className = 'today-hero-top';
   const seal = document.createElement('span');
@@ -319,7 +345,6 @@ function heroCard({ sealed, title, excerpt, actionText, onClick }) {
   action.className = 'text-action';
   action.textContent = actionText;
   card.appendChild(action);
-  return card;
 }
 
 function buildTodayList(state) {
@@ -329,8 +354,8 @@ function buildTodayList(state) {
     text: `${hit.character.name || '角色'} · ${hit.item.title || '節拍'}`,
     onClick: () => openCharacterSection(hit.character.id, '節拍')
   })));
-  rows.push(...undoneWishes(state, 2).map((hit) => ({
-    eyebrow: `約定 · ${hit.character.name || '角色'}`,
+  rows.push(...undoneWishes(state, 3).map((hit) => ({
+    eyebrow: hit.item.date === localDateKey(Date.now()) ? '約定 · 今天' : `約定 · ${hit.character.name || '角色'}`,
     text: hit.item.title || '未命名約定',
     onClick: () => openCharacterSection(hit.character.id, '約定')
   })));
@@ -534,10 +559,16 @@ function anniversaryHits(state) {
 }
 
 function undoneWishes(state, limit) {
+  const today = localDateKey(Date.now());
   return (state.wishlists || [])
     .filter((item) => item && !item.done && characterById(state, item.characterId))
     .slice()
-    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+    .sort((a, b) => {
+      const aToday = a.date === today ? 1 : 0;
+      const bToday = b.date === today ? 1 : 0;
+      if (aToday !== bToday) return bToday - aToday;
+      return (b.createdAt || 0) - (a.createdAt || 0);
+    })
     .slice(0, limit)
     .map((item) => ({ item, character: characterById(state, item.characterId) }));
 }
@@ -681,7 +712,7 @@ function buildDashboard(state, character) {
     icon: 'send',
     title: '聲箋',
     summary: `${letters.length} 封・${unread} 未讀`,
-    onOpen: () => openCharacterModal('聲箋', (body, close) => renderLetterList(body, state, character, close)),
+    onOpen: () => navigate('/letters'),
     onGenerate: () => handleGenerateLife(character.id, 'letter')
   }));
   grid.appendChild(summaryCard({

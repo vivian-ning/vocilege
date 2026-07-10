@@ -461,6 +461,20 @@ export function normalizeState(state) {
       createdAt: typeof h.createdAt === 'number' ? h.createdAt : Date.now()
     }));
 
+  merged.wishlists = merged.wishlists
+    .filter((w) => w && typeof w === 'object')
+    .map((w) => ({
+      ...w,
+      id: String(w.id || generateId('wish')),
+      characterId: String(w.characterId || ''),
+      title: String(w.title || '未命名').trim() || '未命名',
+      done: w.done === true,
+      note: String(w.note || '').trim(),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(String(w.date || '')) ? w.date : null,
+      createdAt: typeof w.createdAt === 'number' ? w.createdAt : Date.now(),
+      doneAt: typeof w.doneAt === 'number' ? w.doneAt : 0
+    }));
+
   merged.letters = merged.letters
     .filter((l) => l && typeof l === 'object')
     .map((l) => {

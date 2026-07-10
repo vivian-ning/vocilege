@@ -690,12 +690,17 @@ export function buildWishlistSection(state, character) {
   note.type = 'text';
   note.className = 'form-control wish-note';
   note.placeholder = '備註（選填）';
+  const date = document.createElement('input');
+  date.type = 'date';
+  date.className = 'form-control wish-date';
+  date.title = '約定日期（選填）';
   const addBtn = document.createElement('button');
   addBtn.type = 'submit';
   addBtn.className = 'btn btn-primary';
   addBtn.textContent = '新增';
   form.appendChild(title);
   form.appendChild(note);
+  form.appendChild(date);
   form.appendChild(addBtn);
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -703,7 +708,7 @@ export function buildWishlistSection(state, character) {
       showToast('請輸入項目名稱');
       return;
     }
-    addWishlist(character.id, { title: title.value, note: note.value });
+    addWishlist(character.id, { title: title.value, note: note.value, date: date.value || null });
   });
   sec.appendChild(form);
 
@@ -751,6 +756,12 @@ function buildWishlistItem(w) {
     n.textContent = w.note;
     info.appendChild(n);
   }
+  if (w.date) {
+    const d = document.createElement('div');
+    d.className = 'wish-date-text';
+    d.textContent = `約定日期 · ${w.date}`;
+    info.appendChild(d);
+  }
   item.appendChild(info);
 
   const actions = document.createElement('div');
@@ -781,6 +792,11 @@ function buildWishlistItem(w) {
     note.className = 'form-control wish-note';
     note.value = w.note || '';
     note.placeholder = '備註（選填）';
+    const date = document.createElement('input');
+    date.type = 'date';
+    date.className = 'form-control wish-date';
+    date.value = w.date || '';
+    date.title = '約定日期（選填）';
     const save = document.createElement('button');
     save.type = 'submit';
     save.className = 'btn btn-primary';
@@ -792,6 +808,7 @@ function buildWishlistItem(w) {
     cancel.addEventListener('click', () => item.replaceWith(buildWishlistItem(w)));
     editForm.appendChild(title);
     editForm.appendChild(note);
+    editForm.appendChild(date);
     editForm.appendChild(save);
     editForm.appendChild(cancel);
     editForm.addEventListener('submit', (e) => {
@@ -800,7 +817,7 @@ function buildWishlistItem(w) {
         showToast('請輸入項目名稱');
         return;
       }
-      updateWishlist(w.id, { title: title.value, note: note.value });
+      updateWishlist(w.id, { title: title.value, note: note.value, date: date.value || null });
     });
     item.replaceWith(editForm);
   });

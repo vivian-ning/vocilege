@@ -205,6 +205,14 @@ export function validateBackup(data) {
         if ('kind' in l && typeof l.kind !== 'string') errors.push(`letters[${i}].kind 應為字串`);
       });
     }
+    if (Array.isArray(s.wishlists)) {
+      s.wishlists.forEach((w, i) => {
+        if (!isObject(w)) return;
+        if ('date' in w && w.date !== null && typeof w.date !== 'string') {
+          errors.push(`wishlists[${i}].date 應為字串或 null`);
+        }
+      });
+    }
     if (Array.isArray(s.habits)) {
       s.habits.forEach((h, i) => {
         if (!isObject(h) || typeof h.id !== 'string') {

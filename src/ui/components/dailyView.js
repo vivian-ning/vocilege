@@ -14,6 +14,7 @@ import {
 import { createIcon } from '../icons.js';
 import { confirmDialog } from '../dialog.js';
 import { showToast } from '../toast.js';
+import { buildAnniversarySection, buildWishlistSection } from './characterPage.js';
 
 let visibleMonth = null;
 let selectedDate = localDateKey(Date.now());
@@ -194,7 +195,177 @@ function buildDayPanel(state) {
   }
   for (const item of entries) list.appendChild(buildEntry(item));
   panel.appendChild(list);
+  panel.appendChild(buildDayAgenda(state));
+  panel.appendChild(buildUpcomingTimeline(state));
   return panel;
+}
+
+function buildDayAgenda(state) {
+  const section = document.createElement('section');
+  section.className = 'daily-agenda';
+  const title = document.createElement('h3');
+  title.className = 'daily-section-title';
+  title.textContent = '當天內容';
+  section.appendChild(title);
+
+  const list = document.createElement('div');
+  list.className = 'washi-list daily-agenda-list';
+  const rows = timelineItems(state)
+    .filter((item) => item.date === selectedDate)
+    .sort((a, b) => a.title.localeCompare(b.title));
+  if (!rows.length) {
+    const empty = document.createElement('div');
+    empty.className = 'daily-inline-empty';
+    empty.textContent = '這一天沒有節拍或約定。';
+    list.appendChild(empty);
+  } else {
+    rows.forEach((item, index) => list.appendChild(timelineRow(item, index, selectedDate)));
+  }
+  section.appendChild(list);
+  return section;
+}
+
+function buildUpcomingTimeline(state) {
+  const section = document.createElement('section');
+  section.className = 'daily-timeline';
+  const title = document.createElement('h3');
+  title.className = 'daily-section-title';
+  title.textContent = '接下來';
+  section.appendChild(title);
+
+  const groups = groupTimeline(timelineItems(state));
+  let hasAny = false;
+  for (const group of groups) {
+    if (!group.items.length) continue;
+    hasAny = true;
+    const groupTitle = document.createElement('div');
+    groupTitle.className = 'washi-eyebrow daily-timeline-group';
+    groupTitle.textContent = group.label;
+    section.appendChild(groupTitle);
+    const list = document.createElement('div');
+    list.className = 'washi-list daily-timeline-list';
+    group.items.forEach((item, index) => list.appendChild(timelineRow(item, index, group.label)));
+    section.appendChild(list);
+  }
+  if (!hasAny) {
+    const empty = document.createElement('div');
+    empty.className = 'daily-inline-empty';
+    empty.textContent = '目前沒有接下來的節拍或約定。';
+    section.appendChild(empty);
+  }
+  return section;
+}
+
+function timelineItems(state) {
+  const characters = state.characters || [];
+  const items = [];
+  for (const beat of state.anniversaries || []) {
+    if (!beat || !beat.date) continue;
+    const character = characters.find((c) => c.id === beat.characterId);
+    if (!character) continue;
+    const date = nextBeatDateKey(beat, localDateKey(Date.now()));
+    if (!date) continue;
+    items.push({
+      type: 'beat',
+      title: beat.title || '節拍',
+      date,
+      character,
+      item: beat
+    });
+  }
+  for (const wish of state.wishlists || []) {
+    if (!wish || wish.done) continue;
+    const character = characters.find((c) => c.id === wish.characterId);
+    if (!character) continue;
+    items.push({
+      type: 'wish',
+      title: wish.title || '未命名約定',
+      date: wish.date || null,
+      character,
+      item: wish
+    });
+  }
+  return items;
+}
+
+function groupTimeline(items) {
+  const today = localDateKey(Date.now());
+  const tomorrow = addDays(today, 1);
+  const seven = addDays(today, 7);
+  const groups = [
+    { key: 'today', label: '今天', items: [] },
+    { key: 'tomorrow', label: '明天', items: [] },
+    { key: 'week', label: '七天內', items: [] },
+    { key: 'later', label: '之後', items: [] },
+    { key: 'unset', label: '未定', items: [] }
+  ];
+  for (const item of items) {
+    if (!item.date) groups[4].items.push(item);
+    else if (item.date === today) groups[0].items.push(item);
+    else if (item.date === tomorrow) groups[1].items.push(item);
+    else if (item.date > today && item.date <= seven) groups[2].items.push(item);
+    else if (item.date > seven) groups[3].items.push(item);
+  }
+  groups.forEach((group) => {
+    group.items.sort((a, b) => String(a.date || '9999-99-99').localeCompare(String(b.date || '9999-99-99')) || a.title.localeCompare(b.title));
+  });
+  return groups;
+}
+
+function timelineRow(item, index, groupLabel) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'washi-row daily-timeline-row';
+  btn.style.setProperty('--i', String(index));
+  btn.addEventListener('click', () => openTimelineEditor(item));
+  const body = document.createElement('span');
+  body.className = 'washi-row-body';
+  const eyebrow = document.createElement('span');
+  eyebrow.className = 'washi-eyebrow';
+  const kind = item.type === 'beat' ? '節拍' : '約定';
+  eyebrow.textContent = `${groupLabel} · ${item.date || '未定'} · ${kind}`;
+  const title = document.createElement('span');
+  title.className = 'washi-row-main';
+  title.textContent = item.title;
+  const sub = document.createElement('span');
+  sub.className = 'washi-row-sub';
+  sub.textContent = item.character.name || '未命名角色';
+  body.appendChild(eyebrow);
+  body.appendChild(title);
+  body.appendChild(sub);
+  btn.appendChild(body);
+  return btn;
+}
+
+function openTimelineEditor(row) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const modal = document.createElement('div');
+  modal.className = 'modal dashboard-modal';
+  const head = document.createElement('div');
+  head.className = 'dashboard-modal-head';
+  const title = document.createElement('h2');
+  title.className = 'modal-title';
+  title.textContent = row.type === 'beat' ? '節拍' : '約定';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-btn';
+  close.setAttribute('aria-label', '關閉');
+  close.title = '關閉';
+  close.textContent = '×';
+  close.addEventListener('click', () => overlay.remove());
+  head.appendChild(title);
+  head.appendChild(close);
+  modal.appendChild(head);
+  const body = document.createElement('div');
+  body.className = 'dashboard-modal-body';
+  body.appendChild(row.type === 'beat'
+    ? buildAnniversarySection(getState(), row.character)
+    : buildWishlistSection(getState(), row.character));
+  modal.appendChild(body);
+  overlay.appendChild(modal);
+  overlay.addEventListener('click', (event) => { if (event.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
 }
 
 // ---- 日課打卡列（當日面板頂部）----
@@ -639,4 +810,28 @@ function parseLocalDate(value) {
 function localDateKey(ts) {
   const d = new Date(ts || Date.now());
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function addDays(key, days) {
+  const d = parseLocalDate(key);
+  d.setDate(d.getDate() + days);
+  return localDateKey(d.getTime());
+}
+
+function nextBeatDateKey(beat, fromKey) {
+  const base = parseLocalDate(beat.date);
+  if (!Number.isFinite(base.getTime())) return null;
+  const from = parseLocalDate(fromKey);
+  if (beat.repeat === 'yearly') {
+    let next = new Date(from.getFullYear(), base.getMonth(), base.getDate());
+    if (next < from) next = new Date(from.getFullYear() + 1, base.getMonth(), base.getDate());
+    return localDateKey(next.getTime());
+  }
+  if (beat.repeat === 'monthly') {
+    let next = new Date(from.getFullYear(), from.getMonth(), base.getDate());
+    if (next < from) next = new Date(from.getFullYear(), from.getMonth() + 1, base.getDate());
+    return localDateKey(next.getTime());
+  }
+  const once = localDateKey(base.getTime());
+  return once >= fromKey ? once : null;
 }

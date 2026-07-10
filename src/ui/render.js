@@ -15,6 +15,7 @@ import { renderSettingsPage } from './components/settingsPage.js';
 import { renderHomeView } from './components/homeView.js';
 import { renderFeedView } from './components/feedView.js';
 import { renderDailyView } from './components/dailyView.js';
+import { renderLettersInboxView } from './components/lettersInboxView.js';
 import { getRoute, navigate } from './router.js';
 import { selectCharacter, selectConversation, getState } from '../state/store.js';
 import { createWaveBars } from './wave.js';
@@ -117,6 +118,8 @@ export function render(state) {
     renderSettingsPage(refs.content, state);
   } else if (route.name === 'daily') {
     renderDailyView(refs.content, state);
+  } else if (route.name === 'letters') {
+    renderLettersInboxView(refs.content, state);
   } else if (route.name === 'feed') {
     renderFeedView(refs.content, state);
   } else if (route.name === 'chats') {
