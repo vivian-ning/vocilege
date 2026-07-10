@@ -8,6 +8,7 @@ import {
   deleteJournal,
   deleteLetter,
   generateLifeContent,
+  getState,
   getRelationship,
   markLetterRead,
   pickOldReplay,
@@ -40,12 +41,17 @@ import { dateStamp, parseDateInput } from '../../utils/time.js';
 
 const DAY_MS = 86400000;
 const ANNIVERSARY_REMIND_DAYS = 3;
+const HOME_MODE_KEY = 'vocilege:homeMode';
+let todayFeedAnimated = false;
 
 export function renderHomeView(container, state) {
   container.textContent = '';
 
   const page = document.createElement('div');
-  page.className = 'home-page home-dashboard-page';
+  const mode = readHomeMode();
+  page.className = mode === 'dashboard'
+    ? 'home-page home-dashboard-page home-character-mode'
+    : 'home-page home-today-page';
 
   const reminder = buildBackupReminder(state);
   if (reminder) page.appendChild(reminder);
@@ -53,23 +59,43 @@ export function renderHomeView(container, state) {
   const greeting = buildGreetingCard(state);
   if (greeting) page.appendChild(greeting);
 
-  const letterNotice = buildUnreadLetterNotice(state);
-  if (letterNotice) page.appendChild(letterNotice);
-
-  const annivReminders = buildAnniversaryReminders(state);
-  if (annivReminders) page.appendChild(annivReminders);
-
-  page.appendChild(buildCharacterRail(state));
-
-  const selected = selectedCharacter(state);
-  if (!selected) {
-    page.appendChild(buildEmptyState());
+  if (mode === 'dashboard') {
+    page.appendChild(buildBackToToday());
+    page.appendChild(buildCharacterRail(state, { compactTitle: true }));
+    const selected = selectedCharacter(state);
+    if (!selected) {
+      page.appendChild(buildEmptyState());
+    } else {
+      page.appendChild(buildDashboard(state, selected));
+    }
   } else {
-    page.appendChild(buildDashboard(state, selected));
+    page.appendChild(buildTodayFeed(state));
   }
 
   container.appendChild(page);
   openPendingHeartVoice(state);
+}
+
+function readHomeMode() {
+  return sessionStorage.getItem(HOME_MODE_KEY) === 'dashboard' ? 'dashboard' : 'today';
+}
+
+function setHomeMode(mode) {
+  if (mode === 'dashboard') sessionStorage.setItem(HOME_MODE_KEY, 'dashboard');
+  else sessionStorage.removeItem(HOME_MODE_KEY);
+}
+
+function buildBackToToday() {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'home-back-today';
+  btn.textContent = '← 回今日';
+  btn.addEventListener('click', () => {
+    setHomeMode('today');
+    navigate('/home');
+    requestAnimationFrame(() => window.dispatchEvent(new Event('hashchange')));
+  });
+  return btn;
 }
 
 function selectedCharacter(state) {
@@ -94,15 +120,15 @@ function openPendingHeartVoice(state) {
   });
 }
 
-function buildCharacterRail(state) {
+function buildCharacterRail(state, options = {}) {
   const wrap = document.createElement('section');
-  wrap.className = 'character-rail-section';
+  wrap.className = 'character-rail-section home-list-section';
 
   const head = document.createElement('div');
   head.className = 'section-head';
-  const title = document.createElement('h1');
-  title.className = 'page-title';
-  title.textContent = '聲庭';
+  const title = document.createElement(options.compactTitle ? 'h2' : 'h2');
+  title.className = options.compactTitle ? 'section-title' : 'home-section-title';
+  title.textContent = options.compactTitle ? '角色' : '角色列';
   head.appendChild(title);
   wrap.appendChild(head);
 
@@ -131,7 +157,11 @@ function characterRailItem(character, active) {
   const name = document.createElement('span');
   name.textContent = character.name || '未命名角色';
   btn.appendChild(name);
-  btn.addEventListener('click', () => selectCharacter(character.id));
+  btn.addEventListener('click', async () => {
+    setHomeMode('dashboard');
+    await selectCharacter(character.id);
+    navigate('/home');
+  });
   return btn;
 }
 
@@ -151,6 +181,450 @@ function buildEmptyState() {
   empty.appendChild(text);
   empty.appendChild(btn);
   return empty;
+}
+
+function buildTodayFeed(state) {
+  const page = document.createElement('main');
+  page.className = 'today-feed';
+
+  page.appendChild(buildDateHeader());
+
+  if (!(state.characters || []).length) {
+    page.appendChild(buildEmptyState());
+    return page;
+  }
+
+  const hero = buildTodayHero(state);
+  if (hero) page.appendChild(hero);
+
+  const list = buildTodayList(state);
+  if (list) page.appendChild(list);
+
+  page.appendChild(buildRecentChats(state));
+
+  const replay = buildTodayOldReplay();
+  if (replay) page.appendChild(replay);
+
+  page.appendChild(buildCharacterRail(state));
+
+  if (!todayFeedAnimated) {
+    page.classList.add('today-feed-first');
+    todayFeedAnimated = true;
+  }
+  return page;
+}
+
+function buildDateHeader() {
+  const nowDate = new Date();
+  const wrap = document.createElement('header');
+  wrap.className = 'today-date-head';
+
+  const left = document.createElement('div');
+  const eyebrow = document.createElement('div');
+  eyebrow.className = 'washi-eyebrow';
+  eyebrow.textContent = `${nowDate.getFullYear()} · ${weekdayText(nowDate)}`;
+  const title = document.createElement('h1');
+  title.className = 'today-date-title';
+  const month = document.createElement('span');
+  month.className = 'today-date-number';
+  month.textContent = String(nowDate.getMonth() + 1);
+  const day = document.createElement('span');
+  day.className = 'today-date-number';
+  day.textContent = String(nowDate.getDate());
+  title.appendChild(month);
+  title.appendChild(document.createTextNode(' 月 '));
+  title.appendChild(day);
+  title.appendChild(document.createTextNode(' 日'));
+  left.appendChild(eyebrow);
+  left.appendChild(title);
+
+  const right = document.createElement('div');
+  right.className = 'today-date-note';
+  right.textContent = '聲庭今日';
+
+  wrap.appendChild(left);
+  wrap.appendChild(right);
+  return wrap;
+}
+
+function buildTodayHero(state) {
+  const letter = latestUnreadLetter(state);
+  if (letter) return buildLetterHero(state, letter);
+
+  const todayBeat = todayAnniversary(state);
+  if (todayBeat) return buildBeatHero(todayBeat);
+
+  const heart = latestUnrevealedHeartVoice(state);
+  if (heart) return buildHeartVoiceHero(state, heart);
+
+  return null;
+}
+
+function buildLetterHero(state, letter) {
+  const character = characterById(state, letter.characterId);
+  if (!character) return null;
+  return heroCard({
+    sealed: !letter.isRead,
+    title: `${character.name || '角色'}留了一封信`,
+    excerpt: compactText(letter.content, 40) || '一封尚未展開的聲箋',
+    actionText: '未讀 · 打開信',
+    onClick: () => openLetterReader(letter, character)
+  });
+}
+
+function buildBeatHero(hit) {
+  return heroCard({
+    sealed: false,
+    title: `今天是：${hit.item.title || '節拍'}`,
+    excerpt: `${hit.character.name || '角色'} · ${hit.item.date || ''}`,
+    actionText: '查看節拍',
+    onClick: () => openCharacterSection(hit.character.id, '節拍')
+  });
+}
+
+function buildHeartVoiceHero(state, heart) {
+  const character = characterById(state, heart.characterId);
+  if (!character) return null;
+  return heroCard({
+    sealed: true,
+    title: `${character.name || '角色'}有一句沒說出口的話`,
+    excerpt: '點一下，聽見那句藏起來的話。',
+    actionText: '解鎖弦外之音',
+    onClick: () => openHeartVoiceFromToday(heart, character)
+  });
+}
+
+function heroCard({ sealed, title, excerpt, actionText, onClick }) {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'today-hero-card' + (sealed ? ' is-sealed' : '');
+  card.addEventListener('click', onClick);
+
+  const top = document.createElement('div');
+  top.className = 'today-hero-top';
+  const seal = document.createElement('span');
+  seal.className = 'washi-seal';
+  top.appendChild(seal);
+  const titleEl = document.createElement('span');
+  titleEl.textContent = title;
+  top.appendChild(titleEl);
+  card.appendChild(top);
+
+  const body = document.createElement('p');
+  body.className = 'today-hero-excerpt';
+  body.textContent = excerpt;
+  card.appendChild(body);
+
+  const action = document.createElement('span');
+  action.className = 'text-action';
+  action.textContent = actionText;
+  card.appendChild(action);
+  return card;
+}
+
+function buildTodayList(state) {
+  const rows = [];
+  rows.push(...upcomingAnniversaries(state, 7, 2).map((hit) => ({
+    eyebrow: `節拍 · ${relativeFutureLabel(hit.days)}`,
+    text: `${hit.character.name || '角色'} · ${hit.item.title || '節拍'}`,
+    onClick: () => openCharacterSection(hit.character.id, '節拍')
+  })));
+  rows.push(...undoneWishes(state, 2).map((hit) => ({
+    eyebrow: `約定 · ${hit.character.name || '角色'}`,
+    text: hit.item.title || '未命名約定',
+    onClick: () => openCharacterSection(hit.character.id, '約定')
+  })));
+
+  const daily = todayJournal(state);
+  rows.push({
+    eyebrow: '拾日',
+    text: daily ? (daily.mood || compactText(daily.content, 34) || '今天已留下拾日') : '今天還沒寫。留一句話給今天',
+    action: !daily,
+    onClick: () => navigate('/daily')
+  });
+
+  const postsToday = todayPosts(state);
+  if (postsToday.length) {
+    rows.push({
+      eyebrow: '迴聲',
+      text: `今日新貼文 ${postsToday.length} 則`,
+      onClick: () => navigate('/feed')
+    });
+  }
+
+  const whisper = todayCharacterWhisper(state);
+  if (whisper) {
+    rows.push({
+      eyebrow: `私語 · ${whisper.character.name || '角色'}`,
+      text: compactText(whisper.item.content, 34) || '今日新增私語',
+      onClick: () => openCharacterSection(whisper.character.id, '私語')
+    });
+  }
+
+  if (!rows.length) return null;
+
+  const section = document.createElement('section');
+  section.className = 'home-list-section today-list-section';
+  const title = document.createElement('h2');
+  title.className = 'home-section-title';
+  title.textContent = '今日清單';
+  section.appendChild(title);
+  const list = document.createElement('div');
+  list.className = 'washi-list';
+  rows.forEach((row, index) => list.appendChild(feedRow(row, index)));
+  section.appendChild(list);
+  return section;
+}
+
+function buildRecentChats(state) {
+  const section = document.createElement('section');
+  section.className = 'home-list-section recent-chat-section';
+  const head = document.createElement('div');
+  head.className = 'home-section-row';
+  const title = document.createElement('h2');
+  title.className = 'home-section-title';
+  title.textContent = '最近聊天';
+  const all = document.createElement('button');
+  all.type = 'button';
+  all.className = 'text-action home-section-action';
+  all.textContent = '全部聊天';
+  all.addEventListener('click', () => navigate('/chats'));
+  head.appendChild(title);
+  head.appendChild(all);
+  section.appendChild(head);
+
+  const list = document.createElement('div');
+  list.className = 'washi-list recent-chat-list';
+  section.appendChild(list);
+  fillRecentChats(list, state);
+  return section;
+}
+
+async function fillRecentChats(list, state) {
+  let stats;
+  try {
+    stats = await getStats(state);
+  } catch (e) {
+    return;
+  }
+  const rows = (state.conversations || [])
+    .filter((c) => c && c.type === 'direct')
+    .map((conv) => ({
+      conv,
+      character: characterById(state, conv.primaryCharacterId),
+      last: stats.lastByConversation[conv.id]
+    }))
+    .filter((row) => row.character)
+    .sort((a, b) => ((b.last && b.last.createdAt) || b.conv.lastMessageAt || 0) - ((a.last && a.last.createdAt) || a.conv.lastMessageAt || 0))
+    .slice(0, 3);
+  list.textContent = '';
+  if (!rows.length) {
+    const empty = document.createElement('div');
+    empty.className = 'home-inline-empty';
+    empty.textContent = '還沒有聊天。';
+    list.appendChild(empty);
+    return;
+  }
+  rows.forEach((row, index) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'washi-row recent-chat-row';
+    btn.style.setProperty('--i', String(index));
+    btn.addEventListener('click', () => navigate(`/chat/${row.conv.id}`));
+    btn.appendChild(createAvatarEl(row.character.avatar, 'recent-chat-avatar'));
+    const body = document.createElement('span');
+    body.className = 'washi-row-body';
+    const name = document.createElement('span');
+    name.className = 'washi-row-main recent-chat-name';
+    name.textContent = row.character.name || '未命名角色';
+    const snippet = document.createElement('span');
+    snippet.className = 'washi-row-sub';
+    snippet.textContent = row.last && row.last.snippet ? row.last.snippet : '還沒有對話';
+    body.appendChild(name);
+    body.appendChild(snippet);
+    const time = document.createElement('span');
+    time.className = 'washi-row-time';
+    time.textContent = row.last && row.last.createdAt ? formatRelative(row.last.createdAt) : '';
+    btn.appendChild(body);
+    btn.appendChild(time);
+    list.appendChild(btn);
+  });
+}
+
+function buildTodayOldReplay() {
+  const section = document.createElement('section');
+  section.className = 'home-list-section old-replay-section';
+  const host = document.createElement('div');
+  host.className = 'washi-list old-replay-today';
+  section.appendChild(host);
+  pickOldReplay('')
+    .then((item) => {
+      if (!item) {
+        section.remove();
+        return;
+      }
+      host.appendChild(feedRow({
+        eyebrow: '舊聲重播',
+        text: `${item.characterName || '角色'} · ${formatDate(item.createdAt)} · ${compactText(item.snippet, 42) || '（沒有文字內容）'}`,
+        onClick: () => navigate(`/chat/${item.conversationId}`)
+      }, 0));
+    })
+    .catch(() => section.remove());
+  return section;
+}
+
+function feedRow(row, index) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'washi-row' + (row.action ? ' has-text-action' : '');
+  btn.style.setProperty('--i', String(index));
+  btn.addEventListener('click', row.onClick);
+  const body = document.createElement('span');
+  body.className = 'washi-row-body';
+  const eyebrow = document.createElement('span');
+  eyebrow.className = 'washi-eyebrow';
+  eyebrow.textContent = row.eyebrow;
+  const text = document.createElement('span');
+  text.className = 'washi-row-main';
+  text.textContent = row.text;
+  body.appendChild(eyebrow);
+  body.appendChild(text);
+  btn.appendChild(body);
+  return btn;
+}
+
+function latestUnreadLetter(state) {
+  return (state.letters || [])
+    .filter((l) => l && !l.isRead && characterById(state, l.characterId))
+    .slice()
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0] || null;
+}
+
+function latestUnrevealedHeartVoice(state) {
+  return (state.heartVoices || [])
+    .filter((h) => h && !h.revealed && characterById(state, h.characterId))
+    .slice()
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0] || null;
+}
+
+function todayAnniversary(state) {
+  return anniversaryHits(state)
+    .filter((hit) => hit.days === 0)
+    .sort((a, b) => (b.item.createdAt || 0) - (a.item.createdAt || 0))[0] || null;
+}
+
+function upcomingAnniversaries(state, days, limit) {
+  return anniversaryHits(state)
+    .filter((hit) => hit.days > 0 && hit.days <= days)
+    .sort((a, b) => a.days - b.days || String(a.item.title || '').localeCompare(String(b.item.title || '')))
+    .slice(0, limit);
+}
+
+function anniversaryHits(state) {
+  const hits = [];
+  for (const item of state.anniversaries || []) {
+    if (!item) continue;
+    const character = characterById(state, item.characterId);
+    if (!character) continue;
+    const days = daysUntilAnniversary(item.date, item.repeat);
+    if (days == null) continue;
+    hits.push({ item, character, days });
+  }
+  return hits;
+}
+
+function undoneWishes(state, limit) {
+  return (state.wishlists || [])
+    .filter((item) => item && !item.done && characterById(state, item.characterId))
+    .slice()
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+    .slice(0, limit)
+    .map((item) => ({ item, character: characterById(state, item.characterId) }));
+}
+
+function todayJournal(state) {
+  const key = localDateKey(Date.now());
+  return (state.journals || [])
+    .filter((j) => j && j.ownerType === 'player' && (j.entryDate || localDateKey(j.createdAt)) === key)
+    .slice()
+    .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0))[0] || null;
+}
+
+function todayPosts(state) {
+  return (state.posts || []).filter((post) => post && isToday(post.createdAt));
+}
+
+function todayCharacterWhisper(state) {
+  const item = (state.journals || [])
+    .filter((j) => j && j.ownerType === 'character' && isToday(j.createdAt) && characterById(state, j.ownerId))
+    .slice()
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0] || null;
+  return item ? { item, character: characterById(state, item.ownerId) } : null;
+}
+
+function openCharacterSection(characterId, section) {
+  const state = getCurrentHomeState();
+  const character = state && characterById(state, characterId);
+  if (!character) return;
+  setHomeMode('dashboard');
+  selectCharacter(characterId).then(() => {
+    navigate('/home');
+    requestAnimationFrame(() => {
+      if (section === '節拍') openCharacterModal('節拍', (body) => body.appendChild(buildAnniversarySection(getCurrentHomeState(), character)));
+      else if (section === '約定') openCharacterModal('約定', (body) => body.appendChild(buildWishlistSection(getCurrentHomeState(), character)));
+      else if (section === '私語') openCharacterModal('私語', (body) => renderJournalList(body, getCurrentHomeState(), character));
+    });
+  });
+}
+
+function openHeartVoiceFromToday(item, character) {
+  setHomeMode('dashboard');
+  revealHeartVoice(item.id).then(() => {
+    openCharacterModal('弦外之音', (body) => {
+      const article = document.createElement('article');
+      article.className = 'letter-reader heart-voice-reader';
+      const meta = document.createElement('div');
+      meta.className = 'life-item-date';
+      meta.textContent = `${character.name || '角色'} · ${formatDate(item.createdAt)}`;
+      article.appendChild(meta);
+      const p = document.createElement('p');
+      p.textContent = item.content || '';
+      article.appendChild(p);
+      body.appendChild(article);
+    });
+  });
+}
+
+function getCurrentHomeState() {
+  return getState();
+}
+
+function characterById(state, id) {
+  return (state.characters || []).find((c) => c && c.id === id) || null;
+}
+
+function compactText(text, max) {
+  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  if (clean.length <= max) return clean;
+  return `${clean.slice(0, max)}…`;
+}
+
+function weekdayText(date) {
+  return ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'][date.getDay()];
+}
+
+function relativeFutureLabel(days) {
+  if (days === 1) return '明天';
+  return `${days} 天後`;
+}
+
+function localDateKey(ts) {
+  const d = new Date(ts || Date.now());
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function isToday(ts) {
+  return localDateKey(ts) === localDateKey(Date.now());
 }
 
 function buildDashboard(state, character) {

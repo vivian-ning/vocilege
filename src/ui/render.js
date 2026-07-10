@@ -280,7 +280,7 @@ function renderChatShell(container, state, conversationId) {
   container.appendChild(layout);
 }
 
-// 主題 = 配色（blue/pink/green/violet）×明暗（light/dark）。
+// 主題 = 配色（blue/pink/green/violet/washi）×明暗（light/dark）。
 // 舊值（cream/night 等）由 migration 轉換；此處仍防禦性映射一次。
 const LEGACY_THEME_MAP = {
   cream: ['violet', 'light'], warm: ['violet', 'light'], brown: ['violet', 'light'],
@@ -296,8 +296,8 @@ function effectiveTheme(theme, themeMode) {
     palette = mapped[0];
     if (!themeMode) mode = mapped[1];
   }
-  if (!['blue', 'pink', 'green', 'violet', 'aurora'].includes(palette)) palette = 'blue';
-  if (palette === 'aurora') mode = 'light';
+  if (!['blue', 'pink', 'green', 'violet', 'aurora', 'washi'].includes(palette)) palette = 'blue';
+  if (palette === 'aurora' || palette === 'washi') mode = 'light';
   return { palette, mode };
 }
 

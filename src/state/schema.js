@@ -60,7 +60,7 @@ export function createDefaultState(config) {
     avatar: { type: 'emoji', value: '🙂' }
   };
   const defaultSettings = (config && config.defaultSettings) || {
-    theme: 'blue',
+    theme: 'washi',
     themeMode: 'light',
     messageDisplayMode: 'mixed',
     memoryInjectionLimit: 10
@@ -115,7 +115,7 @@ export function createDefaultState(config) {
     settings: {
       // V5.6：theme = 配色（blue 藍噪 / pink 粉噪 / green 綠噪 / violet 紫噪），
       // themeMode = 明暗（light / dark）。舊主題值由 migration 6→7 轉換。
-      theme: defaultSettings.theme || 'blue',
+      theme: defaultSettings.theme || 'washi',
       themeMode: defaultSettings.themeMode === 'dark' ? 'dark' : 'light',
       messageDisplayMode: defaultSettings.messageDisplayMode || 'mixed',
       // V3：非 locked 記憶注入的筆數上限（locked 不占名額）。
@@ -364,7 +364,7 @@ export function normalizeState(state) {
   merged.apiSettings.thinkingBudget = Math.max(1024, Math.floor(merged.apiSettings.thinkingBudget));
 
   if (merged.settings.theme === 'brown') merged.settings.theme = 'violet';
-  if (!['blue', 'pink', 'green', 'violet', 'aurora'].includes(merged.settings.theme)) merged.settings.theme = 'blue';
+  if (!['blue', 'pink', 'green', 'violet', 'aurora', 'washi'].includes(merged.settings.theme)) merged.settings.theme = 'blue';
   merged.settings.themeMode = merged.settings.themeMode === 'dark' ? 'dark' : 'light';
   merged.settings.chatBackgroundAssetId = typeof merged.settings.chatBackgroundAssetId === 'string'
     ? merged.settings.chatBackgroundAssetId

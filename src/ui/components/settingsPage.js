@@ -27,13 +27,14 @@ export function setSettingsTab(key) {
   if (SECTION_KEYS.has(key)) pendingScrollTarget = key;
 }
 
-// 四種配色取自聲學的「噪音顏色」；swatch 圓點 = 該主題的 bg / primary / bubble。
+// 配色取自聲學的「噪音顏色」、極光玻璃與和紙手帳；swatch 圓點 = 該主題的 bg / primary / bubble。
 const THEME_PALETTES = [
   { key: 'blue', label: '藍噪', hint: '清晨廣播的冷靜', dots: { light: ['#eef4f8', '#2f6f8f', '#d4e7ef'], dark: ['#101923', '#78bfe1', '#294f66'] } },
   { key: 'pink', label: '粉噪', hint: '溫柔的傍晚', dots: { light: ['#f7eef3', '#a94f76', '#f1d5e2'], dark: ['#21151d', '#e08aad', '#63384e'] } },
   { key: 'green', label: '綠噪', hint: '靜謐的森林', dots: { light: ['#eef6f0', '#387a57', '#d5eadb'], dark: ['#101d18', '#7ac99c', '#2c5d45'] } },
   { key: 'violet', label: '紫噪', hint: '深夜的紫煙', dots: { light: ['#f3effb', '#7552b8', '#e1d6f5'], dark: ['#181425', '#b59cff', '#433060'] } },
-  { key: 'aurora', label: '極光', hint: '極光玻璃，暫僅亮色', dots: { light: ['#bfe9e2', '#aab3e8', '#f0d7e9'], dark: ['#bfe9e2', '#aab3e8', '#f0d7e9'] } }
+  { key: 'aurora', label: '極光', hint: '極光玻璃，暫僅亮色', dots: { light: ['#bfe9e2', '#aab3e8', '#f0d7e9'], dark: ['#bfe9e2', '#aab3e8', '#f0d7e9'] } },
+  { key: 'washi', label: '和紙', hint: '紙上手帳，暫僅亮色', dots: { light: ['#fffdf7', '#a84b2f', '#f7f3ea'], dark: ['#fffdf7', '#a84b2f', '#f7f3ea'] } }
 ];
 
 const CHAT_BACKGROUND_MAX_BYTES = 2 * 1024 * 1024;
@@ -546,7 +547,7 @@ function renderAppearance(container, state) {
 
   const desc = document.createElement('p');
   desc.className = 'gp-desc';
-  desc.textContent = '拾聲的配色取自聲學的「噪音顏色」與極光玻璃。明版清淡，暗版保留主色微光，內容卡片維持可讀。';
+  desc.textContent = '拾聲的配色取自聲學的「噪音顏色」、極光玻璃與和紙手帳。和紙與極光暫僅亮色；暗色模式下會自動沿用亮版。';
   wrap.appendChild(desc);
 
   const currentTheme = state.settings.theme || 'blue';

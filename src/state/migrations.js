@@ -10,7 +10,7 @@
 
 import { createDefaultEcho, createExampleGlobalPrompt } from './schema.js';
 
-export const CURRENT_SCHEMA_VERSION = 18;
+export const CURRENT_SCHEMA_VERSION = 19;
 
 const DEFAULT_VIGIL = {
   enabled: false,
@@ -416,6 +416,22 @@ const migrators = {
       });
     }
     s.schemaVersion = 18;
+    return s;
+  },
+
+  // v18 -> v19（V14 紙上手帳 I）：
+  //   - settings.theme 合法值加入 washi
+  //   - 不改任何既有欄位值；只防禦性修正非法主題值
+  18: (s) => {
+    const settings = (s.settings && typeof s.settings === 'object') ? { ...s.settings } : {};
+    if (settings.theme === 'brown') {
+      settings.theme = 'violet';
+    } else if (!['blue', 'pink', 'green', 'violet', 'aurora', 'washi'].includes(settings.theme)) {
+      settings.theme = 'blue';
+    }
+    if (settings.themeMode !== 'dark' && settings.themeMode !== 'light') settings.themeMode = 'light';
+    s.settings = settings;
+    s.schemaVersion = 19;
     return s;
   },
 };

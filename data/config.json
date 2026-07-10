@@ -1,7 +1,7 @@
 {
   "appName": "拾聲",
   "appNameLatin": "Vocilège",
-  "schemaVersion": 18,
+  "schemaVersion": 19,
   "defaultPlayer": {
     "id": "player",
     "playerName": "",
@@ -9,7 +9,7 @@
     "avatar": { "type": "emoji", "value": "🙂" }
   },
   "defaultSettings": {
-    "theme": "blue",
+    "theme": "washi",
     "themeMode": "light",
     "messageDisplayMode": "mixed",
     "memoryInjectionLimit": 10,

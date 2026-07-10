@@ -71,6 +71,11 @@ export function validateBackup(data) {
       if ('chatBackgroundDim' in s.settings && typeof s.settings.chatBackgroundDim !== 'number') {
         errors.push('state.settings.chatBackgroundDim 應為數字');
       }
+      if ('theme' in s.settings &&
+          typeof s.settings.theme === 'string' &&
+          !['blue', 'pink', 'green', 'violet', 'aurora', 'washi', 'brown', 'cream', 'warm', 'night', 'sea', 'fog', 'rose'].includes(s.settings.theme)) {
+        errors.push('state.settings.theme 不是支援的主題值');
+      }
     }
     if ('apiSettings' in s && !isObject(s.apiSettings)) {
       errors.push('state.apiSettings 應為物件');
