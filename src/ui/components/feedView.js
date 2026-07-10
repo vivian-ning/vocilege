@@ -8,6 +8,9 @@ import {
 import { createAvatarEl } from '../avatar.js';
 import { confirmDialog } from '../dialog.js';
 
+const expandedCommentPostIds = new Set();
+const expandedContentPostIds = new Set();
+
 export function renderFeedView(container, state) {
   container.textContent = '';
 
@@ -117,7 +120,26 @@ function buildPost(post, state) {
   const content = document.createElement('div');
   content.className = 'feed-content';
   content.textContent = post.content || '';
+  const contentIsLong = isLongPost(post.content);
+  if (contentIsLong && !expandedContentPostIds.has(post.id)) {
+    content.classList.add('is-collapsed');
+  }
   card.appendChild(content);
+
+  if (contentIsLong) {
+    const expand = document.createElement('button');
+    expand.type = 'button';
+    expand.className = 'feed-expand';
+    const expanded = expandedContentPostIds.has(post.id);
+    expand.textContent = expanded ? '收起' : '展開';
+    expand.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    expand.addEventListener('click', () => {
+      if (expandedContentPostIds.has(post.id)) expandedContentPostIds.delete(post.id);
+      else expandedContentPostIds.add(post.id);
+      renderFeedView(card.closest('.feed-page').parentNode, state);
+    });
+    card.appendChild(expand);
+  }
 
   const actions = document.createElement('div');
   actions.className = 'feed-actions';
@@ -130,13 +152,31 @@ function buildPost(post, state) {
   actions.appendChild(like);
   card.appendChild(actions);
 
-  const comments = document.createElement('div');
-  comments.className = 'feed-comments';
-  for (const comment of (post.comments || [])) {
-    comments.appendChild(buildComment(post.id, comment, state));
+  const postComments = post.comments || [];
+  const commentsOpen = expandedCommentPostIds.has(post.id);
+  if (postComments.length) {
+    const toggleComments = document.createElement('button');
+    toggleComments.type = 'button';
+    toggleComments.className = 'feed-comments-toggle';
+    toggleComments.textContent = commentsOpen ? '收起留言' : `${postComments.length} 則留言`;
+    toggleComments.setAttribute('aria-expanded', commentsOpen ? 'true' : 'false');
+    toggleComments.addEventListener('click', () => {
+      if (expandedCommentPostIds.has(post.id)) expandedCommentPostIds.delete(post.id);
+      else expandedCommentPostIds.add(post.id);
+      renderFeedView(card.closest('.feed-page').parentNode, state);
+    });
+    card.appendChild(toggleComments);
   }
-  comments.appendChild(buildCommentForm(post.id));
-  card.appendChild(comments);
+
+  if (commentsOpen || postComments.length === 0) {
+    const comments = document.createElement('div');
+    comments.className = 'feed-comments';
+    for (const comment of postComments) {
+      comments.appendChild(buildComment(post.id, comment, state));
+    }
+    comments.appendChild(buildCommentForm(post.id));
+    card.appendChild(comments);
+  }
 
   return card;
 }
@@ -222,4 +262,11 @@ function formatRelative(ts) {
   const days = Math.floor(diff / 86400000);
   if (days < 30) return `${days} 天前`;
   return formatDateTime(ts);
+}
+
+function isLongPost(content) {
+  const text = String(content || '');
+  if (!text.trim()) return false;
+  const lineCount = text.split(/\n/).length;
+  return lineCount > 6 || text.length > 260;
 }

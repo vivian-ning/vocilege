@@ -52,7 +52,7 @@ async function compute(state) {
   const chatTotal = zero();
   const backgroundTotal = zero();
   const perCharacter = {}; // characterId -> { prompt, completion }
-  const lastByConversation = {}; // conversationId -> { createdAt, snippet }
+  const lastByConversation = {}; // conversationId -> { createdAt, snippet, senderType, senderId }
 
   // conversationId -> primaryCharacterId（direct）；group 依 message.senderId 歸戶。
   const convToChar = {};
@@ -67,7 +67,12 @@ async function compute(state) {
     const prev = lastByConversation[m.conversationId];
     const ts = m.createdAt || 0;
     if (!prev || ts > prev.createdAt) {
-      lastByConversation[m.conversationId] = { createdAt: ts, snippet: partsToSnippet(m.parts) };
+      lastByConversation[m.conversationId] = {
+        createdAt: ts,
+        snippet: partsToSnippet(m.parts),
+        senderType: m.senderType,
+        senderId: m.senderId
+      };
     }
 
     // token 用量（只有帶 usage 的真 API 回覆計入）

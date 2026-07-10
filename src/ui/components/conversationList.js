@@ -140,6 +140,11 @@ function renderItem(conv, state) {
   desc.dataset.convId = conv.id;
   desc.textContent = '讀取最後一句…';
 
+  const unread = document.createElement('span');
+  unread.className = 'conv-unread';
+  unread.dataset.convUnread = conv.id;
+  unread.setAttribute('aria-hidden', 'true');
+
   meta.appendChild(top);
   meta.appendChild(desc);
 
@@ -183,6 +188,7 @@ function renderItem(conv, state) {
   });
   item.appendChild(avatar);
   item.appendChild(meta);
+  item.appendChild(unread);
   item.appendChild(del);
   if (conv.type === 'group' && members.length) {
     desc.textContent = members.map((m) => m.name || '角色').join('、');
@@ -288,6 +294,11 @@ async function fillConversationPreviews(scope, state) {
   scope.querySelectorAll('.conv-desc[data-conv-id]').forEach((node) => {
     const last = stats.lastByConversation[node.dataset.convId];
     node.textContent = last && last.snippet ? last.snippet : '還沒有對話';
+    const item = node.closest('.conv-item');
+    if (item) {
+      const hasUnread = !!(last && last.senderType === 'character' && node.dataset.convId !== state.currentConversationId);
+      item.classList.toggle('has-unread', hasUnread);
+    }
   });
   scope.querySelectorAll('.conv-time[data-conv-time]').forEach((node) => {
     const last = stats.lastByConversation[node.dataset.convTime];
