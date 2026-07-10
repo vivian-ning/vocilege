@@ -10,7 +10,7 @@
 
 import { createDefaultEcho, createExampleGlobalPrompt } from './schema.js';
 
-export const CURRENT_SCHEMA_VERSION = 15;
+export const CURRENT_SCHEMA_VERSION = 16;
 
 const DEFAULT_VIGIL = {
   enabled: false,
@@ -350,6 +350,26 @@ const migrators = {
     s.settings = settings;
     if (typeof s.lastWeeklyReviewAt !== 'number') s.lastWeeklyReviewAt = 0;
     s.schemaVersion = 15;
+    return s;
+  },
+
+  // v15 -> v16（V12.6 迴聲留言愛心）：
+  //   - comment.likes 啟用，結構同 post.likes：{ userType, userId, at }
+  15: (s) => {
+    if (Array.isArray(s.posts)) {
+      s.posts = s.posts.map((post) => {
+        if (!post || typeof post !== 'object') return post;
+        const comments = Array.isArray(post.comments) ? post.comments : [];
+        return {
+          ...post,
+          comments: comments.map((comment) => {
+            if (!comment || typeof comment !== 'object') return { likes: [] };
+            return Array.isArray(comment.likes) ? comment : { ...comment, likes: [] };
+          })
+        };
+      });
+    }
+    s.schemaVersion = 16;
     return s;
   },
 };

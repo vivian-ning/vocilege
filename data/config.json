@@ -1,7 +1,7 @@
 {
   "appName": "拾聲",
   "appNameLatin": "Vocilège",
-  "schemaVersion": 14,
+  "schemaVersion": 16,
   "defaultPlayer": {
     "id": "player",
     "playerName": "",

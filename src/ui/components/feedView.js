@@ -2,6 +2,7 @@ import {
   addPost,
   deletePost,
   togglePostLike,
+  togglePostCommentLike,
   addPostComment
 } from '../../state/store.js';
 import { createAvatarEl } from '../avatar.js';
@@ -132,7 +133,7 @@ function buildPost(post, state) {
   const comments = document.createElement('div');
   comments.className = 'feed-comments';
   for (const comment of (post.comments || [])) {
-    comments.appendChild(buildComment(comment, state));
+    comments.appendChild(buildComment(post.id, comment, state));
   }
   comments.appendChild(buildCommentForm(post.id));
   card.appendChild(comments);
@@ -140,7 +141,7 @@ function buildPost(post, state) {
   return card;
 }
 
-function buildComment(comment, state) {
+function buildComment(postId, comment, state) {
   const row = document.createElement('div');
   row.className = 'feed-comment';
   const author = resolveAuthor(comment.authorType, comment.authorId, state);
@@ -155,6 +156,15 @@ function buildComment(comment, state) {
   text.className = 'feed-comment-text';
   text.textContent = comment.content || '';
   body.appendChild(text);
+  const likes = Array.isArray(comment.likes) ? comment.likes : [];
+  const liked = likes.some((l) => l && l.userType === 'player' && l.userId === 'player');
+  const like = document.createElement('button');
+  like.type = 'button';
+  like.className = 'feed-comment-like' + (liked ? ' active' : '');
+  like.textContent = `${liked ? '♥' : '♡'} ${likes.length}`;
+  like.title = '愛心';
+  like.addEventListener('click', () => togglePostCommentLike(postId, comment.id));
+  body.appendChild(like);
   row.appendChild(body);
   return row;
 }

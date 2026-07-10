@@ -248,6 +248,44 @@ export function normalizeEcho(echo) {
   };
 }
 
+function normalizeLike(like) {
+  const source = like && typeof like === 'object' && !Array.isArray(like) ? like : {};
+  return {
+    userType: source.userType === 'character' ? 'character' : 'player',
+    userId: String(source.userId || (source.userType === 'character' ? '' : 'player')),
+    at: typeof source.at === 'number' && Number.isFinite(source.at) ? source.at : Date.now()
+  };
+}
+
+function normalizeFeedComment(comment) {
+  const source = comment && typeof comment === 'object' && !Array.isArray(comment) ? comment : {};
+  const authorType = source.authorType === 'character' ? 'character' : 'player';
+  return {
+    id: String(source.id || generateId('comment')),
+    authorType,
+    authorId: String(source.authorId || (authorType === 'player' ? 'player' : '')),
+    content: String(source.content || ''),
+    likes: Array.isArray(source.likes) ? source.likes.map((like) => normalizeLike(like)) : [],
+    createdAt: typeof source.createdAt === 'number' && Number.isFinite(source.createdAt) ? source.createdAt : Date.now()
+  };
+}
+
+function normalizeFeedPost(post) {
+  const source = post && typeof post === 'object' && !Array.isArray(post) ? post : {};
+  const authorType = source.authorType === 'character' ? 'character' : 'player';
+  return {
+    ...source,
+    id: String(source.id || generateId('post')),
+    authorType,
+    authorId: String(source.authorId || (authorType === 'player' ? 'player' : '')),
+    content: String(source.content || ''),
+    mood: String(source.mood || ''),
+    likes: Array.isArray(source.likes) ? source.likes.map((like) => normalizeLike(like)) : [],
+    comments: Array.isArray(source.comments) ? source.comments.map((comment) => normalizeFeedComment(comment)) : [],
+    createdAt: typeof source.createdAt === 'number' && Number.isFinite(source.createdAt) ? source.createdAt : Date.now()
+  };
+}
+
 // 補齊缺漏欄位，回傳一個新物件（不深層修改輸入）。
 // 只負責「欄位存在性」與型別修正，不動 schemaVersion 的升級邏輯。
 export function normalizeState(state) {
@@ -390,6 +428,10 @@ export function normalizeState(state) {
   merged.journals = merged.journals
     .filter((j) => j && typeof j === 'object')
     .map((j) => normalizeJournal(j));
+
+  merged.posts = merged.posts
+    .filter((p) => p && typeof p === 'object')
+    .map((p) => normalizeFeedPost(p));
 
   merged.heartVoices = merged.heartVoices
     .filter((h) => h && typeof h === 'object')

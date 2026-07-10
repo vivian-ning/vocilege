@@ -160,6 +160,22 @@ export function validateBackup(data) {
         if ('updatedAt' in j && typeof j.updatedAt !== 'number') errors.push(`journals[${i}].updatedAt 應為數字`);
       });
     }
+    if (Array.isArray(s.posts)) {
+      s.posts.forEach((p, i) => {
+        if (!isObject(p)) return;
+        if ('likes' in p && !Array.isArray(p.likes)) errors.push(`posts[${i}].likes 應為陣列`);
+        if ('comments' in p) {
+          if (!Array.isArray(p.comments)) {
+            errors.push(`posts[${i}].comments 應為陣列`);
+          } else {
+            p.comments.forEach((c, ci) => {
+              if (!isObject(c)) return;
+              if ('likes' in c && !Array.isArray(c.likes)) errors.push(`posts[${i}].comments[${ci}].likes 應為陣列`);
+            });
+          }
+        }
+      });
+    }
     if (Array.isArray(s.letters)) {
       s.letters.forEach((l, i) => {
         if (!isObject(l)) return;

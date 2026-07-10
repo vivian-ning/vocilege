@@ -1620,7 +1620,7 @@ function lifePromptSpec(kind) {
       usageKind: 'heartVoice',
       system: [
         '你要以指定角色第一人稱寫一則「弦外之音」。',
-        '弦外之音是一句沒有說出口的內心話，1 到 2 句，更私密、脆弱、克制。',
+        '弦外之音是一句沒有說出口的內心話，1 到 2 句。語氣完全依照你的角色設定。',
         '請使用繁體中文、角色口吻，不要加標題、角色名、引號或項目符號。'
       ],
       fallbackLabel: '弦外之音'
@@ -1628,11 +1628,11 @@ function lifePromptSpec(kind) {
   }
   if (kind === 'letter') {
     return {
-      maxTokens: 1600,
+      maxTokens: 2600,
       usageKind: 'letter',
       system: [
         '你要以指定角色第一人稱寫一封「聲箋」給玩家。',
-        '聲箋比聊天更深、比弦外之音更正式，是隔幾天寫下的長信。',
+        '聲箋是隔幾天寫下的一封長信。語氣完全依照你的角色設定。',
         '請使用繁體中文、角色口吻，分成數段，取材自最近對話餘韻與聲痕；不要加標題、角色名或項目符號。'
       ],
       fallbackLabel: '聲箋'
@@ -1658,6 +1658,13 @@ function weightedLifeKind(characterId) {
   return bucket < 8 ? 'diary' : 'letter';
 }
 
+function lifeContentMaxTokens(spec) {
+  if (spec && spec.usageKind === 'letter') {
+    return Math.max(spec.maxTokens, Number(state.apiSettings.maxTokens) || 0);
+  }
+  return spec.maxTokens;
+}
+
 export async function generateLifeContent(characterId, kind = 'diary', { automatic = false } = {}) {
   const character = (state.characters || []).find((c) => c.id === characterId);
   if (!character) return null;
@@ -1671,7 +1678,7 @@ export async function generateLifeContent(characterId, kind = 'diary', { automat
   const memoryText = topMemoryText(character.id, 5);
   const result = await generateUtilityText({
     apiSettings: state.apiSettings,
-    maxTokens: spec.maxTokens,
+    maxTokens: lifeContentMaxTokens(spec),
     system: [
       ...spec.system,
       characterBrief(character),
@@ -1955,10 +1962,10 @@ async function generateWeeklyReview(characterId, { automatic = false } = {}) {
   if (!consumeDaily('life', state.settings.lifeDailyLimit, { manual: !automatic })) return null;
   const result = await generateUtilityText({
     apiSettings: state.apiSettings,
-    maxTokens: 900,
+    maxTokens: Math.max(1600, Number(state.apiSettings.maxTokens) || 0),
     system: [
       '你要以指定角色第一人稱寫一封「聲箋」，主題是幫玩家回顧剛過去的一週。',
-      '語氣溫柔、不說教、不做健康或心理診斷，像朋友一起回顧這週的生活。',
+      '不說教、不做健康或心理診斷。語氣完全依照你的角色設定。',
       '長度 200 到 400 字，可分成數段，取材自下方這週的拾日、日課與健康資料（若有）。',
       '請使用繁體中文、角色口吻，不要加標題、角色名或項目符號。',
       characterBrief(character)
@@ -2129,6 +2136,33 @@ export async function togglePostLike(postId, userType = 'player', userId = 'play
   notify();
 }
 
+function normalizeCommentLikes(comment) {
+  if (!comment || typeof comment !== 'object') return [];
+  comment.likes = Array.isArray(comment.likes) ? comment.likes : [];
+  return comment.likes;
+}
+
+function addCommentLike(comment, userType, userId) {
+  const likes = normalizeCommentLikes(comment);
+  if (!likes.some((l) => l && l.userType === userType && l.userId === userId)) {
+    likes.push({ userType, userId, at: now() });
+  }
+}
+
+export async function togglePostCommentLike(postId, commentId, userType = 'player', userId = 'player') {
+  const post = (state.posts || []).find((p) => p.id === postId);
+  const comment = post && Array.isArray(post.comments)
+    ? post.comments.find((c) => c && c.id === commentId)
+    : null;
+  if (!comment) return;
+  const likes = normalizeCommentLikes(comment);
+  const idx = likes.findIndex((l) => l && l.userType === userType && l.userId === userId);
+  if (idx >= 0) likes.splice(idx, 1);
+  else likes.push({ userType, userId, at: now() });
+  await saveCurrentState();
+  notify();
+}
+
 export async function addPostComment(postId, { authorType = 'player', authorId = 'player', content }) {
   const post = (state.posts || []).find((p) => p.id === postId);
   const text = (content || '').trim();
@@ -2139,14 +2173,14 @@ export async function addPostComment(postId, { authorType = 'player', authorId =
     authorType,
     authorId,
     content: text,
+    likes: [],
     createdAt: now()
   };
   post.comments.push(comment);
   await saveCurrentState();
   notify();
-  if (authorType === 'player' && post.authorType === 'character' && !post.characterRepliedToPlayer && !usesMock(state.apiSettings)) {
-    post.characterRepliedToPlayer = true;
-    triggerSingleFeedReaction(post.id, post.authorId, { automatic: true }).catch((err) => {
+  if (authorType === 'player' && !usesMock(state.apiSettings)) {
+    triggerCommentFeedReaction(post.id, comment.id, { automatic: true }).catch((err) => {
       // eslint-disable-next-line no-console
       console.warn('迴聲留言回覆失敗', err);
     });
@@ -2174,6 +2208,85 @@ export async function generateMockFeedReaction(postId) {
     content: snippets[Math.floor(Math.random() * snippets.length)]
   });
   await saveCurrentState();
+  return comment;
+}
+
+function commentAuthorName(comment) {
+  if (!comment) return '誰';
+  if (comment.authorType === 'player') return (state.player && state.player.playerName) || '玩家';
+  const character = (state.characters || []).find((c) => c.id === comment.authorId);
+  return (character && character.name) || '角色';
+}
+
+function recentCommentTranscript(post, limit = 8) {
+  return (post.comments || [])
+    .slice(-limit)
+    .map((comment) => `${commentAuthorName(comment)}：${String(comment.content || '').trim()}`)
+    .filter((line) => line.trim())
+    .join('\n');
+}
+
+function pickCommentReplyCharacter(post) {
+  if (!post) return null;
+  if (post.authorType === 'character') {
+    return (state.characters || []).find((c) => c && c.id === post.authorId) || null;
+  }
+  const characterIds = [...new Set((post.comments || [])
+    .filter((comment) => comment && comment.authorType === 'character' && comment.authorId)
+    .map((comment) => comment.authorId))];
+  const candidates = (state.characters || []).filter((c) => c && characterIds.includes(c.id));
+  return shuffled(candidates)[0] || null;
+}
+
+async function triggerCommentFeedReaction(postId, latestCommentId, { automatic = false } = {}) {
+  const post = (state.posts || []).find((p) => p.id === postId);
+  const latestComment = post && Array.isArray(post.comments)
+    ? post.comments.find((c) => c && c.id === latestCommentId)
+    : null;
+  if (!post || !latestComment || latestComment.authorType !== 'player') return null;
+  const characterReplyCount = (post.comments || []).filter((c) => c && c.authorType === 'character').length;
+  if (characterReplyCount >= 3) return null;
+  const character = pickCommentReplyCharacter(post);
+  if (!character) return null;
+  if (!consumeDaily('feed', state.settings.feedDailyLimit, { manual: !automatic })) return null;
+  post.likes = Array.isArray(post.likes) ? post.likes : [];
+  if (!post.likes.some((l) => l.userType === 'character' && l.userId === character.id)) {
+    post.likes.push({ userType: 'character', userId: character.id, at: now() });
+  }
+  const memoryText = topMemoryText(character.id);
+  const result = await generateUtilityText({
+    apiSettings: state.apiSettings,
+    maxTokens: 120,
+    system: [
+      '你要以指定角色語氣回應迴聲中的最新留言。請輸出一兩句繁體中文短留言；若只想按愛心不留言，輸出空字串。',
+      characterBrief(character),
+      memoryText ? `聲痕：\n${memoryText}` : ''
+    ].filter(Boolean).join('\n\n'),
+    userText: [
+      `貼文內容：${post.content || ''}`,
+      `心情：${post.mood || '未填'}`,
+      `留言串轉錄：\n${recentCommentTranscript(post) || '目前沒有留言。'}`,
+      `最新留言：${commentAuthorName(latestComment)}：${latestComment.content || ''}`
+    ].join('\n\n')
+  });
+  addCommentLike(latestComment, 'character', character.id);
+  const text = stripSpeakerName(result.text, character);
+  let comment = null;
+  if (text) {
+    post.comments = Array.isArray(post.comments) ? post.comments : [];
+    comment = {
+      id: generateId('comment'),
+      authorType: 'character',
+      authorId: character.id,
+      content: text,
+      likes: [],
+      createdAt: now()
+    };
+    post.comments.push(comment);
+  }
+  pushUsageLog({ kind: 'feedReaction', characterId: character.id, usage: result.usage });
+  await saveCurrentState();
+  notify();
   return comment;
 }
 
@@ -2233,6 +2346,7 @@ async function triggerSingleFeedReaction(postId, characterId, { automatic = fals
       authorType: 'character',
       authorId: character.id,
       content: text,
+      likes: [],
       createdAt: now()
     };
     post.comments.push(comment);
@@ -2585,7 +2699,7 @@ export async function maybeCreateNightPatrol() {
       maxTokens: 100,
       system: [
         '你要以指定角色語氣寫一則凌晨催睡的喚聲。',
-        '請使用繁體中文、口吻溫柔、一句話，要有「該睡了」的意思。',
+        '請使用繁體中文、一句話，要有「該睡了」的意思。語氣完全依照你的角色設定。',
         '不要加角色名、引號、標題或任何說明。',
         characterBrief(pick.character),
         topMemoryText(pick.character.id) ? `聲痕：\n${topMemoryText(pick.character.id)}` : ''

@@ -143,7 +143,7 @@ export function renderApiSettingsEditor(container, state) {
   maxTokInput.min = '1';
   maxTokInput.step = '1';
   maxTokInput.value = api.maxTokens != null ? String(api.maxTokens) : '2048';
-  form.appendChild(wrapField('maxTokens', maxTokInput, '單次回覆長度上限，回覆常被截斷請調高。'));
+  form.appendChild(wrapField('maxTokens', maxTokInput, '單次回覆長度上限，回覆常被截斷請調高（聲箋等長文也會跟著放寬）。'));
 
   // memoryInjectionLimit（記憶注入上限）：屬 settings 而非 apiSettings，改動即時獨立
   // 儲存（不隨「儲存 API 設定」），避免與 apiKey 表單耦合。

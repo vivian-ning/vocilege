@@ -1477,6 +1477,17 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 .feed-comment-body { min-width: 0; }
 .feed-comment-author { margin-right: 8px; font-size: 13px; }
 .feed-comment-text, .keepsake-text { white-space: pre-wrap; line-height: 1.6; font-size: 14px; }
+.feed-comment-like {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 0 4px;
+  margin-left: 6px;
+  cursor: pointer;
+}
+.feed-comment-like.active { color: var(--accent); }
 .feed-comment-form { margin: 10px 0 0 52px; }
 
 /* =====================================================================
