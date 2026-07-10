@@ -1,7 +1,7 @@
 /* style.css — 拾聲 Vocilège 視覺系統（Liquid Glass 版）
  *
- * 概念：聲波。四種配色取自聲學的「噪音顏色」——藍噪 / 粉噪 / 綠噪 / 紫噪，
- * 各有明暗兩版，共 8 個主題變體（data-theme="blue-light" 等）。
+ * 概念：聲波。配色取自聲學的「噪音顏色」與極光玻璃；
+ * 噪音色各有明暗兩版，極光目前僅亮版。
  *
  * 設計原則（impeccable / ui-ux-pro-max）：
  * - 顏色一律走語意變數；元件不寫死色碼
@@ -261,6 +261,39 @@
     linear-gradient(140deg, #130f1e 0%, #251739 54%, #181425 100%);
 }
 
+/* —— 極光：Aurora Glass 極光之境（亮版） —— */
+:root[data-theme="aurora-light"] {
+  --bg: #edecf7;
+  --surface: #fcfcff;
+  --surface-2: #e7e8f6;
+  --chat-bg: #e9eaf6;
+  --text: #3f446b;
+  --muted: #767b9f;
+  --border: #d4d7ee;
+  --hairline: #e2e4f4;
+  --primary: #7b82d4;
+  --on-primary: #ffffff;
+  --primary-soft: #e4e6fb;
+  --bubble-player: #ccd3f6;
+  --bubble-player-text: #2d3362;
+  --bubble-character: rgba(255, 255, 255, .86);
+  --narration: #8a8fb8;
+  --danger: #c05a67;
+  --ok: #4f8f74;
+  --shadow-1: 0 1px 2px rgba(96, 104, 168, .08);
+  --shadow-2: 0 6px 20px rgba(96, 104, 168, .12);
+  --shadow-3: 0 18px 48px rgba(96, 104, 168, .22);
+  --scrim: rgba(52, 56, 92, .4);
+  --glass-bg: rgba(255, 255, 255, .58);
+  --glass-border: rgba(255, 255, 255, .8);
+  --hero-gradient:
+    radial-gradient(ellipse 70% 42% at 14% 8%, rgba(178, 226, 219, .55), transparent 60%),
+    radial-gradient(ellipse 62% 38% at 86% 14%, rgba(196, 186, 244, .5), transparent 62%),
+    radial-gradient(ellipse 58% 36% at 78% 66%, rgba(180, 210, 246, .42), transparent 62%),
+    radial-gradient(ellipse 52% 32% at 16% 78%, rgba(244, 212, 234, .4), transparent 60%),
+    linear-gradient(160deg, #f3f2fb 0%, #e7e8f6 48%, #eef0f9 100%);
+}
+
 /* 舊變數別名（既有元件引用過）＋通用尺寸 token */
 :root {
   --panel-bg: var(--surface);
@@ -283,6 +316,7 @@
     linear-gradient(180deg, color-mix(in srgb, var(--bg) 92%, #fff) 0%, var(--bg) 100%);
   --thinking-bg: color-mix(in srgb, var(--primary) 10%, var(--surface) 78%);
   --thinking-border: color-mix(in srgb, var(--primary) 28%, var(--glass-border));
+  --chat-bg-dim: 72%;
 }
 
 :root[data-theme="blue-dark"] {
@@ -333,6 +367,11 @@
     linear-gradient(180deg, #130f1e 0%, var(--bg) 100%);
   --thinking-bg: color-mix(in srgb, var(--primary) 15%, var(--surface) 72%);
 }
+:root[data-theme="aurora-light"] {
+  --ambient-gradient: var(--hero-gradient);
+  --thinking-bg: color-mix(in srgb, var(--primary) 10%, var(--surface) 78%);
+  --thinking-border: color-mix(in srgb, var(--primary) 30%, var(--glass-border));
+}
 
 /* =====================================================================
    2. 基底
@@ -363,7 +402,113 @@ body::before {
   background: var(--ambient-gradient);
 }
 
-#app { height: 100dvh; position: relative; }
+#app { height: 100dvh; position: relative; isolation: isolate; }
+.app-root { position: relative; height: 100%; isolation: isolate; }
+.aurora-scene {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.top-nav, .page-content, .bottom-nav { position: relative; z-index: 1; }
+.aurora-glow {
+  position: absolute;
+  border-radius: 50%;
+  opacity: .82;
+  filter: blur(6px);
+  transform: translate3d(0, 0, 0);
+}
+.aurora-glow-1 {
+  width: 56vw;
+  height: 34vh;
+  left: -8vw;
+  top: -4vh;
+  background: radial-gradient(ellipse at center, rgba(167, 224, 214, .58), transparent 66%);
+}
+.aurora-glow-2 {
+  width: 52vw;
+  height: 32vh;
+  right: -8vw;
+  top: 10vh;
+  background: radial-gradient(ellipse at center, rgba(191, 179, 243, .56), transparent 64%);
+}
+.aurora-glow-3 {
+  width: 58vw;
+  height: 38vh;
+  left: 36vw;
+  bottom: -10vh;
+  background: radial-gradient(ellipse at center, rgba(238, 202, 228, .44), transparent 64%);
+}
+.aurora-star {
+  position: absolute;
+  top: var(--star-top);
+  left: var(--star-left);
+  color: rgba(255, 255, 255, .95);
+  font-size: 14px;
+  line-height: 1;
+  text-shadow: 0 0 12px rgba(190, 196, 255, 1), 0 0 22px rgba(167, 224, 214, .72);
+  opacity: .6;
+  transform: translate3d(0, -10px, 0);
+}
+.aurora-meteor {
+  position: absolute;
+  top: var(--meteor-top);
+  left: var(--meteor-left);
+  width: 72px;
+  height: 1px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .9), transparent);
+  opacity: 0;
+  transform: translate3d(0, 0, 0) rotate(-24deg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .aurora-glow-1 { animation: aurora-drift-one 12s var(--ease) infinite alternate; }
+  .aurora-glow-2 { animation: aurora-drift-two 13.5s var(--ease) infinite alternate; }
+  .aurora-glow-3 { animation: aurora-drift-three 11s var(--ease) infinite alternate; }
+  .aurora-star {
+    animation: aurora-star-fall var(--star-duration) linear infinite;
+    animation-delay: var(--star-delay);
+  }
+  .aurora-meteor {
+    animation: aurora-meteor var(--meteor-duration) linear infinite;
+    animation-delay: var(--meteor-delay);
+  }
+}
+
+@keyframes aurora-drift-one {
+  from { transform: translate3d(-5%, -3%, 0) rotate(-1deg); opacity: .58; }
+  to { transform: translate3d(8%, 5%, 0) rotate(1.6deg); opacity: .94; }
+}
+@keyframes aurora-drift-two {
+  from { transform: translate3d(6%, -4%, 0) rotate(1deg); opacity: .52; }
+  to { transform: translate3d(-8%, 5%, 0) rotate(-1.4deg); opacity: .88; }
+}
+@keyframes aurora-drift-three {
+  from { transform: translate3d(-4%, 6%, 0) rotate(.8deg); opacity: .44; }
+  to { transform: translate3d(7%, -6%, 0) rotate(-1.1deg); opacity: .78; }
+}
+@keyframes aurora-star-fall {
+  0% { opacity: 0; transform: translate3d(0, -12px, 0) scale(.86); }
+  18% { opacity: 1; }
+  72% { opacity: .6; }
+  100% { opacity: 0; transform: translate3d(0, var(--star-drift), 0) scale(1.08); }
+}
+@keyframes aurora-meteor {
+  0%, 72% { opacity: 0; transform: translate3d(0, 0, 0) rotate(-24deg); }
+  76% { opacity: .58; }
+  84% { opacity: .14; transform: translate3d(-160px, 78px, 0) rotate(-24deg); }
+  100% { opacity: 0; transform: translate3d(-160px, 78px, 0) rotate(-24deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora-glow, .aurora-star, .aurora-meteor, .chat-aurora-glow, .chat-aurora-star { animation: none !important; transform: none; }
+  .aurora-star { opacity: .6; }
+  .aurora-meteor { opacity: 0; }
+  .chat-aurora-glow { opacity: .3; }
+  .chat-aurora-star { opacity: .6; }
+}
 
 button { touch-action: manipulation; }
 
@@ -431,6 +576,21 @@ button { touch-action: manipulation; }
   overflow: hidden;
 }
 .page-content { flex: 1; min-height: 0; overflow-y: auto; }
+:root[data-theme="aurora-light"] .page-content {
+  background: transparent;
+}
+:root[data-theme="aurora-light"] .top-nav,
+:root[data-theme="aurora-light"] .bottom-nav,
+:root[data-theme="aurora-light"] .col-left,
+:root[data-theme="aurora-light"] .col-right,
+:root[data-theme="aurora-light"] .settings-card,
+:root[data-theme="aurora-light"] .chats-page {
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+  backdrop-filter: blur(18px) saturate(120%);
+}
+:root[data-theme="aurora-light"] .col-center {
+  background: color-mix(in srgb, var(--chat-bg) 68%, transparent);
+}
 
 .top-nav {
   flex: 0 0 auto;
@@ -479,7 +639,7 @@ button { touch-action: manipulation; }
 .nav-logo-main { font-size: 17px; font-weight: 700; letter-spacing: .04em; }
 .nav-logo-latin {
   font-family: Georgia, "Times New Roman", serif;
-  font-style: italic;
+  font-style: normal;
   font-size: 12px;
   color: var(--muted);
   letter-spacing: .06em;
@@ -512,8 +672,100 @@ button { touch-action: manipulation; }
 }
 .col { height: 100%; overflow-y: auto; display: flex; flex-direction: column; }
 .col-left { background: var(--surface); border-right: 1px solid var(--border); }
-.col-center { background: var(--chat-bg); }
+.col-center { background: var(--chat-bg); position: relative; overflow: hidden; }
 .col-right { background: var(--surface); border-left: 1px solid var(--border); }
+.chat-mobile-page.chat-bg-custom,
+.col-center.chat-bg-custom {
+  background: var(--chat-bg);
+}
+.chat-mobile-page.chat-bg-custom::before,
+.col-center.chat-bg-custom::before,
+.chat-mobile-page.chat-bg-custom::after,
+.col-center.chat-bg-custom::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.chat-mobile-page.chat-bg-custom::before,
+.col-center.chat-bg-custom::before {
+  z-index: 0;
+  background-image: var(--custom-chat-bg-url);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.chat-mobile-page.chat-bg-custom::after,
+.col-center.chat-bg-custom::after {
+  z-index: 1;
+  background: color-mix(in srgb, var(--chat-bg) var(--chat-bg-dim, 72%), transparent);
+}
+.chat-mobile-page.chat-bg-custom > *,
+.col-center.chat-bg-custom > * {
+  position: relative;
+  z-index: 3;
+}
+.chat-aurora-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
+}
+.chat-mobile-page > :not(.chat-aurora-layer),
+.col-center > :not(.chat-aurora-layer) {
+  position: relative;
+  z-index: 3;
+}
+.chat-mobile-page > .chat-aurora-layer,
+.col-center > .chat-aurora-layer {
+  position: absolute;
+  z-index: 2;
+}
+.chat-mobile-page.chat-bg-custom > .chat-aurora-layer,
+.col-center.chat-bg-custom > .chat-aurora-layer {
+  z-index: 2;
+}
+.chat-aurora-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(8px);
+  opacity: .34;
+  transform: translate3d(0, 0, 0);
+}
+.chat-aurora-glow-1 {
+  width: 44%;
+  height: 32%;
+  left: -10%;
+  top: 6%;
+  background: radial-gradient(ellipse at center, rgba(167, 224, 214, .48), transparent 68%);
+}
+.chat-aurora-glow-2 {
+  width: 46%;
+  height: 34%;
+  right: -12%;
+  bottom: 12%;
+  background: radial-gradient(ellipse at center, rgba(191, 179, 243, .46), transparent 68%);
+}
+.chat-aurora-star {
+  position: absolute;
+  top: var(--star-top);
+  left: var(--star-left);
+  color: rgba(255, 255, 255, .98);
+  font-size: 14px;
+  line-height: 1;
+  opacity: .6;
+  text-shadow: 0 0 12px rgba(190, 196, 255, 1), 0 0 20px rgba(167, 224, 214, .72);
+  transform: translate3d(0, -8px, 0);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .chat-aurora-glow-1 { animation: aurora-drift-one 13s var(--ease) infinite alternate; }
+  .chat-aurora-glow-2 { animation: aurora-drift-two 14.5s var(--ease) infinite alternate; }
+  .chat-aurora-star {
+    animation: aurora-star-fall var(--star-duration) linear infinite;
+    animation-delay: var(--star-delay);
+  }
+}
 
 /* 頭貼通用 */
 .avatar {
@@ -530,7 +782,7 @@ button { touch-action: manipulation; }
 .app-title-main { font-size: 16px; font-weight: 700; letter-spacing: .04em; }
 .app-title-latin {
   font-family: Georgia, serif;
-  font-style: italic;
+  font-style: normal;
   font-size: 11px;
   color: var(--muted);
   letter-spacing: .06em;
@@ -755,7 +1007,7 @@ button { touch-action: manipulation; }
   max-width: 78%;
   text-align: center;
   color: var(--narration);
-  font-style: italic;
+  font-weight: 500;
   font-size: 13px;
   line-height: 1.7;
 }
@@ -882,7 +1134,7 @@ button { touch-action: manipulation; }
   color: var(--text);
   font-size: 13px;
   line-height: 1.7;
-  font-style: italic;
+  font-weight: 500;
   opacity: .86;
   white-space: pre-wrap;
 }
@@ -1616,7 +1868,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
   margin: 0 0 7px;
   font-family: Georgia, "Times New Roman", serif;
   font-size: 14px;
-  font-style: italic;
+  font-style: normal;
   font-weight: 500;
   color: var(--muted);
 }
@@ -1655,6 +1907,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 .settings-profile-text { min-width: 0; }
 .settings-profile-name { font-weight: 800; font-size: 16px; }
 .settings-profile-desc { color: var(--muted); font-size: 13px; line-height: 1.45; }
+.settings-subtitle { margin: 0; font-size: 14px; font-weight: 800; }
 
 .gp-editor { display: flex; flex-direction: column; gap: 14px; }
 .gp-desc { margin: 0; font-size: 13px; color: var(--muted); background: var(--surface-2); padding: 10px 12px; border-radius: var(--r-s); }
@@ -1703,7 +1956,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
   transition: border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
 }
 .theme-mode-btn.active { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
-.theme-swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.theme-swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
 .theme-swatch {
   display: flex; flex-direction: column; gap: 8px; align-items: center;
   padding: 14px 10px;
@@ -1721,6 +1974,57 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 .theme-swatch.active { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .theme-swatch-dots { display: flex; gap: 4px; }
 .theme-swatch-dots i { width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(0,0,0,.08); }
+
+.chat-bg-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-m);
+  background: var(--surface);
+}
+.chat-bg-preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  aspect-ratio: 16 / 7;
+  border: 1px solid var(--border);
+  border-radius: var(--r-m);
+  background:
+    linear-gradient(color-mix(in srgb, var(--chat-bg) 80%, transparent), color-mix(in srgb, var(--chat-bg) 80%, transparent)),
+    var(--hero-gradient);
+  background-size: cover;
+  background-position: center;
+  color: var(--muted);
+  overflow: hidden;
+}
+.chat-bg-preview.has-image::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--chat-bg) var(--preview-chat-bg-dim, var(--chat-bg-dim, 72%)), transparent);
+}
+.chat-bg-preview span {
+  position: relative;
+  z-index: 1;
+  padding: 6px 10px;
+  border-radius: var(--r-s);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+}
+.range-value {
+  float: right;
+  margin-left: 10px;
+  color: var(--muted);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.form-range {
+  width: 100%;
+  accent-color: var(--primary);
+}
+.chat-bg-modal .form-field { margin: 12px 0; }
 
 /* 貼圖 */
 .sticker-picker-grid, .sticker-admin-grid {
@@ -2476,6 +2780,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 .chat-mobile-page {
   height: 100%;
   min-height: 0;
+  position: relative;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2533,8 +2838,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 }
 .character-editor-section-hint {
   font-size: 12px;
-  font-style: italic;
-  font-weight: 400;
+  font-style: normal;
+  font-weight: 500;
   color: var(--muted);
 }
 .character-editor-section-card {

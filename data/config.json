@@ -1,7 +1,7 @@
 {
   "appName": "拾聲",
   "appNameLatin": "Vocilège",
-  "schemaVersion": 16,
+  "schemaVersion": 18,
   "defaultPlayer": {
     "id": "player",
     "playerName": "",
@@ -25,7 +25,9 @@
     "lifeEveryDays": 3,
     "lifeDailyLimit": 5,
     "dailyAwarenessEnabled": true,
-    "backupEveryDays": 3
+    "backupEveryDays": 3,
+    "chatBackgroundAssetId": null,
+    "chatBackgroundDim": 72
   },
   "defaultApiSettings": {
     "maxTokens": 2048

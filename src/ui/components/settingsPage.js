@@ -9,11 +9,12 @@ import { renderPlayerEditor } from './playerEditor.js';
 import { renderBackupPanel } from './backupPanel.js';
 import { exportVigilCharacters } from '../../services/backupService.js';
 import { getVigilHealthSettings, saveVigilHealthSettings, testVigilHealthConnection } from '../../services/vigilHealthService.js';
-import { addSticker, updateSticker, deleteSticker, updateSettings } from '../../state/store.js';
+import { addSticker, updateSticker, deleteSticker, updateSettings, updateChatBackgroundAsset } from '../../state/store.js';
 import { saveImageAsset, getObjectURL } from '../../services/assetService.js';
 import { getStats } from '../../services/statsService.js';
 import { createIcon } from '../icons.js';
 import { confirmDialog } from '../dialog.js';
+import { showToast } from '../toast.js';
 
 export const SECTION_KEYS = new Set(['player', 'api', 'appearance', 'life', 'daily', 'vigil', 'stickers', 'prompts', 'usage', 'data']);
 const VIGIL_VAPID_KEY = 'vigilVapidKey';
@@ -31,8 +32,11 @@ const THEME_PALETTES = [
   { key: 'blue', label: '藍噪', hint: '清晨廣播的冷靜', dots: { light: ['#eef4f8', '#2f6f8f', '#d4e7ef'], dark: ['#101923', '#78bfe1', '#294f66'] } },
   { key: 'pink', label: '粉噪', hint: '溫柔的傍晚', dots: { light: ['#f7eef3', '#a94f76', '#f1d5e2'], dark: ['#21151d', '#e08aad', '#63384e'] } },
   { key: 'green', label: '綠噪', hint: '靜謐的森林', dots: { light: ['#eef6f0', '#387a57', '#d5eadb'], dark: ['#101d18', '#7ac99c', '#2c5d45'] } },
-  { key: 'violet', label: '紫噪', hint: '深夜的紫煙', dots: { light: ['#f3effb', '#7552b8', '#e1d6f5'], dark: ['#181425', '#b59cff', '#433060'] } }
+  { key: 'violet', label: '紫噪', hint: '深夜的紫煙', dots: { light: ['#f3effb', '#7552b8', '#e1d6f5'], dark: ['#181425', '#b59cff', '#433060'] } },
+  { key: 'aurora', label: '極光', hint: '極光玻璃，暫僅亮色', dots: { light: ['#bfe9e2', '#aab3e8', '#f0d7e9'], dark: ['#bfe9e2', '#aab3e8', '#f0d7e9'] } }
 ];
+
+const CHAT_BACKGROUND_MAX_BYTES = 2 * 1024 * 1024;
 
 export function renderSettingsPage(container, state) {
   container.textContent = '';
@@ -542,7 +546,7 @@ function renderAppearance(container, state) {
 
   const desc = document.createElement('p');
   desc.className = 'gp-desc';
-  desc.textContent = '拾聲的四種配色取自聲學的「噪音顏色」。明版清淡，暗版保留主色微光，內容卡片維持可讀。';
+  desc.textContent = '拾聲的配色取自聲學的「噪音顏色」與極光玻璃。明版清淡，暗版保留主色微光，內容卡片維持可讀。';
   wrap.appendChild(desc);
 
   const currentTheme = state.settings.theme || 'blue';
@@ -590,7 +594,126 @@ function renderAppearance(container, state) {
     swatches.appendChild(btn);
   }
   wrap.appendChild(swatches);
+  wrap.appendChild(renderChatBackgroundPicker(state));
   container.appendChild(wrap);
+}
+
+function renderChatBackgroundPicker(state) {
+  const box = document.createElement('div');
+  box.className = 'chat-bg-picker';
+
+  const title = document.createElement('h3');
+  title.className = 'settings-subtitle';
+  title.textContent = '聊天背景';
+  box.appendChild(title);
+
+  const desc = document.createElement('p');
+  desc.className = 'form-hint';
+  desc.textContent = '全域圖會套用到未自訂聲景的聊天；清除後回到目前主題預設。';
+  box.appendChild(desc);
+
+  const preview = document.createElement('div');
+  preview.className = 'chat-bg-preview';
+  const previewText = document.createElement('span');
+  previewText.textContent = '主題預設';
+  preview.appendChild(previewText);
+  const assetId = state.settings && state.settings.chatBackgroundAssetId;
+  if (assetId) {
+    previewText.textContent = '讀取中…';
+    getObjectURL(assetId).then((url) => {
+      if (!url) {
+        previewText.textContent = '找不到圖片，聊天會回到主題預設';
+        return;
+      }
+      previewText.textContent = '';
+      preview.style.backgroundImage = `url("${url}")`;
+      preview.classList.add('has-image');
+    });
+  }
+  box.appendChild(preview);
+
+  const file = document.createElement('input');
+  file.type = 'file';
+  file.accept = 'image/*';
+  file.className = 'file-input';
+  box.appendChild(file);
+
+  const actions = document.createElement('div');
+  actions.className = 'form-actions';
+
+  const upload = document.createElement('button');
+  upload.type = 'button';
+  upload.className = 'btn btn-primary';
+  upload.textContent = '上傳圖片';
+  upload.addEventListener('click', () => file.click());
+  actions.appendChild(upload);
+
+  const clear = document.createElement('button');
+  clear.type = 'button';
+  clear.className = 'btn';
+  clear.textContent = '清除背景';
+  clear.disabled = !assetId;
+  clear.addEventListener('click', () => updateChatBackgroundAsset(null));
+  actions.appendChild(clear);
+  box.appendChild(actions);
+
+  const dim = normalizeDim(state.settings && state.settings.chatBackgroundDim);
+  const dimValue = document.createElement('span');
+  dimValue.className = 'range-value';
+  dimValue.textContent = `${dim}%`;
+  const dimInput = document.createElement('input');
+  dimInput.type = 'range';
+  dimInput.min = '20';
+  dimInput.max = '90';
+  dimInput.step = '1';
+  dimInput.value = String(dim);
+  dimInput.className = 'form-range';
+  dimInput.addEventListener('input', () => {
+    const value = normalizeDim(dimInput.value);
+    dimValue.textContent = `${value}%`;
+    preview.style.setProperty('--preview-chat-bg-dim', `${value}%`);
+  });
+  dimInput.addEventListener('change', async () => {
+    const value = normalizeDim(dimInput.value);
+    await updateSettings({ chatBackgroundDim: value });
+  });
+  const dimField = wrapField('背景淡化', dimInput);
+  const label = dimField.querySelector('.form-label');
+  if (label) label.appendChild(dimValue);
+  box.appendChild(dimField);
+
+  const dimHint = document.createElement('div');
+  dimHint.className = 'form-hint';
+  dimHint.textContent = '數值越大越接近主題底色；未自訂淡化的聊天室會跟隨此設定。';
+  box.appendChild(dimHint);
+
+  file.addEventListener('change', async () => {
+    const selected = file.files && file.files[0];
+    file.value = '';
+    if (!selected) return;
+    if (selected.size > CHAT_BACKGROUND_MAX_BYTES) {
+      showToast('聊天背景圖片需小於 2MB');
+      return;
+    }
+    upload.disabled = true;
+    try {
+      const nextAssetId = await saveImageAsset(selected, 'chatBackground', 1600);
+      await updateChatBackgroundAsset(nextAssetId);
+      showToast('聊天背景已更新');
+    } catch (err) {
+      showToast('聊天背景上傳失敗');
+    } finally {
+      upload.disabled = false;
+    }
+  });
+
+  return box;
+}
+
+function normalizeDim(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 72;
+  return Math.min(90, Math.max(20, Math.floor(n)));
 }
 
 function renderLifeSettings(container, state) {

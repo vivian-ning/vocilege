@@ -60,6 +60,25 @@ async function cleanupReplacedAvatar(oldAvatar, newAvatar) {
   await deleteAvatarAsset(oldAvatar.assetId);
 }
 
+function normalizeChatBackgroundDim(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 72;
+  return Math.min(90, Math.max(20, Math.floor(n)));
+}
+
+function isChatBackgroundAssetReferenced(assetId) {
+  if (!assetId) return false;
+  if (state.settings && state.settings.chatBackgroundAssetId === assetId) return true;
+  return (state.conversations || []).some((conversation) => (
+    conversation && conversation.chatBackgroundAssetId === assetId
+  ));
+}
+
+async function cleanupUnusedChatBackgroundAsset(assetId) {
+  if (!assetId || isChatBackgroundAssetReferenced(assetId)) return;
+  await deleteStoredAsset(assetId);
+}
+
 let state = null;
 let messages = [];        // 目前對話的訊息（按需載入）
 let typing = false;       // 「輸入中」狀態旗標
@@ -304,6 +323,8 @@ export async function createCharacter(data) {
     memberIds: ['player', character.id],
     primaryCharacterId: character.id,
     echo: createDefaultEcho(),
+    chatBackgroundAssetId: null,
+    chatBackgroundDim: null,
     createdAt: ts,
     updatedAt: ts,
     lastMessageAt: ts
@@ -350,6 +371,8 @@ export async function createGroupConversation(data = {}) {
     memberIds: ['player', ...characterIds],
     primaryCharacterId: null,
     echo: createDefaultEcho(),
+    chatBackgroundAssetId: null,
+    chatBackgroundDim: null,
     createdAt: ts,
     updatedAt: ts,
     lastMessageAt: ts
@@ -412,6 +435,7 @@ export async function deleteCharacter(characterId) {
     await deleteMessagesByConversation(conversation.id);
     // 2) 刪除 conversation
     state.conversations = state.conversations.filter((c) => c.id !== conversation.id);
+    await cleanupUnusedChatBackgroundAsset(conversation.chatBackgroundAssetId);
   }
 
   // 訊息已異動，使首頁統計快取失效。
@@ -460,6 +484,7 @@ export async function deleteGroupConversation(conversationId) {
 
   await deleteMessagesByConversation(conversation.id);
   state.conversations = state.conversations.filter((c) => c.id !== conversation.id);
+  await cleanupUnusedChatBackgroundAsset(conversation.chatBackgroundAssetId);
   invalidateStats();
 
   if (state.currentConversationId === conversation.id) {
@@ -1391,9 +1416,45 @@ export async function markAutoBackupDone() {
 }
 
 export async function updateSettings(patch) {
-  state.settings = { ...state.settings, ...patch };
+  const nextPatch = { ...patch };
+  if ('chatBackgroundDim' in nextPatch) {
+    nextPatch.chatBackgroundDim = normalizeChatBackgroundDim(nextPatch.chatBackgroundDim);
+  }
+  state.settings = { ...state.settings, ...nextPatch };
   await saveCurrentState();
   notify();
+}
+
+export async function updateChatBackgroundAsset(assetId) {
+  const oldId = state.settings && state.settings.chatBackgroundAssetId;
+  const nextId = typeof assetId === 'string' && assetId ? assetId : null;
+  state.settings = { ...state.settings, chatBackgroundAssetId: nextId };
+  if (oldId && oldId !== nextId) await cleanupUnusedChatBackgroundAsset(oldId);
+  await saveCurrentState();
+  notify();
+}
+
+export async function updateConversationChatBackground(conversationId, assetId) {
+  const conversation = (state.conversations || []).find((c) => c.id === conversationId);
+  if (!conversation) return false;
+  const oldId = conversation.chatBackgroundAssetId;
+  const nextId = typeof assetId === 'string' && assetId ? assetId : null;
+  conversation.chatBackgroundAssetId = nextId;
+  conversation.updatedAt = now();
+  if (oldId && oldId !== nextId) await cleanupUnusedChatBackgroundAsset(oldId);
+  await saveCurrentState();
+  notify();
+  return true;
+}
+
+export async function updateConversationChatBackgroundDim(conversationId, value) {
+  const conversation = (state.conversations || []).find((c) => c.id === conversationId);
+  if (!conversation) return false;
+  conversation.chatBackgroundDim = value == null ? null : normalizeChatBackgroundDim(value);
+  conversation.updatedAt = now();
+  await saveCurrentState();
+  notify();
+  return true;
 }
 
 // 更新 API 設定。apiKey 的落地規則由 db.saveState 依 rememberApiKey 處理：
@@ -3035,7 +3096,7 @@ function bookHtml(title, range, list, character) {
   return [
     '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">',
     `<title>${escapeHtml(title)}</title>`,
-    '<style>body{font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif;max-width:760px;margin:40px auto;padding:0 20px;line-height:1.8;color:#2d2926;background:#fffdf8}.meta{color:#81756b}.speaker{font-size:13px;color:#8a5a44;font-weight:700;margin-top:18px}.line p{margin:4px 0 12px}.narration{color:#8a8178;font-style:italic;text-align:center}.narration .speaker{display:none}</style>',
+    '<style>body{font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif;max-width:760px;margin:40px auto;padding:0 20px;line-height:1.8;color:#2d2926;background:#fffdf8}.meta{color:#81756b}.speaker{font-size:13px;color:#8a5a44;font-weight:700;margin-top:18px}.line p{margin:4px 0 12px}.narration{color:#8a8178;font-weight:500;text-align:center}.narration .speaker{display:none}</style>',
     '</head><body>',
     `<h1>${escapeHtml(title)}</h1>`,
     range ? `<div class="meta">${escapeHtml(range)}</div>` : '',

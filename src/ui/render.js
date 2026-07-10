@@ -38,6 +38,11 @@ export function mountLayout(root, state) {
 
   applyTheme(state.settings.theme, state.settings.themeMode);
 
+  const aurora = document.createElement('div');
+  aurora.className = 'aurora-scene';
+  aurora.setAttribute('aria-hidden', 'true');
+  root.appendChild(aurora);
+
   const nav = document.createElement('nav');
   nav.className = 'top-nav';
   root.appendChild(nav);
@@ -51,7 +56,8 @@ export function mountLayout(root, state) {
   bottomNav.setAttribute('aria-label', '底部導航');
   root.appendChild(bottomNav);
 
-  refs = { root, nav, bottomNav, content };
+  refs = { root, aurora, nav, bottomNav, content };
+  syncAuroraScene(state.settings.theme, state.settings.themeMode);
   installToastHost(root);
   installResizeRerender();
   return refs;
@@ -100,6 +106,7 @@ function installResizeRerender() {
 export function render(state) {
   if (!refs) return;
   applyTheme(state.settings.theme, state.settings.themeMode);
+  syncAuroraScene(state.settings.theme, state.settings.themeMode);
 
   const route = getRoute();
   renderNav(refs.nav, route, state);
@@ -281,7 +288,7 @@ const LEGACY_THEME_MAP = {
   fog: ['blue', 'light'], rose: ['pink', 'light']
 };
 
-function applyTheme(theme, themeMode) {
+function effectiveTheme(theme, themeMode) {
   let palette = theme || 'blue';
   let mode = themeMode === 'dark' ? 'dark' : 'light';
   if (LEGACY_THEME_MAP[palette]) {
@@ -289,8 +296,77 @@ function applyTheme(theme, themeMode) {
     palette = mapped[0];
     if (!themeMode) mode = mapped[1];
   }
-  if (!['blue', 'pink', 'green', 'violet'].includes(palette)) palette = 'blue';
+  if (!['blue', 'pink', 'green', 'violet', 'aurora'].includes(palette)) palette = 'blue';
+  if (palette === 'aurora') mode = 'light';
+  return { palette, mode };
+}
+
+function applyTheme(theme, themeMode) {
+  const { palette, mode } = effectiveTheme(theme, themeMode);
   document.documentElement.setAttribute('data-theme', `${palette}-${mode}`);
+}
+
+function syncAuroraScene(theme, themeMode) {
+  if (!refs || !refs.aurora) return;
+  const { palette } = effectiveTheme(theme, themeMode);
+  const scene = refs.aurora;
+  if (palette !== 'aurora') {
+    scene.textContent = '';
+    scene.hidden = true;
+    delete scene.dataset.ready;
+    return;
+  }
+  scene.hidden = false;
+  if (scene.dataset.ready === 'true') return;
+  scene.textContent = '';
+
+  for (let i = 0; i < 3; i += 1) {
+    const glow = document.createElement('span');
+    glow.className = `aurora-glow aurora-glow-${i + 1}`;
+    scene.appendChild(glow);
+  }
+
+  const stars = [
+    [5, 8, '✦', 12.5, .2], [8, 22, '•', 13.8, 1.4], [10, 74, '✧', 11.4, 2.1],
+    [12, 90, '•', 12.9, 3.7], [16, 12, '✦', 10.8, 4.6], [18, 34, '•', 14.2, 1.9],
+    [20, 68, '✧', 12.2, 5.2], [22, 84, '•', 13.5, 2.8], [27, 6, '✦', 11.2, 6.1],
+    [29, 24, '•', 12.6, 3.3], [31, 78, '✧', 10.6, 4.9], [34, 94, '•', 11.8, 6.8],
+    [39, 14, '✦', 13.1, 1.1], [42, 30, '•', 12.4, 5.8], [44, 70, '✧', 11.5, 7.2],
+    [47, 88, '•', 13.9, 8.1], [53, 9, '✦', 12.7, 6.4], [55, 26, '•', 11.9, 9.5],
+    [57, 82, '✧', 13.3, 7.8], [61, 96, '•', 12.1, 10.4], [66, 16, '✦', 11.7, 8.8],
+    [68, 38, '•', 13.6, 11.1], [70, 74, '✧', 12.8, 12.2], [73, 91, '•', 14.1, 9.1],
+    [77, 8, '✦', 11.6, 13.4], [80, 28, '•', 12.9, 4.2], [82, 64, '✧', 13.7, 6.9],
+    [84, 86, '•', 11.3, 12.8], [88, 18, '✦', 12.2, 2.4], [91, 42, '•', 13.4, 10.8],
+    [92, 72, '✧', 11.9, 14.2], [6, 54, '•', 12.7, 15.1], [15, 48, '✦', 13.2, 8.7],
+    [24, 58, '•', 11.8, 13.7], [36, 4, '✧', 12.6, 11.6], [50, 95, '✦', 13.1, 15.8],
+    [64, 5, '•', 11.5, 5.5], [75, 55, '✧', 12.4, 16.4], [86, 58, '•', 13.9, 3.1],
+    [94, 9, '✦', 12.1, 17.2], [11, 4, '•', 14.3, 7.4], [89, 94, '✧', 11.7, 18.1]
+  ];
+  stars.forEach(([top, left, mark, duration, delay], index) => {
+    const star = document.createElement('span');
+    star.className = 'aurora-star';
+    star.textContent = mark;
+    star.style.setProperty('--star-top', `${top}%`);
+    star.style.setProperty('--star-left', `${left}%`);
+    star.style.setProperty('--star-duration', `${duration}s`);
+    star.style.setProperty('--star-delay', `${delay}s`);
+    star.style.setProperty('--star-drift', `${28 + (index % 4) * 8}px`);
+    scene.appendChild(star);
+  });
+  const meteors = [
+    [14, 76, 18, 1.5], [28, 94, 24, 8.2], [48, 82, 27, 14.6],
+    [68, 70, 31, 21.3], [22, 58, 29, 27.8]
+  ];
+  meteors.forEach(([top, left, duration, delay]) => {
+    const meteor = document.createElement('span');
+    meteor.className = 'aurora-meteor';
+    meteor.style.setProperty('--meteor-top', `${top}%`);
+    meteor.style.setProperty('--meteor-left', `${left}%`);
+    meteor.style.setProperty('--meteor-duration', `${duration}s`);
+    meteor.style.setProperty('--meteor-delay', `${delay}s`);
+    scene.appendChild(meteor);
+  });
+  scene.dataset.ready = 'true';
 }
 
 // 便於 router callback 直接取用最新 state 重繪。

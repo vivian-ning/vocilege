@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'vocilege-v12.5-20260709';
+const CACHE_VERSION = 'vocilege-v13.5-20260710';
 const APP_SHELL = [
   './',
   './index.html',

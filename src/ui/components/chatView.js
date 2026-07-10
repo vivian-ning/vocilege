@@ -21,7 +21,9 @@ import {
   selectCharacter,
   deleteGroupConversation,
   getConversationEcho,
-  rebuildConversationEcho
+  rebuildConversationEcho,
+  updateConversationChatBackground,
+  updateConversationChatBackgroundDim
 } from '../../state/store.js';
 import { usesMock } from '../../services/aiService.js';
 import { getObjectURL, saveImageAsset } from '../../services/assetService.js';
@@ -32,11 +34,15 @@ import { confirmDialog } from '../dialog.js';
 import { iconButton } from '../icons.js';
 import { createToggle } from '../toggle.js';
 
+const CHAT_BACKGROUND_MAX_BYTES = 2 * 1024 * 1024;
+
 export function renderChatView(container, state) {
   container.textContent = '';
 
   const character = state.characters.find((c) => c.id === state.currentCharacterId);
   const conversation = state.conversations.find((c) => c.id === state.currentConversationId);
+  applyChatBackground(container, state, conversation);
+  applyChatAuroraLayer(container);
   const isGroup = conversation && conversation.type === 'group';
   const groupMembers = isGroup
     ? (conversation.memberIds || [])
@@ -401,6 +407,7 @@ export function renderChatView(container, state) {
     addItem('成書（HTML）', () => exportConversationBook('html'));
     addItem('成書（Markdown）', () => exportConversationBook('markdown'));
     addItem('查看餘音', () => openEchoModal(conv));
+    addItem('聊天背景', () => openChatBackgroundDialog(state, conv, container));
     if (conv.type !== 'group') addItem('此對話的我', () => openPersonaPanel(conv), !!conv.playerPersona);
     if (conv.type === 'group') {
       addItem('刪除群聊', async () => {
@@ -518,6 +525,219 @@ export function renderChatView(container, state) {
     document.body.appendChild(overlay);
     alt.focus();
   }
+}
+
+function effectiveChatBackgroundAssetId(state, conversation) {
+  return (conversation && conversation.chatBackgroundAssetId) ||
+    (state.settings && state.settings.chatBackgroundAssetId) ||
+    null;
+}
+
+function effectiveChatBackgroundDim(state, conversation) {
+  const local = conversation && conversation.chatBackgroundDim;
+  if (typeof local === 'number' && Number.isFinite(local)) return normalizeDim(local);
+  return normalizeDim(state.settings && state.settings.chatBackgroundDim);
+}
+
+function normalizeDim(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 72;
+  return Math.min(90, Math.max(20, Math.floor(n)));
+}
+
+function applyChatBackground(container, state, conversation) {
+  const assetId = effectiveChatBackgroundAssetId(state, conversation);
+  const dim = effectiveChatBackgroundDim(state, conversation);
+  container.classList.remove('chat-bg-custom');
+  container.style.removeProperty('--custom-chat-bg-url');
+  container.style.removeProperty('--custom-chat-bg-id');
+  container.style.setProperty('--chat-bg-dim', `${dim}%`);
+  if (!assetId) return;
+  const expected = assetId;
+  getObjectURL(assetId).then((url) => {
+    if (!url) return;
+    if (!container.isConnected) return;
+    const current = container.style.getPropertyValue('--custom-chat-bg-id');
+    if (current && current !== expected) return;
+    container.style.setProperty('--custom-chat-bg-id', expected);
+    container.style.setProperty('--custom-chat-bg-url', `url("${url}")`);
+    container.classList.add('chat-bg-custom');
+  });
+  container.style.setProperty('--custom-chat-bg-id', expected);
+}
+
+function applyChatAuroraLayer(container) {
+  if (document.documentElement.getAttribute('data-theme') !== 'aurora-light') return;
+  const layer = document.createElement('div');
+  layer.className = 'chat-aurora-layer';
+  layer.setAttribute('aria-hidden', 'true');
+  for (let i = 0; i < 2; i += 1) {
+    const glow = document.createElement('span');
+    glow.className = `chat-aurora-glow chat-aurora-glow-${i + 1}`;
+    layer.appendChild(glow);
+  }
+  const stars = [
+    [8, 9, '✦', 10.8, .1], [12, 24, '•', 12.4, 1.3], [15, 72, '✧', 11.6, 2.1],
+    [20, 90, '•', 13.2, 3.4], [31, 12, '✦', 12.8, 4.2], [38, 78, '•', 10.9, 1.7],
+    [48, 20, '✧', 13.5, 5.1], [55, 92, '•', 11.8, 2.8], [64, 8, '✦', 12.1, 6.2],
+    [70, 34, '•', 13.1, 7.1], [75, 82, '✧', 11.4, 4.9], [84, 15, '•', 12.7, 8.3],
+    [88, 68, '✦', 13.8, 9.6], [24, 48, '•', 11.9, 10.4], [43, 58, '✧', 12.5, 11.2],
+    [59, 46, '•', 13.4, 12.1], [78, 52, '✦', 11.7, 13.6], [92, 90, '•', 12.9, 14.2]
+  ];
+  stars.forEach(([top, left, mark, duration, delay], index) => {
+    const star = document.createElement('span');
+    star.className = 'chat-aurora-star';
+    star.textContent = mark;
+    star.style.setProperty('--star-top', `${top}%`);
+    star.style.setProperty('--star-left', `${left}%`);
+    star.style.setProperty('--star-duration', `${duration}s`);
+    star.style.setProperty('--star-delay', `${delay}s`);
+    star.style.setProperty('--star-drift', `${18 + (index % 3) * 9}px`);
+    layer.appendChild(star);
+  });
+  container.appendChild(layer);
+}
+
+function openChatBackgroundDialog(state, conversation, chatContainer) {
+  if (!conversation) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const modal = document.createElement('div');
+  modal.className = 'modal chat-bg-modal';
+
+  const title = document.createElement('h2');
+  title.className = 'modal-title';
+  title.textContent = '聊天背景';
+  modal.appendChild(title);
+
+  const hint = document.createElement('p');
+  hint.className = 'form-hint';
+  hint.textContent = '此設定只影響目前聊天室；清除後會回到全域或主題預設。';
+  modal.appendChild(hint);
+
+  const preview = document.createElement('div');
+  preview.className = 'chat-bg-preview';
+  const previewText = document.createElement('span');
+  previewText.textContent = conversation.chatBackgroundAssetId ? '讀取中…' : '跟隨全域或主題';
+  preview.appendChild(previewText);
+  modal.appendChild(preview);
+  if (conversation.chatBackgroundAssetId) {
+    getObjectURL(conversation.chatBackgroundAssetId).then((url) => {
+      if (!url || !preview.isConnected) {
+        previewText.textContent = '找不到圖片，聊天會回到全域或主題';
+        return;
+      }
+      previewText.textContent = '';
+      preview.style.backgroundImage = `url("${url}")`;
+      preview.classList.add('has-image');
+    });
+  }
+
+  const file = document.createElement('input');
+  file.type = 'file';
+  file.accept = 'image/*';
+  file.className = 'file-input';
+  modal.appendChild(file);
+
+  const dim = effectiveChatBackgroundDim(state, conversation);
+  const dimValue = document.createElement('span');
+  dimValue.className = 'range-value';
+  dimValue.textContent = conversation.chatBackgroundDim == null ? `${dim}%（跟隨全域）` : `${dim}%`;
+  const dimInput = document.createElement('input');
+  dimInput.type = 'range';
+  dimInput.min = '20';
+  dimInput.max = '90';
+  dimInput.step = '1';
+  dimInput.value = String(dim);
+  dimInput.className = 'form-range';
+  dimInput.addEventListener('input', () => {
+    const value = normalizeDim(dimInput.value);
+    dimValue.textContent = `${value}%`;
+    preview.style.setProperty('--preview-chat-bg-dim', `${value}%`);
+    chatContainer.style.setProperty('--chat-bg-dim', `${value}%`);
+  });
+  dimInput.addEventListener('change', async () => {
+    await updateConversationChatBackgroundDim(conversation.id, normalizeDim(dimInput.value));
+  });
+  const dimField = personaField('淡化程度', 'input', '', '');
+  dimField.el.textContent = '';
+  const dimLabel = document.createElement('span');
+  dimLabel.className = 'form-label';
+  dimLabel.textContent = '淡化程度';
+  dimLabel.appendChild(dimValue);
+  dimField.el.appendChild(dimLabel);
+  dimField.el.appendChild(dimInput);
+  modal.appendChild(dimField.el);
+
+  const actions = document.createElement('div');
+  actions.className = 'form-actions';
+  const upload = document.createElement('button');
+  upload.type = 'button';
+  upload.className = 'btn btn-primary';
+  upload.textContent = '上傳圖片';
+  upload.addEventListener('click', () => file.click());
+  actions.appendChild(upload);
+
+  const clear = document.createElement('button');
+  clear.type = 'button';
+  clear.className = 'btn';
+  clear.textContent = '清除背景';
+  clear.disabled = !conversation.chatBackgroundAssetId;
+  clear.addEventListener('click', async () => {
+    await updateConversationChatBackground(conversation.id, null);
+    close();
+  });
+  actions.appendChild(clear);
+
+  const followGlobal = document.createElement('button');
+  followGlobal.type = 'button';
+  followGlobal.className = 'btn';
+  followGlobal.textContent = '跟隨全域淡化';
+  followGlobal.disabled = conversation.chatBackgroundDim == null;
+  followGlobal.addEventListener('click', async () => {
+    await updateConversationChatBackgroundDim(conversation.id, null);
+    close();
+  });
+  actions.appendChild(followGlobal);
+
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'btn';
+  cancel.textContent = '關閉';
+  cancel.addEventListener('click', close);
+  actions.appendChild(cancel);
+  modal.appendChild(actions);
+
+  file.addEventListener('change', async () => {
+    const selected = file.files && file.files[0];
+    file.value = '';
+    if (!selected) return;
+    if (selected.size > CHAT_BACKGROUND_MAX_BYTES) {
+      showToast('聊天背景圖片需小於 2MB');
+      return;
+    }
+    upload.disabled = true;
+    try {
+      const nextAssetId = await saveImageAsset(selected, 'chatBackground', 1600);
+      await updateConversationChatBackground(conversation.id, nextAssetId);
+      showToast('聊天背景已更新');
+      close();
+    } catch (err) {
+      showToast('聊天背景上傳失敗');
+    } finally {
+      upload.disabled = false;
+    }
+  });
+
+  function close() {
+    if (overlay.parentNode) document.body.removeChild(overlay);
+  }
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) close();
+  });
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  dimInput.focus();
 }
 
 function findLastCharacterMessageId(messages) {

@@ -63,6 +63,14 @@ export function validateBackup(data) {
       if ('weeklyReviewCharacterId' in s.settings && typeof s.settings.weeklyReviewCharacterId !== 'string') {
         errors.push('state.settings.weeklyReviewCharacterId 應為字串');
       }
+      if ('chatBackgroundAssetId' in s.settings &&
+          s.settings.chatBackgroundAssetId !== null &&
+          typeof s.settings.chatBackgroundAssetId !== 'string') {
+        errors.push('state.settings.chatBackgroundAssetId 應為字串或 null');
+      }
+      if ('chatBackgroundDim' in s.settings && typeof s.settings.chatBackgroundDim !== 'number') {
+        errors.push('state.settings.chatBackgroundDim 應為數字');
+      }
     }
     if ('apiSettings' in s && !isObject(s.apiSettings)) {
       errors.push('state.apiSettings 應為物件');
@@ -136,6 +144,16 @@ export function validateBackup(data) {
             if ('dirty' in c.echo && typeof c.echo.dirty !== 'boolean') errors.push(`conversations[${i}].echo.dirty 應為布林值`);
             if ('updatedAt' in c.echo && typeof c.echo.updatedAt !== 'number') errors.push(`conversations[${i}].echo.updatedAt 應為數字`);
           }
+        }
+        if ('chatBackgroundAssetId' in c &&
+            c.chatBackgroundAssetId !== null &&
+            typeof c.chatBackgroundAssetId !== 'string') {
+          errors.push(`conversations[${i}].chatBackgroundAssetId 應為字串或 null`);
+        }
+        if ('chatBackgroundDim' in c &&
+            c.chatBackgroundDim !== null &&
+            typeof c.chatBackgroundDim !== 'number') {
+          errors.push(`conversations[${i}].chatBackgroundDim 應為數字或 null`);
         }
       });
     }

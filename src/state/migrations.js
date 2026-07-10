@@ -10,7 +10,7 @@
 
 import { createDefaultEcho, createExampleGlobalPrompt } from './schema.js';
 
-export const CURRENT_SCHEMA_VERSION = 16;
+export const CURRENT_SCHEMA_VERSION = 18;
 
 const DEFAULT_VIGIL = {
   enabled: false,
@@ -370,6 +370,52 @@ const migrators = {
       });
     }
     s.schemaVersion = 16;
+    return s;
+  },
+
+  // v16 -> v17（V13 極光之境 + 聲景）：
+  //   - settings.theme 合法值加入 aurora；非法值照既有慣例 fallback blue
+  //   - settings.chatBackgroundAssetId 預設 null（null = 使用主題預設聊天背景）
+  16: (s) => {
+    const settings = (s.settings && typeof s.settings === 'object') ? { ...s.settings } : {};
+    if (settings.theme === 'brown') {
+      settings.theme = 'violet';
+    } else if (!['blue', 'pink', 'green', 'violet', 'aurora'].includes(settings.theme)) {
+      settings.theme = 'blue';
+    }
+    if (settings.themeMode !== 'dark' && settings.themeMode !== 'light') settings.themeMode = 'light';
+    if (typeof settings.chatBackgroundAssetId !== 'string') settings.chatBackgroundAssetId = null;
+    s.settings = settings;
+    s.schemaVersion = 17;
+    return s;
+  },
+
+  // v17 -> v18（V13.5 每聊天室聲景 + 淡化）：
+  //   - settings.chatBackgroundDim 預設 72
+  //   - conversations 補 chatBackgroundAssetId / chatBackgroundDim
+  17: (s) => {
+    const settings = (s.settings && typeof s.settings === 'object') ? { ...s.settings } : {};
+    if (typeof settings.chatBackgroundDim !== 'number' || !Number.isFinite(settings.chatBackgroundDim)) {
+      settings.chatBackgroundDim = 72;
+    }
+    settings.chatBackgroundDim = Math.min(90, Math.max(20, Math.floor(settings.chatBackgroundDim)));
+    s.settings = settings;
+    if (Array.isArray(s.conversations)) {
+      s.conversations = s.conversations.map((conversation) => {
+        if (!conversation || typeof conversation !== 'object') return conversation;
+        return {
+          ...conversation,
+          chatBackgroundAssetId: typeof conversation.chatBackgroundAssetId === 'string'
+            ? conversation.chatBackgroundAssetId
+            : null,
+          chatBackgroundDim: typeof conversation.chatBackgroundDim === 'number' &&
+            Number.isFinite(conversation.chatBackgroundDim)
+            ? Math.min(90, Math.max(20, Math.floor(conversation.chatBackgroundDim)))
+            : null
+        };
+      });
+    }
+    s.schemaVersion = 18;
     return s;
   },
 };

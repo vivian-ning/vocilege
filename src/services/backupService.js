@@ -18,14 +18,18 @@ import { getState, getConfig, saveCurrentState, resetToState, markBackupDone } f
 import { blobToBase64, base64ToBlob } from './assetService.js';
 import { dateStamp } from '../utils/time.js';
 
-// 收集 state 內所有 image 型頭貼引用到的 assetId（角色 + 玩家）。
-function collectAvatarAssetIds(state) {
+// 收集一般封聲備份需要內嵌的圖片 assetId（頭貼 + 聊天聲景）。
+function collectBackupAssetIds(state) {
   const ids = new Set();
   const add = (avatar) => {
     if (avatar && avatar.type === 'image' && avatar.assetId) ids.add(avatar.assetId);
   };
   for (const c of (state.characters || [])) add(c && c.avatar);
   add(state.player && state.player.avatar);
+  if (state.settings && state.settings.chatBackgroundAssetId) ids.add(state.settings.chatBackgroundAssetId);
+  for (const conversation of (state.conversations || [])) {
+    if (conversation && conversation.chatBackgroundAssetId) ids.add(conversation.chatBackgroundAssetId);
+  }
   return [...ids];
 }
 
@@ -71,7 +75,7 @@ export async function buildBackupPayload() {
   const allMessages = await getAllMessages();
   const exportState = sanitizeStateForBackup(state);
   const avatarAssets = [];
-  for (const id of collectAvatarAssetIds(state)) {
+  for (const id of collectBackupAssetIds(state)) {
     const asset = await getAsset(id);
     if (asset && asset.blob) {
       avatarAssets.push({
@@ -246,6 +250,19 @@ export async function importData(rawText) {
   if (nextState.player) {
     nextState.player = { ...nextState.player, avatar: fallbackMissingAvatar(nextState.player.avatar) };
   }
+  if (nextState.settings &&
+      typeof nextState.settings.chatBackgroundAssetId === 'string' &&
+      !presentIds.has(nextState.settings.chatBackgroundAssetId)) {
+    nextState.settings = { ...nextState.settings, chatBackgroundAssetId: null };
+  }
+  nextState.conversations = (nextState.conversations || []).map((conversation) => {
+    if (!conversation || typeof conversation !== 'object') return conversation;
+    if (typeof conversation.chatBackgroundAssetId === 'string' &&
+        !presentIds.has(conversation.chatBackgroundAssetId)) {
+      return { ...conversation, chatBackgroundAssetId: null };
+    }
+    return conversation;
+  });
 
   const nextMessages = Array.isArray(data.messages) ? data.messages : [];
 

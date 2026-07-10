@@ -156,7 +156,14 @@ export function createDefaultState(config) {
       weeklyReviewEnabled: defaultSettings.weeklyReviewEnabled === true,
       weeklyReviewCharacterId: typeof defaultSettings.weeklyReviewCharacterId === 'string'
         ? defaultSettings.weeklyReviewCharacterId
-        : ''
+        : '',
+      // V13：聲景，null = 使用主題預設聊天背景。
+      chatBackgroundAssetId: typeof defaultSettings.chatBackgroundAssetId === 'string'
+        ? defaultSettings.chatBackgroundAssetId
+        : null,
+      chatBackgroundDim: typeof defaultSettings.chatBackgroundDim === 'number'
+        ? Math.min(90, Math.max(20, Math.floor(defaultSettings.chatBackgroundDim)))
+        : 72
     },
     apiSettings: {
       provider: '',
@@ -357,8 +364,15 @@ export function normalizeState(state) {
   merged.apiSettings.thinkingBudget = Math.max(1024, Math.floor(merged.apiSettings.thinkingBudget));
 
   if (merged.settings.theme === 'brown') merged.settings.theme = 'violet';
-  if (!['blue', 'pink', 'green', 'violet'].includes(merged.settings.theme)) merged.settings.theme = 'blue';
+  if (!['blue', 'pink', 'green', 'violet', 'aurora'].includes(merged.settings.theme)) merged.settings.theme = 'blue';
   merged.settings.themeMode = merged.settings.themeMode === 'dark' ? 'dark' : 'light';
+  merged.settings.chatBackgroundAssetId = typeof merged.settings.chatBackgroundAssetId === 'string'
+    ? merged.settings.chatBackgroundAssetId
+    : null;
+  merged.settings.chatBackgroundDim = typeof merged.settings.chatBackgroundDim === 'number' &&
+    Number.isFinite(merged.settings.chatBackgroundDim)
+    ? Math.min(90, Math.max(20, Math.floor(merged.settings.chatBackgroundDim)))
+    : 72;
 
   if (typeof merged.lastOpenedAt !== 'number') merged.lastOpenedAt = 0;
   if (typeof merged.lastGreetingAt !== 'number') merged.lastGreetingAt = 0;
@@ -398,7 +412,11 @@ export function normalizeState(state) {
       memberIds: memberIds.length ? normalizedMemberIds : ['player'].concat(c.primaryCharacterId ? [c.primaryCharacterId] : []),
       primaryCharacterId: type === 'group' ? null : (typeof c.primaryCharacterId === 'string' ? c.primaryCharacterId : ''),
       lastDreamMessageCount: typeof c.lastDreamMessageCount === 'number' ? c.lastDreamMessageCount : 0,
-      echo: normalizeEcho(c.echo)
+      echo: normalizeEcho(c.echo),
+      chatBackgroundAssetId: typeof c.chatBackgroundAssetId === 'string' ? c.chatBackgroundAssetId : null,
+      chatBackgroundDim: typeof c.chatBackgroundDim === 'number' && Number.isFinite(c.chatBackgroundDim)
+        ? Math.min(90, Math.max(20, Math.floor(c.chatBackgroundDim)))
+        : null
     };
     return normalized;
   });
