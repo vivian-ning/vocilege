@@ -31,10 +31,12 @@ const PROVIDER_OPTIONS = [
 const CUSTOM_MODEL = '__custom__';
 const PROVIDER_MODELS = {
   anthropic: ['claude-opus-4-8', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-fable-5'],
-  'openai-compatible': ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'o3', 'o4-mini'],
+  'openai-compatible': ['sonnet', 'gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'o3', 'o4-mini'],
   gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
   '': []
 };
+
+const LOCAL_BRIDGE_BASE_URL = 'http://127.0.0.1:8787/v1';
 
 export function renderApiSettingsEditor(container, state) {
   container.textContent = '';
@@ -43,6 +45,38 @@ export function renderApiSettingsEditor(container, state) {
 
   const form = document.createElement('form');
   form.className = 'char-form';
+
+  const bridgeTools = document.createElement('div');
+  bridgeTools.className = 'api-bridge-tools';
+
+  const useBridgeBtn = document.createElement('button');
+  useBridgeBtn.type = 'button';
+  useBridgeBtn.className = 'btn';
+  useBridgeBtn.textContent = '使用拾聲橋（本機）';
+  bridgeTools.appendChild(useBridgeBtn);
+
+  const bridgeStatus = document.createElement('div');
+  bridgeStatus.className = 'api-bridge-status';
+  bridgeStatus.setAttribute('role', 'status');
+  bridgeStatus.setAttribute('aria-live', 'polite');
+
+  const bridgeDot = document.createElement('span');
+  bridgeDot.className = 'api-bridge-dot';
+  bridgeDot.setAttribute('aria-hidden', 'true');
+  bridgeStatus.appendChild(bridgeDot);
+
+  const bridgeText = document.createElement('span');
+  bridgeText.className = 'api-bridge-text';
+  bridgeStatus.appendChild(bridgeText);
+
+  const bridgeCheckBtn = document.createElement('button');
+  bridgeCheckBtn.type = 'button';
+  bridgeCheckBtn.className = 'btn api-bridge-check';
+  bridgeCheckBtn.textContent = '重新檢查';
+  bridgeStatus.appendChild(bridgeCheckBtn);
+  bridgeTools.appendChild(bridgeStatus);
+
+  form.appendChild(bridgeTools);
 
   // provider（下拉）
   const providerSel = document.createElement('select');
@@ -78,7 +112,9 @@ export function renderApiSettingsEditor(container, state) {
   providerSel.addEventListener('change', () => {
     syncBaseUrlPlaceholder();
     modelControl.repopulate(providerSel.value);
+    scheduleBridgeCheck();
   });
+  baseUrlInput.addEventListener('input', () => scheduleBridgeCheck());
 
   // apiKey（password）
   const apiKeyInput = document.createElement('input');
@@ -87,7 +123,13 @@ export function renderApiSettingsEditor(container, state) {
   apiKeyInput.value = api.apiKey || '';
   apiKeyInput.placeholder = '貼上 API 金鑰或橋通行碼';
   apiKeyInput.autocomplete = 'off';
-  form.appendChild(wrapField('API 金鑰／橋通行碼 (apiKey)', apiKeyInput));
+  const apiKeyField = wrapField('API 金鑰／橋通行碼 (apiKey)', apiKeyInput);
+  const bridgeKeyHint = document.createElement('span');
+  bridgeKeyHint.className = 'gp-desc api-field-desc api-bridge-key-hint';
+  bridgeKeyHint.hidden = true;
+  bridgeKeyHint.textContent = '橋沒設通行碼填 local；設了通行碼就填 bridge-config.json 的 authToken（設定精靈的小卡上有）';
+  apiKeyField.appendChild(bridgeKeyHint);
+  form.appendChild(apiKeyField);
 
   const rememberToggle = createToggle({
     checked: !!api.rememberApiKey,
@@ -224,6 +266,68 @@ export function renderApiSettingsEditor(container, state) {
     maxTokens: Math.max(1, Math.round(clampNum(maxTokInput.value, 1, 1000000, 2048)))
   });
 
+  let bridgeTimer = null;
+  let bridgeCheckSeq = 0;
+
+  function setBridgeStatus(kind, text) {
+    bridgeStatus.dataset.state = kind;
+    bridgeText.textContent = text;
+    bridgeCheckBtn.disabled = kind === 'checking';
+  }
+
+  function syncBridgeStatusVisibility() {
+    const visible = looksLikeBridge(providerSel.value, baseUrlInput.value.trim());
+    bridgeStatus.hidden = !visible;
+    return visible;
+  }
+
+  async function runBridgeCheck() {
+    if (!syncBridgeStatusVisibility()) return;
+    const currentSeq = ++bridgeCheckSeq;
+    setBridgeStatus('checking', '檢查中…');
+    try {
+      const ok = await checkVocilegeBridgeHealth(baseUrlInput.value.trim());
+      if (currentSeq !== bridgeCheckSeq) return;
+      setBridgeStatus(ok ? 'ok' : 'offline', ok
+        ? '拾聲橋在線'
+        : '連不到拾聲橋——先雙擊 Launcher 的「拾聲-啟動」再按重新檢查');
+    } catch (_) {
+      if (currentSeq !== bridgeCheckSeq) return;
+      setBridgeStatus('offline', '連不到拾聲橋——先雙擊 Launcher 的「拾聲-啟動」再按重新檢查');
+    }
+  }
+
+  function scheduleBridgeCheck(delay = 600) {
+    syncBridgeStatusVisibility();
+    if (bridgeTimer) window.clearTimeout(bridgeTimer);
+    bridgeTimer = window.setTimeout(() => {
+      bridgeTimer = null;
+      runBridgeCheck();
+    }, delay);
+  }
+
+  bridgeCheckBtn.addEventListener('click', () => {
+    if (bridgeTimer) {
+      window.clearTimeout(bridgeTimer);
+      bridgeTimer = null;
+    }
+    runBridgeCheck();
+  });
+
+  useBridgeBtn.addEventListener('click', () => {
+    const currentModel = modelControl.getValue();
+    providerSel.value = 'openai-compatible';
+    providerSel.dispatchEvent(new Event('change'));
+    baseUrlInput.value = LOCAL_BRIDGE_BASE_URL;
+    modelControl.setValue(
+      'openai-compatible',
+      isLegalModelForProvider('openai-compatible', currentModel) ? currentModel : 'sonnet'
+    );
+    bridgeKeyHint.hidden = false;
+    apiKeyInput.focus();
+    scheduleBridgeCheck(0);
+  });
+
   // 動作列：儲存 + 測試連線
   const actions = document.createElement('div');
   actions.className = 'form-actions';
@@ -273,6 +377,7 @@ export function renderApiSettingsEditor(container, state) {
   });
 
   container.appendChild(form);
+  scheduleBridgeCheck(0);
 
   // ---- 累計 token 用量（從所有 message.usage 加總）----
   const usageBox = document.createElement('div');
@@ -294,6 +399,97 @@ export function renderApiSettingsEditor(container, state) {
   note.className = 'form-hint';
   note.textContent = '未設定 provider 或未填金鑰時，聊天會使用內建模擬回覆。瀏覽器直連 API 代表金鑰會出現在本機的網路請求中，這是個人本機工具的預期行為；共用電腦請勿勾選「記住金鑰」。';
   container.appendChild(note);
+}
+
+function looksLikeBridge(provider, baseUrl) {
+  if (provider !== 'openai-compatible') return false;
+  const parsed = parseUrl(baseUrl);
+  if (!parsed) return false;
+  const host = parsed.hostname.toLowerCase();
+  return host === '127.0.0.1' || host === 'localhost' || host.endsWith('.ts.net');
+}
+
+function parseUrl(value) {
+  try {
+    return new URL(value);
+  } catch (_) {
+    return null;
+  }
+}
+
+function buildBridgeHealthUrl(baseUrl) {
+  const url = parseUrl(baseUrl);
+  if (!url) return '';
+  url.pathname = url.pathname.replace(/\/+$/, '').replace(/\/v1$/i, '') + '/health';
+  url.search = '';
+  url.hash = '';
+  return url.toString();
+}
+
+// /health 是拾聲橋的本機狀態檢查，不是 AI 生成請求；因此允許直接 fetch，
+// 但集中在這個小函式，避免新增任何 aiService 之外的模型呼叫路徑。
+async function checkVocilegeBridgeHealth(baseUrl) {
+  const healthUrl = buildBridgeHealthUrl(baseUrl);
+  if (!healthUrl) return false;
+  if (typeof Worker !== 'undefined' && window.URL && window.Blob) {
+    return checkBridgeHealthInWorker(healthUrl);
+  }
+  return checkBridgeHealthWithFetch(healthUrl);
+}
+
+function checkBridgeHealthInWorker(healthUrl) {
+  return new Promise((resolve) => {
+    const workerCode = `
+      self.onmessage = async (event) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 3000);
+        try {
+          const res = await fetch(event.data, { method: 'GET', signal: controller.signal });
+          const data = res.ok ? await res.json().catch(() => null) : null;
+          self.postMessage(!!data && data.service === 'vocilege-bridge');
+        } catch (_) {
+          self.postMessage(false);
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+    `;
+    const blobUrl = URL.createObjectURL(new Blob([workerCode], { type: 'text/javascript' }));
+    const worker = new Worker(blobUrl);
+    const finish = (ok) => {
+      worker.terminate();
+      URL.revokeObjectURL(blobUrl);
+      resolve(ok === true);
+    };
+    const timer = window.setTimeout(() => finish(false), 3500);
+    worker.onmessage = (event) => {
+      window.clearTimeout(timer);
+      finish(event.data);
+    };
+    worker.onerror = () => {
+      window.clearTimeout(timer);
+      finish(false);
+    };
+    worker.postMessage(healthUrl);
+  });
+}
+
+async function checkBridgeHealthWithFetch(healthUrl) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 3000);
+  try {
+    const res = await fetch(healthUrl, {
+      method: 'GET',
+      signal: controller.signal
+    });
+    if (!res.ok) return false;
+    const data = await res.json().catch(() => null);
+    return !!data && data.service === 'vocilege-bridge';
+  } catch (_) {
+    return false;
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
 async function loadCumulativeUsage() {
@@ -387,8 +583,14 @@ function buildModelControl(initialModel, initialProvider) {
     wrap,
     getValue: currentValue,
     // provider 變更時重新帶出該 provider 的預設清單（不沿用舊型號）。
-    repopulate: (provider) => populate(provider, '')
+    repopulate: (provider) => populate(provider, ''),
+    setValue: (provider, model) => populate(provider, model)
   };
+}
+
+function isLegalModelForProvider(provider, model) {
+  const list = PROVIDER_MODELS[provider] || [];
+  return !!model && list.includes(model);
 }
 
 function textInput(value, placeholder) {

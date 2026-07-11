@@ -1558,6 +1558,65 @@ button { touch-action: manipulation; }
 .form-actions { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
 .form-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .api-field-desc { display: block; margin-top: 6px; }
+.api-bridge-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 2px;
+}
+.api-bridge-status {
+  min-height: 44px;
+  min-width: 0;
+  flex: 1 1 280px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-s);
+  background: var(--surface-2);
+  padding: 6px 8px 6px 12px;
+}
+.api-bridge-status[hidden] { display: none; }
+.api-bridge-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--muted);
+  opacity: .72;
+}
+.api-bridge-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+.api-bridge-check {
+  min-height: 34px;
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.api-bridge-status[data-state="ok"] {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 42%, var(--border));
+  background: color-mix(in srgb, var(--ok) 7%, var(--surface));
+}
+.api-bridge-status[data-state="ok"] .api-bridge-dot {
+  background: var(--ok);
+  opacity: 1;
+}
+.api-bridge-status[data-state="checking"] .api-bridge-dot {
+  background: var(--muted);
+  opacity: .48;
+}
+.api-bridge-status[data-state="offline"] .api-bridge-dot {
+  background: var(--muted);
+  opacity: .78;
+}
 
 .form-check { flex-direction: row; align-items: flex-start; gap: 8px; }
 .form-check input[type="checkbox"] { margin-top: 3px; flex: 0 0 auto; accent-color: var(--primary); }
@@ -2998,6 +3057,18 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 @media (max-width: 420px) {
   .settings-page, .home-page, .character-page { padding-left: 12px; padding-right: 12px; }
   .settings-card { padding: 13px; border-radius: var(--r-m); }
+  .api-bridge-tools { align-items: stretch; }
+  .api-bridge-tools > .btn,
+  .api-bridge-status {
+    width: 100%;
+  }
+  .api-bridge-status {
+    flex: 1 1 100%;
+    align-items: flex-start;
+  }
+  .api-bridge-check {
+    margin-left: auto;
+  }
   .chat-input { min-width: 0; padding-left: 12px; padding-right: 12px; }
   .chat-send { flex-basis: 44px; }
   .sticker-picker-grid, .sticker-admin-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
