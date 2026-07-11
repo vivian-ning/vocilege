@@ -20,12 +20,14 @@ import { getRoute, navigate } from './router.js';
 import { selectCharacter, selectConversation, getState } from '../state/store.js';
 import { createWaveBars } from './wave.js';
 import { createIcon } from './icons.js';
+import { getObjectURL } from '../services/assetService.js';
 
 let refs = null;
 let appName = 'Vocilège';
 let appNameLatin = '';
 let toastReady = false;
 let resizeReady = false;
+let appearancePreviewReady = false;
 
 export function setAppName(name, latin) {
   if (name) appName = name;
@@ -39,10 +41,20 @@ export function mountLayout(root, state) {
 
   applyTheme(state.settings.theme, state.settings.themeMode);
 
+  const appBackground = document.createElement('div');
+  appBackground.className = 'app-background-scene';
+  appBackground.setAttribute('aria-hidden', 'true');
+  root.appendChild(appBackground);
+
   const aurora = document.createElement('div');
   aurora.className = 'aurora-scene';
   aurora.setAttribute('aria-hidden', 'true');
   root.appendChild(aurora);
+
+  const particles = document.createElement('div');
+  particles.className = 'particle-scene';
+  particles.setAttribute('aria-hidden', 'true');
+  root.appendChild(particles);
 
   const nav = document.createElement('nav');
   nav.className = 'top-nav';
@@ -57,10 +69,13 @@ export function mountLayout(root, state) {
   bottomNav.setAttribute('aria-label', '底部導航');
   root.appendChild(bottomNav);
 
-  refs = { root, aurora, nav, bottomNav, content };
+  refs = { root, appBackground, aurora, particles, nav, bottomNav, content };
+  applyAppearance(state);
   syncAuroraScene(state.settings.theme, state.settings.themeMode);
+  syncParticleScene(state);
   installToastHost(root);
   installResizeRerender();
+  installAppearancePreview();
   return refs;
 }
 
@@ -104,10 +119,45 @@ function installResizeRerender() {
   });
 }
 
+function installAppearancePreview() {
+  if (appearancePreviewReady) return;
+  appearancePreviewReady = true;
+  window.addEventListener('vocilege:appearance-preview', (event) => {
+    if (!refs || !event || !event.detail) return;
+    const state = getState();
+    if (!state) return;
+    const currentAppearance = appearanceOf(state);
+    const previewAppearance = {
+      ...currentAppearance,
+      ...event.detail
+    };
+    if (event.detail.particles) {
+      previewAppearance.particles = {
+        ...((currentAppearance && currentAppearance.particles) || {}),
+        ...event.detail.particles
+      };
+    }
+    if ('appBackgroundDim' in event.detail) {
+      syncAppBackground(previewAppearance);
+    }
+    if (event.detail.particles) {
+      syncParticleScene({
+        ...state,
+        settings: {
+          ...state.settings,
+          appearance: previewAppearance
+        }
+      });
+    }
+  });
+}
+
 export function render(state) {
   if (!refs) return;
   applyTheme(state.settings.theme, state.settings.themeMode);
+  applyAppearance(state);
   syncAuroraScene(state.settings.theme, state.settings.themeMode);
+  syncParticleScene(state);
 
   const route = getRoute();
   renderNav(refs.nav, route, state);
@@ -309,6 +359,48 @@ function applyTheme(theme, themeMode) {
   document.documentElement.setAttribute('data-theme', `${palette}-${mode}`);
 }
 
+function appearanceOf(state) {
+  return (state && state.settings && state.settings.appearance) || {};
+}
+
+function applyAppearance(state) {
+  const appearance = appearanceOf(state);
+  const root = document.documentElement;
+  root.setAttribute('data-bubble-style', appearance.bubbleStyle === 'classic' ? 'classic' : 'paper');
+  root.setAttribute('data-corner-scale', ['soft', 'crisp'].includes(appearance.cornerScale) ? appearance.cornerScale : 'standard');
+  root.setAttribute('data-display-font', appearance.displayFont === 'sans' ? 'sans' : 'serif');
+  syncAppBackground(appearance);
+}
+
+function syncAppBackground(appearance) {
+  if (!refs || !refs.appBackground) return;
+  const scene = refs.appBackground;
+  const assetId = appearance && typeof appearance.appBackgroundAssetId === 'string'
+    ? appearance.appBackgroundAssetId
+    : '';
+  const dim = normalizeDim(appearance && appearance.appBackgroundDim);
+  scene.style.setProperty('--app-bg-dim', `${dim}%`);
+  scene.classList.remove('has-image');
+  scene.style.removeProperty('--app-bg-url');
+  scene.style.removeProperty('--app-bg-id');
+  if (!assetId) return;
+  const expected = assetId;
+  scene.style.setProperty('--app-bg-id', expected);
+  getObjectURL(assetId).then((url) => {
+    if (!url || !scene.isConnected) return;
+    const current = scene.style.getPropertyValue('--app-bg-id');
+    if (current && current !== expected) return;
+    scene.style.setProperty('--app-bg-url', `url("${url}")`);
+    scene.classList.add('has-image');
+  });
+}
+
+function normalizeDim(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 72;
+  return Math.min(90, Math.max(20, Math.floor(n)));
+}
+
 function syncAuroraScene(theme, themeMode) {
   if (!refs || !refs.aurora) return;
   const { palette } = effectiveTheme(theme, themeMode);
@@ -328,8 +420,122 @@ function syncAuroraScene(theme, themeMode) {
     glow.className = `aurora-glow aurora-glow-${i + 1}`;
     scene.appendChild(glow);
   }
+  scene.dataset.ready = 'true';
+}
 
-  const stars = [
+function syncParticleScene(state) {
+  if (!refs || !refs.particles) return;
+  const appearance = appearanceOf(state);
+  const particles = appearance.particles || {};
+  const key = [
+    particles.kind || 'none',
+    particles.density || 2,
+    particles.speed || 2,
+    particles.size || 2
+  ].join(':');
+  const scene = refs.particles;
+  if (scene.dataset.key === key) return;
+  scene.textContent = '';
+  scene.dataset.key = key;
+  const next = particleScene(particles.kind, particles.density, particles.speed, particles.size);
+  if (next) scene.appendChild(next);
+}
+
+function particleScene(kind, density = 2, speed = 2, size = 2) {
+  const particleKind = ['stars', 'sakura', 'snow', 'rain', 'fireflies', 'bubbles'].includes(kind) ? kind : 'none';
+  if (particleKind === 'none') return null;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return null;
+  const wrap = document.createElement('div');
+  wrap.className = `particle-layer particle-${particleKind}`;
+  wrap.dataset.kind = particleKind;
+  wrap.style.setProperty('--particle-size-scale', String([0.78, 1, 1.24][clampLevel(size) - 1]));
+  wrap.style.setProperty('--particle-speed-scale', String([1.32, 1, 0.72][clampLevel(speed) - 1]));
+  if (particleKind === 'stars') {
+    buildStarParticles(wrap, clampLevel(density));
+    return wrap;
+  }
+  const counts = particleKind === 'rain' ? [28, 54, 80] : [22, 42, 60];
+  const count = counts[clampLevel(density) - 1];
+  for (let i = 0; i < count; i += 1) {
+    const node = document.createElement('span');
+    node.className = `particle-item ${particleKind}-item`;
+    const seed = pseudoRandom(i + particleKind.length * 97);
+    node.style.setProperty('--p-left', `${Math.round(seed * 10000) / 100}%`);
+    node.style.setProperty('--p-delay', `${Math.round(pseudoRandom(i + 17) * 900) / 100}s`);
+    node.style.setProperty('--p-duration', `${particleDuration(particleKind, i)}s`);
+    node.style.setProperty('--p-drift', `${Math.round((pseudoRandom(i + 31) * 80) - 40)}px`);
+    node.style.setProperty('--p-top', `${Math.round(pseudoRandom(i + 43) * 100)}%`);
+    if (particleKind === 'sakura') node.textContent = ['•', '✦', '·'][i % 3];
+    wrap.appendChild(node);
+  }
+  return wrap;
+}
+
+function clampLevel(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 2;
+  return Math.min(3, Math.max(1, Math.floor(n)));
+}
+
+function pseudoRandom(seed) {
+  const x = Math.sin(seed * 999) * 10000;
+  return x - Math.floor(x);
+}
+
+function particleDuration(kind, index) {
+  const base = {
+    sakura: 13,
+    snow: 11,
+    rain: 2.2,
+    fireflies: 9.5,
+    bubbles: 12
+  }[kind] || 10;
+  return Math.round((base + (index % 7) * (kind === 'rain' ? 0.18 : 0.8)) * 10) / 10;
+}
+
+function buildStarParticles(wrap, density) {
+  const starCount = [22, 42, 60][density - 1];
+  const meteorCount = [3, 5, 7][density - 1];
+  const stars = baseStarData();
+  while (stars.length < starCount) {
+    const i = stars.length;
+    stars.push([
+      Math.round(pseudoRandom(i + 101) * 96),
+      Math.round(pseudoRandom(i + 211) * 96),
+      ['✦', '•', '✧'][i % 3],
+      10.8 + (i % 5) * 0.8,
+      (i * 1.7) % 18
+    ]);
+  }
+  stars.slice(0, starCount).forEach(([top, left, mark, duration, delay], index) => {
+    const star = document.createElement('span');
+    star.className = 'particle-item particle-star-item';
+    star.textContent = mark;
+    star.style.setProperty('--star-top', `${top}%`);
+    star.style.setProperty('--star-left', `${left}%`);
+    star.style.setProperty('--star-duration', `${duration}s`);
+    star.style.setProperty('--star-delay', `${delay}s`);
+    star.style.setProperty('--star-drift', `${28 + (index % 4) * 8}px`);
+    wrap.appendChild(star);
+  });
+  const meteors = baseMeteorData();
+  while (meteors.length < meteorCount) {
+    const i = meteors.length;
+    meteors.push([8 + (i * 13) % 72, 58 + (i * 9) % 38, 19 + (i % 5) * 3, 3 + i * 5.2]);
+  }
+  meteors.slice(0, meteorCount).forEach(([top, left, duration, delay]) => {
+    const meteor = document.createElement('span');
+    meteor.className = 'particle-item particle-meteor-item';
+    meteor.style.setProperty('--meteor-top', `${top}%`);
+    meteor.style.setProperty('--meteor-left', `${left}%`);
+    meteor.style.setProperty('--meteor-duration', `${duration}s`);
+    meteor.style.setProperty('--meteor-delay', `${delay}s`);
+    wrap.appendChild(meteor);
+  });
+}
+
+function baseStarData() {
+  return [
     [5, 8, '✦', 12.5, .2], [8, 22, '•', 13.8, 1.4], [10, 74, '✧', 11.4, 2.1],
     [12, 90, '•', 12.9, 3.7], [16, 12, '✦', 10.8, 4.6], [18, 34, '•', 14.2, 1.9],
     [20, 68, '✧', 12.2, 5.2], [22, 84, '•', 13.5, 2.8], [27, 6, '✦', 11.2, 6.1],
@@ -345,31 +551,13 @@ function syncAuroraScene(theme, themeMode) {
     [64, 5, '•', 11.5, 5.5], [75, 55, '✧', 12.4, 16.4], [86, 58, '•', 13.9, 3.1],
     [94, 9, '✦', 12.1, 17.2], [11, 4, '•', 14.3, 7.4], [89, 94, '✧', 11.7, 18.1]
   ];
-  stars.forEach(([top, left, mark, duration, delay], index) => {
-    const star = document.createElement('span');
-    star.className = 'aurora-star';
-    star.textContent = mark;
-    star.style.setProperty('--star-top', `${top}%`);
-    star.style.setProperty('--star-left', `${left}%`);
-    star.style.setProperty('--star-duration', `${duration}s`);
-    star.style.setProperty('--star-delay', `${delay}s`);
-    star.style.setProperty('--star-drift', `${28 + (index % 4) * 8}px`);
-    scene.appendChild(star);
-  });
-  const meteors = [
+}
+
+function baseMeteorData() {
+  return [
     [14, 76, 18, 1.5], [28, 94, 24, 8.2], [48, 82, 27, 14.6],
     [68, 70, 31, 21.3], [22, 58, 29, 27.8]
   ];
-  meteors.forEach(([top, left, duration, delay]) => {
-    const meteor = document.createElement('span');
-    meteor.className = 'aurora-meteor';
-    meteor.style.setProperty('--meteor-top', `${top}%`);
-    meteor.style.setProperty('--meteor-left', `${left}%`);
-    meteor.style.setProperty('--meteor-duration', `${duration}s`);
-    meteor.style.setProperty('--meteor-delay', `${delay}s`);
-    scene.appendChild(meteor);
-  });
-  scene.dataset.ready = 'true';
 }
 
 // 便於 router callback 直接取用最新 state 重繪。

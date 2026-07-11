@@ -9,7 +9,15 @@ import { renderPlayerEditor } from './playerEditor.js';
 import { renderBackupPanel } from './backupPanel.js';
 import { exportVigilCharacters } from '../../services/backupService.js';
 import { getVigilHealthSettings, saveVigilHealthSettings, testVigilHealthConnection } from '../../services/vigilHealthService.js';
-import { addSticker, updateSticker, deleteSticker, updateSettings, updateChatBackgroundAsset } from '../../state/store.js';
+import {
+  addSticker,
+  updateSticker,
+  deleteSticker,
+  updateSettings,
+  updateAppearance,
+  updateAppBackgroundAsset,
+  updateChatBackgroundAsset
+} from '../../state/store.js';
 import { saveImageAsset, getObjectURL } from '../../services/assetService.js';
 import { getStats } from '../../services/statsService.js';
 import { createIcon } from '../icons.js';
@@ -38,6 +46,12 @@ const THEME_PALETTES = [
 ];
 
 const CHAT_BACKGROUND_MAX_BYTES = 2 * 1024 * 1024;
+const HOME_MODULES = [
+  { key: 'todayList', label: '今日清單' },
+  { key: 'recentChats', label: '最近聊天' },
+  { key: 'characterRail', label: '角色列' },
+  { key: 'oldReplay', label: '舊聲重播' }
+];
 
 export function renderSettingsPage(container, state) {
   container.textContent = '';
@@ -540,7 +554,7 @@ async function refreshPushSubscriptionStatus(status, output, copy) {
   status.textContent = '此裝置已訂閱。若更換 VAPID 金鑰，請取消後重新訂閱。';
 }
 
-// ---- 外觀：四配色 × 明暗 ----
+// ---- 外觀工作室 ----
 function renderAppearance(container, state) {
   const wrap = document.createElement('div');
   wrap.className = 'theme-picker';
@@ -595,8 +609,304 @@ function renderAppearance(container, state) {
     swatches.appendChild(btn);
   }
   wrap.appendChild(swatches);
+  wrap.appendChild(renderAppBackgroundPicker(state));
+  wrap.appendChild(renderParticleStudio(state));
+  wrap.appendChild(renderStyleTuning(state));
+  wrap.appendChild(renderHomeModules(state));
   wrap.appendChild(renderChatBackgroundPicker(state));
   container.appendChild(wrap);
+}
+
+function appearanceOf(state) {
+  return (state.settings && state.settings.appearance) || {};
+}
+
+function renderAppBackgroundPicker(state) {
+  const appearance = appearanceOf(state);
+  const box = document.createElement('div');
+  box.className = 'chat-bg-picker app-bg-picker';
+
+  const title = document.createElement('h3');
+  title.className = 'settings-subtitle';
+  title.textContent = '背景';
+  box.appendChild(title);
+
+  const desc = document.createElement('p');
+  desc.className = 'form-hint';
+  desc.textContent = '全域背景會鋪在主題底色之上、內容之下；聊天背景仍依聊天室設定優先。';
+  box.appendChild(desc);
+
+  const preview = document.createElement('div');
+  preview.className = 'chat-bg-preview app-bg-preview';
+  const previewText = document.createElement('span');
+  previewText.textContent = '主題預設';
+  preview.appendChild(previewText);
+  const assetId = appearance.appBackgroundAssetId;
+  preview.style.setProperty('--preview-app-bg-dim', `${normalizeDim(appearance.appBackgroundDim)}%`);
+  if (assetId) {
+    previewText.textContent = '讀取中…';
+    getObjectURL(assetId).then((url) => {
+      if (!url || !preview.isConnected) {
+        previewText.textContent = '找不到圖片，會回到主題預設';
+        return;
+      }
+      previewText.textContent = '';
+      preview.style.backgroundImage = `url("${url}")`;
+      preview.classList.add('has-image');
+    });
+  }
+  box.appendChild(preview);
+
+  const file = document.createElement('input');
+  file.type = 'file';
+  file.accept = 'image/*';
+  file.className = 'file-input';
+  box.appendChild(file);
+
+  const actions = document.createElement('div');
+  actions.className = 'form-actions';
+  const upload = document.createElement('button');
+  upload.type = 'button';
+  upload.className = 'btn btn-primary';
+  upload.textContent = '上傳圖片';
+  upload.addEventListener('click', () => file.click());
+  actions.appendChild(upload);
+  const clear = document.createElement('button');
+  clear.type = 'button';
+  clear.className = 'btn';
+  clear.textContent = '清除背景';
+  clear.disabled = !assetId;
+  clear.addEventListener('click', () => updateAppBackgroundAsset(null));
+  actions.appendChild(clear);
+  box.appendChild(actions);
+
+  const dim = normalizeDim(appearance.appBackgroundDim);
+  const dimValue = document.createElement('span');
+  dimValue.className = 'range-value';
+  dimValue.textContent = `${dim}%`;
+  const dimInput = document.createElement('input');
+  dimInput.type = 'range';
+  dimInput.min = '20';
+  dimInput.max = '90';
+  dimInput.step = '1';
+  dimInput.value = String(dim);
+  dimInput.className = 'form-range';
+  dimInput.addEventListener('input', () => {
+    const value = normalizeDim(dimInput.value);
+    dimValue.textContent = `${value}%`;
+    preview.style.setProperty('--preview-app-bg-dim', `${value}%`);
+    const scene = document.querySelector('.app-background-scene');
+    if (scene) scene.style.setProperty('--app-bg-dim', `${value}%`);
+  });
+  dimInput.addEventListener('change', () => updateAppearance({ appBackgroundDim: normalizeDim(dimInput.value) }));
+  const dimField = wrapField('背景淡化', dimInput);
+  const label = dimField.querySelector('.form-label');
+  if (label) label.appendChild(dimValue);
+  box.appendChild(dimField);
+
+  file.addEventListener('change', async () => {
+    const selected = file.files && file.files[0];
+    file.value = '';
+    if (!selected) return;
+    if (selected.size > CHAT_BACKGROUND_MAX_BYTES) {
+      showToast('背景圖片需小於 2MB');
+      return;
+    }
+    upload.disabled = true;
+    try {
+      const nextAssetId = await saveImageAsset(selected, 'appBackground', 1800);
+      await updateAppBackgroundAsset(nextAssetId);
+      showToast('背景已更新');
+    } catch (err) {
+      showToast('背景上傳失敗');
+    } finally {
+      upload.disabled = false;
+    }
+  });
+
+  return box;
+}
+
+function renderParticleStudio(state) {
+  const particles = appearanceOf(state).particles || {};
+  const box = document.createElement('div');
+  box.className = 'appearance-panel particle-studio';
+  const title = document.createElement('h3');
+  title.className = 'settings-subtitle';
+  title.textContent = '粒子聲景';
+  box.appendChild(title);
+
+  const choices = [
+    ['none', '無'], ['stars', '星光'], ['sakura', '櫻花'], ['snow', '雪'],
+    ['rain', '雨'], ['fireflies', '螢火'], ['bubbles', '泡泡']
+  ];
+  const grid = document.createElement('div');
+  grid.className = 'particle-kind-grid';
+  for (const [key, label] of choices) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'particle-kind' + ((particles.kind || 'none') === key ? ' active' : '');
+    btn.setAttribute('aria-pressed', (particles.kind || 'none') === key ? 'true' : 'false');
+    const icon = document.createElement('span');
+    icon.className = `particle-kind-icon particle-kind-${key}`;
+    icon.textContent = key === 'none' ? '・' : label.slice(0, 1);
+    const text = document.createElement('span');
+    text.textContent = label;
+    btn.appendChild(icon);
+    btn.appendChild(text);
+    btn.addEventListener('click', () => updateAppearance({ particles: { ...particles, kind: key } }));
+    grid.appendChild(btn);
+  }
+  box.appendChild(grid);
+
+  box.appendChild(particleRange('密度', particles.density,
+    (value) => previewParticles({ ...particles, density: value }),
+    (value) => updateAppearance({ particles: { ...particles, density: value } })));
+  box.appendChild(particleRange('速度', particles.speed,
+    (value) => previewParticles({ ...particles, speed: value }),
+    (value) => updateAppearance({ particles: { ...particles, speed: value } })));
+  box.appendChild(particleRange('大小', particles.size,
+    (value) => previewParticles({ ...particles, size: value }),
+    (value) => updateAppearance({ particles: { ...particles, size: value } })));
+  return box;
+}
+
+function previewParticles(particles) {
+  window.dispatchEvent(new CustomEvent('vocilege:appearance-preview', {
+    detail: { particles }
+  }));
+}
+
+function particleRange(label, value, onPreview, onCommit) {
+  const current = clampLevel(value);
+  const out = document.createElement('span');
+  out.className = 'range-value';
+  out.textContent = String(current);
+  const input = document.createElement('input');
+  input.type = 'range';
+  input.min = '1';
+  input.max = '3';
+  input.step = '1';
+  input.value = String(current);
+  input.className = 'form-range';
+  input.addEventListener('input', () => {
+    const next = clampLevel(input.value);
+    out.textContent = String(next);
+    onPreview(next);
+  });
+  input.addEventListener('change', () => onCommit(clampLevel(input.value)));
+  const field = wrapField(label, input);
+  const labelNode = field.querySelector('.form-label');
+  if (labelNode) labelNode.appendChild(out);
+  return field;
+}
+
+function renderStyleTuning(state) {
+  const appearance = appearanceOf(state);
+  const box = document.createElement('div');
+  box.className = 'appearance-panel style-tuning';
+  const title = document.createElement('h3');
+  title.className = 'settings-subtitle';
+  title.textContent = '樣式微調';
+  box.appendChild(title);
+  box.appendChild(segmentedControl('聊天氣泡', [
+    ['paper', '紙上'], ['classic', '傳統']
+  ], appearance.bubbleStyle || 'paper', (value) => updateAppearance({ bubbleStyle: value })));
+  box.appendChild(segmentedControl('圓角刻度', [
+    ['soft', '柔和'], ['standard', '標準'], ['crisp', '俐落']
+  ], appearance.cornerScale || 'standard', (value) => updateAppearance({ cornerScale: value })));
+  box.appendChild(segmentedControl('展示字體', [
+    ['serif', '襯線'], ['sans', '無襯線']
+  ], appearance.displayFont || 'serif', (value) => updateAppearance({ displayFont: value })));
+  return box;
+}
+
+function segmentedControl(labelText, options, value, onPick) {
+  const field = document.createElement('div');
+  field.className = 'form-field';
+  const label = document.createElement('div');
+  label.className = 'form-label';
+  label.textContent = labelText;
+  field.appendChild(label);
+  const row = document.createElement('div');
+  row.className = 'segmented-row';
+  for (const [key, labelValue] of options) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'segment-btn' + (key === value ? ' active' : '');
+    btn.setAttribute('aria-pressed', key === value ? 'true' : 'false');
+    btn.textContent = labelValue;
+    btn.addEventListener('click', () => onPick(key));
+    row.appendChild(btn);
+  }
+  field.appendChild(row);
+  return field;
+}
+
+function renderHomeModules(state) {
+  const home = appearanceOf(state).homeModules || {};
+  const order = Array.isArray(home.order) ? home.order.slice() : HOME_MODULES.map((m) => m.key);
+  for (const item of HOME_MODULES) {
+    if (!order.includes(item.key)) order.push(item.key);
+  }
+  const hidden = new Set(Array.isArray(home.hidden) ? home.hidden : []);
+  const box = document.createElement('div');
+  box.className = 'appearance-panel home-modules-panel';
+  const title = document.createElement('h3');
+  title.className = 'settings-subtitle';
+  title.textContent = '首頁模組';
+  box.appendChild(title);
+  const list = document.createElement('div');
+  list.className = 'home-module-list';
+  order.forEach((key, index) => {
+    const meta = HOME_MODULES.find((item) => item.key === key);
+    if (!meta) return;
+    const row = document.createElement('div');
+    row.className = 'home-module-row';
+    const check = document.createElement('input');
+    check.type = 'checkbox';
+    check.checked = !hidden.has(key);
+    check.addEventListener('change', () => {
+      const nextHidden = new Set(hidden);
+      if (check.checked) nextHidden.delete(key);
+      else nextHidden.add(key);
+      updateAppearance({ homeModules: { order, hidden: [...nextHidden] } });
+    });
+    row.appendChild(check);
+    const name = document.createElement('span');
+    name.textContent = meta.label;
+    row.appendChild(name);
+    const actions = document.createElement('span');
+    actions.className = 'home-module-actions';
+    const up = moduleMoveButton('↑', index === 0, () => moveHomeModule(order, hidden, index, -1));
+    const down = moduleMoveButton('↓', index === order.length - 1, () => moveHomeModule(order, hidden, index, 1));
+    actions.appendChild(up);
+    actions.appendChild(down);
+    row.appendChild(actions);
+    list.appendChild(row);
+  });
+  box.appendChild(list);
+  return box;
+}
+
+function moduleMoveButton(label, disabled, onClick) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn home-module-move';
+  btn.textContent = label;
+  btn.disabled = disabled;
+  btn.addEventListener('click', onClick);
+  return btn;
+}
+
+function moveHomeModule(order, hidden, index, dir) {
+  const next = order.slice();
+  const target = index + dir;
+  if (target < 0 || target >= next.length) return;
+  const tmp = next[index];
+  next[index] = next[target];
+  next[target] = tmp;
+  updateAppearance({ homeModules: { order: next, hidden: [...hidden] } });
 }
 
 function renderChatBackgroundPicker(state) {
@@ -715,6 +1025,12 @@ function normalizeDim(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 72;
   return Math.min(90, Math.max(20, Math.floor(n)));
+}
+
+function clampLevel(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 2;
+  return Math.min(3, Math.max(1, Math.floor(n)));
 }
 
 function renderLifeSettings(container, state) {

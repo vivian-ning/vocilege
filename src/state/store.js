@@ -23,7 +23,14 @@ import {
   updateMessage,
   deleteMessagesByConversation
 } from '../db/indexeddb.js';
-import { createDefaultEcho, createDefaultState, createDefaultVigil, normalizeEcho, normalizeState } from './schema.js';
+import {
+  createDefaultEcho,
+  createDefaultState,
+  createDefaultVigil,
+  normalizeAppearance,
+  normalizeEcho,
+  normalizeState
+} from './schema.js';
 import { migrateState } from './migrations.js';
 import {
   buildPrompt,
@@ -69,6 +76,7 @@ function normalizeChatBackgroundDim(value) {
 function isChatBackgroundAssetReferenced(assetId) {
   if (!assetId) return false;
   if (state.settings && state.settings.chatBackgroundAssetId === assetId) return true;
+  if (state.settings && state.settings.appearance && state.settings.appearance.appBackgroundAssetId === assetId) return true;
   return (state.conversations || []).some((conversation) => (
     conversation && conversation.chatBackgroundAssetId === assetId
   ));
@@ -1427,9 +1435,48 @@ export async function updateSettings(patch) {
   if ('chatBackgroundDim' in nextPatch) {
     nextPatch.chatBackgroundDim = normalizeChatBackgroundDim(nextPatch.chatBackgroundDim);
   }
+  if ('appearance' in nextPatch) {
+    nextPatch.appearance = normalizeAppearance({
+      ...((state.settings && state.settings.appearance) || {}),
+      ...(nextPatch.appearance || {})
+    }, state.settings && state.settings.theme);
+  }
   state.settings = { ...state.settings, ...nextPatch };
   await saveCurrentState();
   notify();
+}
+
+export async function updateAppearance(patch) {
+  const current = (state.settings && state.settings.appearance) || {};
+  const next = {
+    ...current,
+    ...(patch || {})
+  };
+  if (patch && patch.particles) {
+    next.particles = {
+      ...((current && current.particles) || {}),
+      ...patch.particles
+    };
+  }
+  if (patch && patch.homeModules) {
+    next.homeModules = {
+      ...((current && current.homeModules) || {}),
+      ...patch.homeModules
+    };
+  }
+  state.settings = {
+    ...state.settings,
+    appearance: normalizeAppearance(next, state.settings && state.settings.theme)
+  };
+  await saveCurrentState();
+  notify();
+}
+
+export async function updateAppBackgroundAsset(assetId) {
+  const oldId = state.settings && state.settings.appearance && state.settings.appearance.appBackgroundAssetId;
+  const nextId = typeof assetId === 'string' && assetId ? assetId : null;
+  await updateAppearance({ appBackgroundAssetId: nextId });
+  if (oldId && oldId !== nextId) await cleanupUnusedChatBackgroundAsset(oldId);
 }
 
 export async function updateChatBackgroundAsset(assetId) {

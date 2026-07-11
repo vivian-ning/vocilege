@@ -1,7 +1,7 @@
 {
   "appName": "拾聲",
   "appNameLatin": "Vocilège",
-  "schemaVersion": 20,
+  "schemaVersion": 21,
   "defaultPlayer": {
     "id": "player",
     "playerName": "",
@@ -27,7 +27,19 @@
     "dailyAwarenessEnabled": true,
     "backupEveryDays": 3,
     "chatBackgroundAssetId": null,
-    "chatBackgroundDim": 72
+    "chatBackgroundDim": 72,
+    "appearance": {
+      "appBackgroundAssetId": null,
+      "appBackgroundDim": 72,
+      "particles": { "kind": "none", "density": 2, "speed": 2, "size": 2 },
+      "bubbleStyle": "paper",
+      "cornerScale": "standard",
+      "displayFont": "serif",
+      "homeModules": {
+        "order": ["todayList", "recentChats", "characterRail", "oldReplay"],
+        "hidden": []
+      }
+    }
   },
   "defaultApiSettings": {
     "maxTokens": 2048

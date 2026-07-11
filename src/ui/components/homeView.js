@@ -197,21 +197,35 @@ function buildTodayFeed(state) {
   const hero = buildTodayHero(state);
   if (hero) page.appendChild(hero);
 
-  const list = buildTodayList(state);
-  if (list) page.appendChild(list);
-
-  page.appendChild(buildRecentChats(state));
-
-  const replay = buildTodayOldReplay();
-  if (replay) page.appendChild(replay);
-
-  page.appendChild(buildCharacterRail(state));
+  for (const key of orderedHomeModules(state)) {
+    const module = buildHomeModule(key, state);
+    if (module) page.appendChild(module);
+  }
 
   if (!todayFeedAnimated) {
     page.classList.add('today-feed-first');
     todayFeedAnimated = true;
   }
   return page;
+}
+
+function orderedHomeModules(state) {
+  const home = state.settings && state.settings.appearance && state.settings.appearance.homeModules;
+  const valid = ['todayList', 'recentChats', 'characterRail', 'oldReplay'];
+  const order = Array.isArray(home && home.order) ? home.order.filter((key) => valid.includes(key)) : valid.slice();
+  for (const key of valid) {
+    if (!order.includes(key)) order.push(key);
+  }
+  const hidden = new Set(Array.isArray(home && home.hidden) ? home.hidden : []);
+  return order.filter((key) => !hidden.has(key));
+}
+
+function buildHomeModule(key, state) {
+  if (key === 'todayList') return buildTodayList(state);
+  if (key === 'recentChats') return buildRecentChats(state);
+  if (key === 'characterRail') return buildCharacterRail(state);
+  if (key === 'oldReplay') return buildTodayOldReplay();
+  return null;
 }
 
 function buildDateHeader() {

@@ -71,6 +71,55 @@ export function validateBackup(data) {
       if ('chatBackgroundDim' in s.settings && typeof s.settings.chatBackgroundDim !== 'number') {
         errors.push('state.settings.chatBackgroundDim 應為數字');
       }
+      if ('appearance' in s.settings) {
+        if (!isObject(s.settings.appearance)) {
+          errors.push('state.settings.appearance 應為物件');
+        } else {
+          const a = s.settings.appearance;
+          if ('appBackgroundAssetId' in a && a.appBackgroundAssetId !== null && typeof a.appBackgroundAssetId !== 'string') {
+            errors.push('state.settings.appearance.appBackgroundAssetId 應為字串或 null');
+          }
+          if ('appBackgroundDim' in a && typeof a.appBackgroundDim !== 'number') {
+            errors.push('state.settings.appearance.appBackgroundDim 應為數字');
+          }
+          if ('particles' in a) {
+            if (!isObject(a.particles)) {
+              errors.push('state.settings.appearance.particles 應為物件');
+            } else {
+              if ('kind' in a.particles &&
+                  !['none', 'stars', 'sakura', 'snow', 'rain', 'fireflies', 'bubbles'].includes(a.particles.kind)) {
+                errors.push('state.settings.appearance.particles.kind 不是支援的粒子值');
+              }
+              for (const key of ['density', 'speed', 'size']) {
+                if (key in a.particles && typeof a.particles[key] !== 'number') {
+                  errors.push(`state.settings.appearance.particles.${key} 應為數字`);
+                }
+              }
+            }
+          }
+          if ('bubbleStyle' in a && !['paper', 'classic'].includes(a.bubbleStyle)) {
+            errors.push('state.settings.appearance.bubbleStyle 不是支援的氣泡樣式');
+          }
+          if ('cornerScale' in a && !['soft', 'standard', 'crisp'].includes(a.cornerScale)) {
+            errors.push('state.settings.appearance.cornerScale 不是支援的圓角刻度');
+          }
+          if ('displayFont' in a && !['serif', 'sans'].includes(a.displayFont)) {
+            errors.push('state.settings.appearance.displayFont 不是支援的展示字體');
+          }
+          if ('homeModules' in a) {
+            if (!isObject(a.homeModules)) {
+              errors.push('state.settings.appearance.homeModules 應為物件');
+            } else {
+              if ('order' in a.homeModules && !Array.isArray(a.homeModules.order)) {
+                errors.push('state.settings.appearance.homeModules.order 應為陣列');
+              }
+              if ('hidden' in a.homeModules && !Array.isArray(a.homeModules.hidden)) {
+                errors.push('state.settings.appearance.homeModules.hidden 應為陣列');
+              }
+            }
+          }
+        }
+      }
       if ('theme' in s.settings &&
           typeof s.settings.theme === 'string' &&
           !['blue', 'pink', 'green', 'violet', 'aurora', 'washi', 'brown', 'cream', 'warm', 'night', 'sea', 'fog', 'rose'].includes(s.settings.theme)) {

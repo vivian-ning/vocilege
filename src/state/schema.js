@@ -51,6 +51,26 @@ export function createDefaultEcho() {
   };
 }
 
+export function createDefaultAppearance(theme = 'blue') {
+  return {
+    appBackgroundAssetId: null,
+    appBackgroundDim: 72,
+    particles: {
+      kind: theme === 'aurora' ? 'stars' : 'none',
+      density: 2,
+      speed: 2,
+      size: 2
+    },
+    bubbleStyle: 'paper',
+    cornerScale: 'standard',
+    displayFont: 'serif',
+    homeModules: {
+      order: ['todayList', 'recentChats', 'characterRail', 'oldReplay'],
+      hidden: []
+    }
+  };
+}
+
 // state record 完整結構（第六節）。
 export function createDefaultState(config) {
   const defaultPlayer = (config && config.defaultPlayer) || {
@@ -163,7 +183,8 @@ export function createDefaultState(config) {
         : null,
       chatBackgroundDim: typeof defaultSettings.chatBackgroundDim === 'number'
         ? Math.min(90, Math.max(20, Math.floor(defaultSettings.chatBackgroundDim)))
-        : 72
+        : 72,
+      appearance: normalizeAppearance(defaultSettings.appearance, defaultSettings.theme || 'washi')
     },
     apiSettings: {
       provider: '',
@@ -178,6 +199,53 @@ export function createDefaultState(config) {
       visionEnabled: false,
       showThinking: false,
       thinkingBudget: 1024
+    }
+  };
+}
+
+export function normalizeAppearance(appearance, theme = 'blue') {
+  const source = appearance && typeof appearance === 'object' && !Array.isArray(appearance)
+    ? appearance
+    : {};
+  const base = createDefaultAppearance(theme);
+  const particleSource = source.particles && typeof source.particles === 'object' && !Array.isArray(source.particles)
+    ? source.particles
+    : {};
+  const homeSource = source.homeModules && typeof source.homeModules === 'object' && !Array.isArray(source.homeModules)
+    ? source.homeModules
+    : {};
+  const validParticleKinds = ['none', 'stars', 'sakura', 'snow', 'rain', 'fireflies', 'bubbles'];
+  const validModules = ['todayList', 'recentChats', 'characterRail', 'oldReplay'];
+  const order = Array.isArray(homeSource.order)
+    ? homeSource.order.filter((key) => validModules.includes(key))
+    : base.homeModules.order;
+  for (const key of validModules) {
+    if (!order.includes(key)) order.push(key);
+  }
+  const hidden = Array.isArray(homeSource.hidden)
+    ? [...new Set(homeSource.hidden.filter((key) => validModules.includes(key)))]
+    : [];
+  const clampLevel = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 2;
+    return Math.min(3, Math.max(1, Math.floor(n)));
+  };
+  const dim = Number(source.appBackgroundDim);
+  return {
+    appBackgroundAssetId: typeof source.appBackgroundAssetId === 'string' ? source.appBackgroundAssetId : null,
+    appBackgroundDim: Number.isFinite(dim) ? Math.min(90, Math.max(20, Math.floor(dim))) : base.appBackgroundDim,
+    particles: {
+      kind: validParticleKinds.includes(particleSource.kind) ? particleSource.kind : base.particles.kind,
+      density: clampLevel(particleSource.density),
+      speed: clampLevel(particleSource.speed),
+      size: clampLevel(particleSource.size)
+    },
+    bubbleStyle: source.bubbleStyle === 'classic' ? 'classic' : 'paper',
+    cornerScale: ['soft', 'standard', 'crisp'].includes(source.cornerScale) ? source.cornerScale : 'standard',
+    displayFont: source.displayFont === 'sans' ? 'sans' : 'serif',
+    homeModules: {
+      order,
+      hidden
     }
   };
 }
@@ -373,6 +441,10 @@ export function normalizeState(state) {
     Number.isFinite(merged.settings.chatBackgroundDim)
     ? Math.min(90, Math.max(20, Math.floor(merged.settings.chatBackgroundDim)))
     : 72;
+  merged.settings.appearance = normalizeAppearance(
+    merged.settings.appearance,
+    merged.settings.theme
+  );
 
   if (typeof merged.lastOpenedAt !== 'number') merged.lastOpenedAt = 0;
   if (typeof merged.lastGreetingAt !== 'number') merged.lastGreetingAt = 0;

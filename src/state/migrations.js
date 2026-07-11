@@ -8,9 +8,9 @@
 // 逐版套用直到 schemaVersion === CURRENT_SCHEMA_VERSION，確保任何舊備份都能一步步
 // 升級上來，而非只支援「上一版」。
 
-import { createDefaultEcho, createExampleGlobalPrompt } from './schema.js';
+import { createDefaultAppearance, createDefaultEcho, createExampleGlobalPrompt } from './schema.js';
 
-export const CURRENT_SCHEMA_VERSION = 20;
+export const CURRENT_SCHEMA_VERSION = 21;
 
 const DEFAULT_VIGIL = {
   enabled: false,
@@ -448,6 +448,32 @@ const migrators = {
       });
     }
     s.schemaVersion = 20;
+    return s;
+  },
+
+  // v20 -> v21（V16 外觀工作室）：
+  //   - settings.appearance 補齊全域背景、粒子聲景、樣式微調、首頁模組
+  //   - 極光舊使用者預設寫入 stars；其他主題預設 none
+  20: (s) => {
+    const settings = (s.settings && typeof s.settings === 'object') ? { ...s.settings } : {};
+    const defaults = createDefaultAppearance(settings.theme);
+    const source = (settings.appearance && typeof settings.appearance === 'object' && !Array.isArray(settings.appearance))
+      ? settings.appearance
+      : {};
+    settings.appearance = {
+      ...defaults,
+      ...source,
+      particles: {
+        ...defaults.particles,
+        ...((source.particles && typeof source.particles === 'object' && !Array.isArray(source.particles)) ? source.particles : {})
+      },
+      homeModules: {
+        ...defaults.homeModules,
+        ...((source.homeModules && typeof source.homeModules === 'object' && !Array.isArray(source.homeModules)) ? source.homeModules : {})
+      }
+    };
+    s.settings = settings;
+    s.schemaVersion = 21;
     return s;
   },
 };

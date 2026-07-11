@@ -27,6 +27,9 @@ function collectBackupAssetIds(state) {
   for (const c of (state.characters || [])) add(c && c.avatar);
   add(state.player && state.player.avatar);
   if (state.settings && state.settings.chatBackgroundAssetId) ids.add(state.settings.chatBackgroundAssetId);
+  if (state.settings && state.settings.appearance && state.settings.appearance.appBackgroundAssetId) {
+    ids.add(state.settings.appearance.appBackgroundAssetId);
+  }
   for (const conversation of (state.conversations || [])) {
     if (conversation && conversation.chatBackgroundAssetId) ids.add(conversation.chatBackgroundAssetId);
   }
@@ -254,6 +257,18 @@ export async function importData(rawText) {
       typeof nextState.settings.chatBackgroundAssetId === 'string' &&
       !presentIds.has(nextState.settings.chatBackgroundAssetId)) {
     nextState.settings = { ...nextState.settings, chatBackgroundAssetId: null };
+  }
+  if (nextState.settings &&
+      nextState.settings.appearance &&
+      typeof nextState.settings.appearance.appBackgroundAssetId === 'string' &&
+      !presentIds.has(nextState.settings.appearance.appBackgroundAssetId)) {
+    nextState.settings = {
+      ...nextState.settings,
+      appearance: {
+        ...nextState.settings.appearance,
+        appBackgroundAssetId: null
+      }
+    };
   }
   nextState.conversations = (nextState.conversations || []).map((conversation) => {
     if (!conversation || typeof conversation !== 'object') return conversation;
