@@ -39,8 +39,19 @@ const STOP_WORDS = new Set([
 export const OUTPUT_FORMAT_INSTRUCTION = [
   '【輸出格式要求】',
   '1. 角色說出口的對話，直接輸出純文字。',
-  '2. 旁白（動作、神態、場景描寫）獨立成一段，並以全形星號包裹，例如：＊他抬起頭，把筆記闔上。＊',
+  '2. 旁白（動作、神態、場景描寫）獨立成一段，並以全形星號包裹，例如：＊我抬起頭，把筆記闔上。＊',
   '3. 對話與旁白請分段呈現，不要把星號寫在對話中間。'
+].join('\n');
+
+export const ROLEPLAY_INSTRUCTION = [
+  '【角色扮演規則】',
+  '對話與旁白一律使用第一人稱（我）；不得用自己的名字或「他／她」來敘述自己。旁白只描述你自己的動作、神態、語氣，不得敘述玩家的動作或內心。'
+].join('\n');
+
+export const MEDIA_SEMANTICS_INSTRUCTION = [
+  '【圖片與貼圖理解】',
+  '訊息中的 `[貼圖] X` 代表對方傳來一張貼圖圖片，X 是這張貼圖的情境意義；請把它當成圖片訊息回應，不要當成對方打的字。',
+  '`[照片] X` 代表對方傳來一張照片，X 是簡短描述。除非照片內容真的隨訊息附上，否則你看不到照片本身——就描述回應或自然追問即可，不得假裝看到細節。'
 ].join('\n');
 
 export function buildPrompt({
@@ -120,6 +131,8 @@ export function buildPrompt({
   }
 
   // 5) 輸出模式 + 輸出格式要求（穩定，放靜態區末尾）。
+  staticParts.push(ROLEPLAY_INSTRUCTION);
+  staticParts.push(MEDIA_SEMANTICS_INSTRUCTION);
   staticParts.push(`【輸出模式】${describeMode(mode)}`);
   const stickerText = stickersToInstruction(stickers);
   if (stickerText) staticParts.push(stickerText);
@@ -604,6 +617,7 @@ function stickersToInstruction(stickers) {
   return [
     '【貼圖】',
     '你可以在回覆中單獨一行輸出「[貼圖:語境文字]」來使用貼圖；語境文字必須完全符合下列清單。',
+    '情緒合適時，歡迎偶爾用貼圖回覆。',
     ...list.map((s) => `- ${s.contextText}`)
   ].join('\n');
 }

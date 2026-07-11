@@ -451,7 +451,17 @@
 
 * { box-sizing: border-box; }
 
-html, body { margin: 0; height: 100%; }
+html, body {
+  margin: 0;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  background: var(--bg);
+}
+
+html {
+  overflow: hidden;
+}
 
 body {
   font-family: -apple-system, "Segoe UI", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
@@ -474,8 +484,15 @@ body::before {
   background: var(--ambient-gradient);
 }
 
-#app { height: 100dvh; position: relative; isolation: isolate; }
-.app-root { position: relative; height: 100%; isolation: isolate; }
+#app {
+  width: 100%;
+  max-width: 100%;
+  height: 100dvh;
+  position: relative;
+  isolation: isolate;
+  background: var(--bg);
+}
+.app-root { position: relative; height: 100%; isolation: isolate; background: var(--bg); }
 .app-background-scene,
 .aurora-scene,
 .particle-scene {
@@ -1302,13 +1319,15 @@ button { touch-action: manipulation; }
 }
 
 .part-narration {
-  align-self: center;
-  max-width: 78%;
-  text-align: center;
+  align-self: flex-start;
+  max-width: min(78%, 46ch);
+  margin-left: 40px;
+  text-align: left;
   color: var(--narration);
   font-weight: 500;
   font-size: 13px;
   line-height: 1.7;
+  overflow-wrap: anywhere;
 }
 
 .part-system {
@@ -3053,7 +3072,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
     position: sticky;
     bottom: 0;
     z-index: var(--z-sticky);
-    padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0));
+    padding: 8px 10px;
   }
   .stats-grid { grid-template-columns: 1fr 1fr; }
   .stat-card:first-child { grid-column: span 2; }
@@ -3065,6 +3084,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
   .home-page, .settings-page, .character-page { padding-left: 16px; padding-right: 16px; }
   .bubble { max-width: 82%; }
   .bubble-name { margin-left: 40px; }
+  .part-narration { max-width: calc(100% - 40px); margin-left: 40px; }
   .msg-tools { margin-left: 40px; opacity: .9; } /* 觸控裝置沒有 hover：常駐微透明 */
   .thinking-card { width: calc(100% - 40px); margin-left: 40px; }
   .feed-content, .feed-actions, .feed-comments, .feed-comment-form, .feed-expand, .feed-comments-toggle { margin-left: 0; }
