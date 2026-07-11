@@ -11,6 +11,7 @@
 import { updateApiSettings, updateSettings } from '../../state/store.js';
 import { testConnection } from '../../services/aiService.js';
 import { getAllMessages } from '../../db/indexeddb.js';
+import { saveVigilHealthSettings } from '../../services/vigilHealthService.js';
 import { createToggle } from '../toggle.js';
 
 const PROVIDER_DEFAULT_BASE = {
@@ -83,6 +84,34 @@ export function renderApiSettingsEditor(container, state) {
   bridgeTools.appendChild(bridgeStatus);
 
   form.appendChild(bridgeTools);
+
+  const remoteCodeBox = document.createElement('details');
+  remoteCodeBox.className = 'remote-code-box';
+  const remoteCodeSummary = document.createElement('summary');
+  remoteCodeSummary.textContent = '貼上遠聲設定碼';
+  remoteCodeBox.appendChild(remoteCodeSummary);
+
+  const remoteCodeInput = document.createElement('textarea');
+  remoteCodeInput.className = 'form-control remote-code-input';
+  remoteCodeInput.rows = 3;
+  remoteCodeInput.placeholder = '貼上 setup.py code 產生的設定碼';
+  remoteCodeBox.appendChild(wrapField('遠聲設定碼', remoteCodeInput));
+
+  const remoteCodeActions = document.createElement('div');
+  remoteCodeActions.className = 'form-actions remote-code-actions';
+  const applyRemoteCodeBtn = document.createElement('button');
+  applyRemoteCodeBtn.type = 'button';
+  applyRemoteCodeBtn.className = 'btn';
+  applyRemoteCodeBtn.textContent = '套用';
+  remoteCodeActions.appendChild(applyRemoteCodeBtn);
+  remoteCodeBox.appendChild(remoteCodeActions);
+
+  const remoteCodeStatus = document.createElement('div');
+  remoteCodeStatus.className = 'api-test-status';
+  remoteCodeStatus.setAttribute('role', 'status');
+  remoteCodeStatus.setAttribute('aria-live', 'polite');
+  remoteCodeBox.appendChild(remoteCodeStatus);
+  form.appendChild(remoteCodeBox);
 
   // provider（下拉）
   const providerSel = document.createElement('select');
@@ -331,6 +360,34 @@ export function renderApiSettingsEditor(container, state) {
     );
     bridgeKeyHint.hidden = false;
     apiKeyInput.focus();
+    scheduleBridgeCheck(0);
+  });
+
+  applyRemoteCodeBtn.addEventListener('click', () => {
+    const currentModel = modelControl.getValue();
+    let code;
+    try {
+      code = parseRemoteSettingsCode(remoteCodeInput.value);
+    } catch (err) {
+      remoteCodeStatus.className = 'api-test-status error';
+      remoteCodeStatus.textContent = '設定碼看起來不完整，請重新複製一次。';
+      return;
+    }
+
+    providerSel.value = 'openai-compatible';
+    providerSel.dispatchEvent(new Event('change'));
+    baseUrlInput.value = code.baseUrl;
+    apiKeyInput.value = code.bridgeToken;
+    modelControl.setValue(
+      'openai-compatible',
+      isLegalModelForProvider('openai-compatible', currentModel) ? currentModel : 'sonnet'
+    );
+    bridgeKeyHint.hidden = false;
+    saveVigilHealthSettings({ url: code.healthUrl, token: code.healthToken });
+    remoteCodeInput.value = '';
+    remoteCodeStatus.className = 'api-test-status ok';
+    remoteCodeStatus.textContent = '已套用，記得按「儲存 API 設定」。';
+    syncBaseUrlPlaceholder();
     scheduleBridgeCheck(0);
   });
 
@@ -597,6 +654,44 @@ function buildModelControl(initialModel, initialProvider) {
 function isLegalModelForProvider(provider, model) {
   const list = PROVIDER_MODELS[provider] || [];
   return !!model && list.includes(model);
+}
+
+function parseRemoteSettingsCode(raw) {
+  const value = String(raw || '').trim();
+  if (!value || !/^[A-Za-z0-9_-]+$/.test(value)) throw new Error('bad_code');
+  let data;
+  try {
+    const bytes = base64urlToBytes(value);
+    data = JSON.parse(new TextDecoder().decode(bytes));
+  } catch (_) {
+    throw new Error('bad_code');
+  }
+  if (!data || data.v !== 1 ||
+      typeof data.baseUrl !== 'string' ||
+      typeof data.bridgeToken !== 'string' ||
+      typeof data.healthUrl !== 'string' ||
+      typeof data.healthToken !== 'string' ||
+      !data.baseUrl.trim() ||
+      !data.bridgeToken.trim() ||
+      !data.healthUrl.trim() ||
+      !data.healthToken.trim()) {
+    throw new Error('bad_code');
+  }
+  return {
+    baseUrl: data.baseUrl.trim(),
+    bridgeToken: data.bridgeToken.trim(),
+    healthUrl: data.healthUrl.trim(),
+    healthToken: data.healthToken.trim()
+  };
+}
+
+function base64urlToBytes(raw) {
+  const normalized = String(raw || '').replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+  const binary = atob(padded);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
+  return out;
 }
 
 function textInput(value, placeholder) {

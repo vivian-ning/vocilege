@@ -1617,6 +1617,28 @@ button { touch-action: manipulation; }
   background: var(--muted);
   opacity: .78;
 }
+.remote-code-box {
+  border-top: 1px solid var(--hairline);
+  padding-top: 12px;
+}
+.remote-code-box summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+.remote-code-box summary::marker {
+  color: var(--muted);
+}
+.remote-code-input {
+  overflow-wrap: anywhere;
+}
+.remote-code-actions {
+  margin-top: 8px;
+}
 
 .form-check { flex-direction: row; align-items: flex-start; gap: 8px; }
 .form-check input[type="checkbox"] { margin-top: 3px; flex: 0 0 auto; accent-color: var(--primary); }

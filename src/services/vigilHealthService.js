@@ -8,6 +8,7 @@ const URL_KEY = 'vigilHealthUrl';
 const TOKEN_KEY = 'vigilHealthToken';
 const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 3000;
+const SUBSCRIBE_TIMEOUT_MS = 5000;
 
 let cachedSnapshot = null;
 let lastRefreshAt = 0;
@@ -33,6 +34,36 @@ export function saveVigilHealthSettings({ url = '', token = '' } = {}) {
 export function isVigilHealthConfigured() {
   const settings = getVigilHealthSettings();
   return !!(settings.url && settings.token);
+}
+
+export async function fetchVigilVapidKey(settings = getVigilHealthSettings()) {
+  const clean = normalizeConfiguredSettings(settings);
+  const data = await fetchVigilJson(vigilEndpointUrl(clean.url, '/vapid-key'), {
+    method: 'GET',
+    headers: { 'X-Vigil-Token': clean.token },
+    timeoutMs: REQUEST_TIMEOUT_MS
+  });
+  if (!data || data.ok !== true || typeof data.vapidPublicKey !== 'string' || !data.vapidPublicKey.trim()) {
+    throw new Error('駐守沒有回傳可用公鑰');
+  }
+  return data.vapidPublicKey.trim();
+}
+
+export async function sendVigilPushSubscription(subscription, settings = getVigilHealthSettings()) {
+  const clean = normalizeConfiguredSettings(settings);
+  const data = await fetchVigilJson(vigilEndpointUrl(clean.url, '/subscribe'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Vigil-Token': clean.token
+    },
+    body: JSON.stringify(subscription),
+    timeoutMs: SUBSCRIBE_TIMEOUT_MS
+  });
+  if (!data || data.ok !== true) {
+    throw new Error('駐守沒有收下訂閱');
+  }
+  return data;
 }
 
 export function getCachedHealthSnapshot() {
@@ -77,14 +108,96 @@ async function fetchLatestHealth(override = null) {
   if (!settings.url || !settings.token) {
     throw new Error('請先填寫駐守健康網址與通行碼');
   }
+  const data = await fetchVigilJson(latestUrl(settings.url), {
+    method: 'GET',
+    headers: { 'X-Vigil-Token': settings.token },
+    timeoutMs: REQUEST_TIMEOUT_MS
+  });
+  if (!data || data.ok !== true) {
+    throw new Error('連線失敗');
+  }
+  return normalizeSnapshot(data.entry);
+}
 
+async function fetchVigilJson(url, { method = 'GET', headers = {}, body = null, timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
+  if (typeof Worker !== 'undefined' && window.URL && window.Blob) {
+    return fetchVigilJsonInWorker(url, { method, headers, body, timeoutMs });
+  }
+  return fetchVigilJsonOnMainThread(url, { method, headers, body, timeoutMs });
+}
+
+function fetchVigilJsonInWorker(url, { method = 'GET', headers = {}, body = null, timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
+  return new Promise((resolve, reject) => {
+    const workerCode = `
+      self.onmessage = async (event) => {
+        const payload = event.data || {};
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), payload.timeoutMs || 3000);
+        try {
+          const res = await fetch(payload.url, {
+            method: payload.method || 'GET',
+            headers: payload.headers || {},
+            body: payload.body || null,
+            signal: controller.signal
+          });
+          let data = null;
+          let jsonOk = true;
+          try {
+            data = await res.json();
+          } catch (_) {
+            jsonOk = false;
+          }
+          self.postMessage({ ok: true, status: res.status, resOk: res.ok, jsonOk, data });
+        } catch (err) {
+          self.postMessage({ ok: false, name: err && err.name ? err.name : '', message: err && err.message ? err.message : '' });
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+    `;
+    const blobUrl = URL.createObjectURL(new Blob([workerCode], { type: 'text/javascript' }));
+    const worker = new Worker(blobUrl);
+    const finish = () => {
+      worker.terminate();
+      URL.revokeObjectURL(blobUrl);
+    };
+    const timer = window.setTimeout(() => {
+      finish();
+      reject(new Error('連線逾時'));
+    }, timeoutMs + 500);
+    worker.onmessage = (event) => {
+      window.clearTimeout(timer);
+      finish();
+      const result = event.data || {};
+      if (!result.ok) {
+        if (result.name === 'AbortError') reject(new Error('連線逾時'));
+        else reject(new Error('無法連線，請確認駐守正在執行且網址正確'));
+        return;
+      }
+      try {
+        resolve(normalizeVigilJsonResponse(result.status, result.resOk, result.jsonOk, result.data));
+      } catch (err) {
+        reject(err);
+      }
+    };
+    worker.onerror = () => {
+      window.clearTimeout(timer);
+      finish();
+      reject(new Error('無法連線，請確認駐守正在執行且網址正確'));
+    };
+    worker.postMessage({ url, method, headers, body, timeoutMs });
+  });
+}
+
+async function fetchVigilJsonOnMainThread(url, { method = 'GET', headers = {}, body = null, timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   let res;
   try {
-    res = await fetch(latestUrl(settings.url), {
-      method: 'GET',
-      headers: { 'X-Vigil-Token': settings.token },
+    res = await fetch(url, {
+      method,
+      headers,
+      body,
       signal: controller.signal
     });
   } catch (err) {
@@ -100,11 +213,30 @@ async function fetchLatestHealth(override = null) {
   } catch (err) {
     throw new Error('回應不是有效 JSON');
   }
-  if (!res.ok || !data || data.ok !== true) {
-    if (res.status === 403) throw new Error('通行碼錯誤或未填');
-    throw new Error(`連線失敗（HTTP ${res.status}）`);
+  return normalizeVigilJsonResponse(res.status, res.ok, true, data);
+}
+
+function normalizeVigilJsonResponse(status, resOk, jsonOk, data) {
+  if (!jsonOk) throw new Error('回應不是有效 JSON');
+  if (!resOk) {
+    if (status === 403) throw new Error('通行碼錯誤或未填');
+    throw new Error(`連線失敗（HTTP ${status}）`);
   }
-  return normalizeSnapshot(data.entry);
+  return data;
+}
+
+function normalizeConfiguredSettings(settings) {
+  const clean = {
+    url: String(settings && settings.url || '').trim(),
+    token: String(settings && settings.token || '').trim()
+  };
+  if (!clean.url || !clean.token) throw new Error('請先填寫駐守健康網址與通行碼');
+  return clean;
+}
+
+function vigilEndpointUrl(rawUrl, path) {
+  const base = String(rawUrl || '').trim().replace(/\/+$/, '');
+  return `${base}${path}`;
 }
 
 function latestUrl(rawUrl) {

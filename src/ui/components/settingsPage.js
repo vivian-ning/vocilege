@@ -8,7 +8,13 @@ import { renderGlobalPromptsEditor } from './globalPromptsEditor.js';
 import { renderPlayerEditor } from './playerEditor.js';
 import { renderBackupPanel } from './backupPanel.js';
 import { exportVigilCharacters } from '../../services/backupService.js';
-import { getVigilHealthSettings, saveVigilHealthSettings, testVigilHealthConnection } from '../../services/vigilHealthService.js';
+import {
+  fetchVigilVapidKey,
+  getVigilHealthSettings,
+  saveVigilHealthSettings,
+  sendVigilPushSubscription,
+  testVigilHealthConnection
+} from '../../services/vigilHealthService.js';
 import {
   addSticker,
   updateSticker,
@@ -344,7 +350,26 @@ function renderVigilSettings(container, state) {
   refreshPushSubscriptionStatus(status, output, copy);
 
   subscribe.addEventListener('click', async () => {
-    const raw = keyInput.value.trim() || localStorage.getItem(VIGIL_VAPID_KEY) || '';
+    const pairSettings = getVigilHealthSettings();
+    const canAutoPair = !!(pairSettings.url && pairSettings.token);
+    let raw = keyInput.value.trim() || localStorage.getItem(VIGIL_VAPID_KEY) || '';
+    if (canAutoPair) {
+      status.className = 'form-hint';
+      status.textContent = '正在向駐守取得公鑰…';
+      subscribe.disabled = true;
+      try {
+        raw = await fetchVigilVapidKey(pairSettings);
+        keyInput.value = raw;
+        localStorage.setItem(VIGIL_VAPID_KEY, raw);
+        status.className = 'backup-status success';
+        status.textContent = '已自動取得公鑰。';
+      } catch (err) {
+        status.className = 'form-hint';
+        status.textContent = '無法自動取得公鑰，改用手動流程。';
+      } finally {
+        subscribe.disabled = !support.ok;
+      }
+    }
     const valid = validateVapidKey(raw);
     if (!valid.ok) {
       status.className = 'backup-status error';
@@ -373,13 +398,27 @@ function renderVigilSettings(container, state) {
         userVisibleOnly: true,
         applicationServerKey: base64urlToUint8Array(raw)
       });
-      output.value = JSON.stringify(subscription.toJSON(), null, 2);
+      const subscriptionJson = subscription.toJSON();
+      output.value = JSON.stringify(subscriptionJson, null, 2);
       copy.disabled = false;
-      status.className = 'backup-status success';
-      status.textContent = '已訂閱。複製後到電腦執行 python vigil.py add-sub 貼上。';
+      if (canAutoPair) {
+        try {
+          await sendVigilPushSubscription(subscriptionJson, pairSettings);
+          status.className = 'backup-status success';
+          status.textContent = '已配對完成，電腦端駐守開著就會收到推播。';
+        } catch (err) {
+          status.className = 'form-hint';
+          status.textContent = '已訂閱，但無法自動交給駐守；請複製 JSON，到電腦執行 add-sub。';
+        }
+      } else {
+        status.className = 'backup-status success';
+        status.textContent = '已訂閱。複製後到電腦執行 python vigil.py add-sub 貼上。';
+      }
     } catch (err) {
       status.className = 'backup-status error';
       status.textContent = `訂閱失敗：${(err && err.message) || String(err)}`;
+    } finally {
+      subscribe.disabled = !support.ok;
     }
   });
 
