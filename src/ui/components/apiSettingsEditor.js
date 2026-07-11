@@ -31,9 +31,15 @@ const PROVIDER_OPTIONS = [
 const CUSTOM_MODEL = '__custom__';
 const PROVIDER_MODELS = {
   anthropic: ['claude-opus-4-8', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-fable-5'],
-  'openai-compatible': ['sonnet', 'gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'o3', 'o4-mini'],
+  'openai-compatible': ['opus', 'sonnet', 'haiku', 'gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'o3', 'o4-mini'],
   gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
   '': []
+};
+
+const MODEL_LABELS = {
+  opus: 'opus\uFF08\u62FE\u8072\u6A4B\uFF09',
+  sonnet: 'sonnet\uFF08\u62FE\u8072\u6A4B\uFF09',
+  haiku: 'haiku\uFF08\u62FE\u8072\u6A4B\uFF09'
 };
 
 const LOCAL_BRIDGE_BASE_URL = 'http://127.0.0.1:8787/v1';
@@ -548,7 +554,7 @@ function buildModelControl(initialModel, initialProvider) {
     for (const m of list) {
       const o = document.createElement('option');
       o.value = m;
-      o.textContent = m;
+      o.textContent = MODEL_LABELS[m] || m;
       select.appendChild(o);
     }
     const customOpt = document.createElement('option');
